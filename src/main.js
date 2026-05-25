@@ -60,7 +60,7 @@
 
         if (navigator.storage && navigator.storage.persist) {
             navigator.storage.persist().then(function(isPersisted) {
-                console.log('Persistent storage:', isPersisted ? '✅ granted' : '❌ denied');
+                console.log('Persistent storage:', isPersisted ? 'granted' : 'denied');
             }).catch(function(err) {
                 console.warn('Persistent storage check failed:', err);
             });
@@ -72,7 +72,7 @@
                 await App.db.init();
                 const migrated = localStorage.getItem('vesta_migrated_to_indexeddb');
                 if (!migrated) {
-                    const confirmMigration = confirm('Перенести существующие данные в новую базу? (рекомендуется)');
+                    const confirmMigration = await App.ui.confirmModalAsync('Перенести существующие данные в новую базу? (рекомендуется)');
                     if (confirmMigration) {
                         await App.db.migrateFromLocalStorage();
                         localStorage.setItem('vesta_migrated_to_indexeddb', 'true');
@@ -190,7 +190,7 @@
             if (typeof App.ui.pages.renderCarTab === 'function') App.ui.pages.renderCarTab();
             if (typeof App.ui.pages.populateSettingsFields === 'function') App.ui.pages.populateSettingsFields();
             if (typeof App.renderAll === 'function') App.renderAll();
-            if (typeof App.toast === 'function') App.toast('Демо‑режим. Войдите, чтобы сохранить данные.', 'info');
+            if (typeof App.toast === 'function') App.toast('Демо-режим. Войдите, чтобы сохранить данные.', 'info');
         }
 
         function initAuthFormEvents(container) {
@@ -371,7 +371,6 @@
         if (sidebarLoginBtn) sidebarLoginBtn.addEventListener('click', openAuthModal);
         if (drawerLoginBtn) drawerLoginBtn.addEventListener('click', openAuthModal);
 
-        // PWA установка
         window.addEventListener('beforeinstallprompt', function(e) {
             e.preventDefault();
             deferredPrompt = e;
@@ -383,7 +382,6 @@
             setInstallButtonVisible(false);
         });
 
-        // Обработчик клика по кнопке установки PWA
         var pwaInstallBtn = document.getElementById('pwa-install-btn');
         if (pwaInstallBtn) {
             pwaInstallBtn.addEventListener('click', function() {
@@ -413,9 +411,9 @@
             var loginFormEl = document.getElementById('login-form');
             if (loginFormEl) loginFormEl.reset();
             var usernameDisplayEl = document.getElementById('username-display');
-            if (usernameDisplayEl) usernameDisplayEl.textContent = '';
+            if (usernameDisplayEl) usernameDisplayEl.innerHTML = '';
             var sidebarUsernameEl = document.getElementById('sidebar-username');
-            if (sidebarUsernameEl) sidebarUsernameEl.textContent = '';
+            if (sidebarUsernameEl) sidebarUsernameEl.innerHTML = '';
             var carContainerEl = document.getElementById('car-selector-container');
             if (carContainerEl) carContainerEl.innerHTML = '';
             App.store.operations = [];
@@ -465,11 +463,13 @@
                 var cachedUsername = localStorage.getItem('vesta_username') || '';
                 var displayElOffline = document.getElementById('username-display');
                 if (displayElOffline && cachedUsername) {
-                    displayElOffline.textContent = '👤 ' + cachedUsername;
+                    displayElOffline.innerHTML = '<i data-lucide="user"></i> ' + cachedUsername;
+                    App.initIcons();
                 }
                 var sidebarUsernameOffline = document.getElementById('sidebar-username');
                 if (sidebarUsernameOffline && cachedUsername) {
-                    sidebarUsernameOffline.textContent = '👤 ' + cachedUsername;
+                    sidebarUsernameOffline.innerHTML = '<i data-lucide="user"></i> ' + cachedUsername;
+                    App.initIcons();
                 }
 
                 if (typeof App.store !== 'undefined' && typeof App.store.loadCars === 'function') {
@@ -522,7 +522,7 @@
                                     App.toast('Без пароля чувствительные данные будут недоступны', 'warning');
                                 }
                             } else {
-                                var pwd = prompt('Введите пароль для расшифровки данных:');
+                                var pwd = await App.ui.promptModalAsync('Введите пароль для расшифровки данных', '');
                                 if (pwd) {
                                     const salt = App.db.encryption.getStoredSalt();
                                     const isValid = await App.db.encryption.verifyMasterKey(pwd, salt);
@@ -551,17 +551,16 @@
                         App.supabase.auth.getUser().then(function(userRes) {
                             var displayEl = document.getElementById('username-display');
                             if (displayEl && userRes.data.user && userRes.data.user.user_metadata && userRes.data.user.user_metadata.username) {
-                                displayEl.textContent = '👤 ' + userRes.data.user.user_metadata.username;
+                                displayEl.innerHTML = '<i data-lucide="user"></i> ' + userRes.data.user.user_metadata.username;
                                 localStorage.setItem('vesta_username', userRes.data.user.user_metadata.username);
                             }
                             var sidebarUsernameEl = document.getElementById('sidebar-username');
                             if (sidebarUsernameEl && userRes.data.user && userRes.data.user.user_metadata && userRes.data.user.user_metadata.username) {
-                                sidebarUsernameEl.textContent = '👤 ' + userRes.data.user.user_metadata.username;
+                                sidebarUsernameEl.innerHTML = '<i data-lucide="user"></i> ' + userRes.data.user.user_metadata.username;
                             }
+                            App.initIcons();
                         });
 
-                        // Удалён некорректный вызов App.store.initFromLocalStorage()
-                        
                         if (typeof App.ui.pages.checkPushSubscriptionStatus === 'function') {
                             App.ui.pages.checkPushSubscriptionStatus();
                         }
@@ -584,7 +583,7 @@
                                     }
                                 });
                             } else {
-                                var newPassword = prompt('Введите новый пароль (минимум 6 символов):');
+                                var newPassword = await App.ui.promptModalAsync('Введите новый пароль (минимум 6 символов)', '');
                                 if (newPassword && newPassword.length >= 6) {
                                     App.supabase.auth.updateUser({ password: newPassword }).then(function(res) {
                                         if (res.error) {
@@ -652,9 +651,9 @@
                         var carContainerEl = document.getElementById('car-selector-container');
                         if (carContainerEl) carContainerEl.innerHTML = '';
                         var usernameDisplayEl = document.getElementById('username-display');
-                        if (usernameDisplayEl) usernameDisplayEl.textContent = '';
+                        if (usernameDisplayEl) usernameDisplayEl.innerHTML = '';
                         var sidebarUsernameEl = document.getElementById('sidebar-username');
-                        if (sidebarUsernameEl) sidebarUsernameEl.textContent = '';
+                        if (sidebarUsernameEl) sidebarUsernameEl.innerHTML = '';
                         if (App.realtime && typeof App.realtime.unsubscribeAll === 'function') {
                             App.realtime.unsubscribeAll();
                         }
@@ -698,14 +697,6 @@
             isInitialized = true;
             handleOnlineSession();
         }
-
-       // if ('serviceWorker' in navigator) {
-       //    navigator.serviceWorker.register(new URL('./service-worker.js', location.href)).then(function(registration) {
-     //           console.log('✅ Сервис-воркер зарегистрирован:', registration.scope);
-     //       }).catch(function(err) {
-     //           console.error('❌ Ошибка регистрации сервис-воркера:', err);
-    //        });
-    //    }
 
         if (typeof App.events.init === 'function') App.events.init();
         if (typeof App.events.switchToTab === 'function') App.events.switchToTab('dashboard');
@@ -889,9 +880,9 @@
 
             if (fetchRes.ok) {
                 if (typeof App.ui.alertModal === 'function') {
-                    App.ui.alertModal('Пароль успешно изменён! Теперь войдите с новым паролем.');
+                    await App.ui.alertModal('Пароль успешно изменён! Теперь войдите с новым паролем.');
                 } else {
-                    alert('Пароль успешно изменён! Теперь войдите с новым паролем.');
+                    await App.ui.alertModal('Пароль успешно изменён! Теперь войдите с новым паролем.');
                 }
             } else {
                 const errText = await fetchRes.text();
@@ -949,9 +940,9 @@
 
             if (fetchRes.ok) {
                 if (typeof App.ui.alertModal === 'function') {
-                    App.ui.alertModal('Пароль успешно изменён! Теперь войдите с новым паролем.');
+                    await App.ui.alertModal('Пароль успешно изменён! Теперь войдите с новым паролем.');
                 } else {
-                    alert('Пароль успешно изменён! Теперь войдите с новым паролем.');
+                    await App.ui.alertModal('Пароль успешно изменён! Теперь войдите с новым паролем.');
                 }
             } else {
                 const errText = await fetchRes.text();
@@ -976,24 +967,24 @@
             if (error || !codes || !codes.length) {
                 console.error('Ошибка генерации кодов:', error);
                 if (typeof App.ui.alertModal === 'function') {
-                    App.ui.alertModal('Не удалось сгенерировать коды. Попробуйте позже.');
+                    await App.ui.alertModal('Не удалось сгенерировать коды. Попробуйте позже.');
                 } else {
-                    alert('Не удалось сгенерировать коды. Попробуйте позже.');
+                    await App.ui.alertModal('Не удалось сгенерировать коды. Попробуйте позже.');
                 }
                 return;
             }
             const msg = 'Ваши резервные коды для восстановления доступа (сохраните их!):\n\n' + codes.join('\n');
             if (typeof App.ui.alertModal === 'function') {
-                App.ui.alertModal(msg);
+                await App.ui.alertModal(msg);
             } else {
-                alert(msg);
+                await App.ui.alertModal(msg);
             }
         } catch (err) {
             console.error('generateAndShowRecoveryCodes error:', err);
             if (typeof App.ui.alertModal === 'function') {
-                App.ui.alertModal('Не удалось сгенерировать коды. Попробуйте позже.');
+                await App.ui.alertModal('Не удалось сгенерировать коды. Попробуйте позже.');
             } else {
-                alert('Не удалось сгенерировать коды. Попробуйте позже.');
+                await App.ui.alertModal('Не удалось сгенерировать коды. Попробуйте позже.');
             }
         }
     };
