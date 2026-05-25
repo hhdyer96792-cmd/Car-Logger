@@ -371,6 +371,7 @@
         if (sidebarLoginBtn) sidebarLoginBtn.addEventListener('click', openAuthModal);
         if (drawerLoginBtn) drawerLoginBtn.addEventListener('click', openAuthModal);
 
+        // PWA установка
         window.addEventListener('beforeinstallprompt', function(e) {
             e.preventDefault();
             deferredPrompt = e;
@@ -381,6 +382,25 @@
             deferredPrompt = null;
             setInstallButtonVisible(false);
         });
+
+        // Обработчик клика по кнопке установки PWA
+        var pwaInstallBtn = document.getElementById('pwa-install-btn');
+        if (pwaInstallBtn) {
+            pwaInstallBtn.addEventListener('click', function() {
+                if (deferredPrompt) {
+                    deferredPrompt.prompt();
+                    deferredPrompt.userChoice.then(function(choiceResult) {
+                        if (choiceResult.outcome === 'accepted') {
+                            console.log('User accepted the install prompt');
+                        } else {
+                            console.log('User dismissed the install prompt');
+                        }
+                        deferredPrompt = null;
+                        setInstallButtonVisible(false);
+                    });
+                }
+            });
+        }
 
         var savedSession = localStorage.getItem('supabase.auth.token');
         if (!savedSession) {
@@ -523,7 +543,7 @@
                         // ===== КОНЕЦ БЛОКА ШИФРОВАНИЯ =====
 
                         // ===== ИНИЦИАЛИЗАЦИЯ ПРЕМИУМ-ФУНКЦИЙ =====
-                        if (typeof App.premium.init === 'function') {
+                        if (App.premium && typeof App.premium.init === 'function') {
                             await App.premium.init();
                         }
                         // ===== КОНЕЦ БЛОКА PREMIUM =====
