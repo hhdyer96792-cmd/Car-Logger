@@ -39,25 +39,26 @@ App.db.init = function() {
         };
         request.onsuccess = (event) => {
             App.db._db = event.target.result;
-            // Небольшая задержка для завершения транзакций при пересоздании
             resolve(App.db._db);
         };
         request.onupgradeneeded = async (event) => {
-    const db = event.target.result;
-    // Создаём только те хранилища, которых ещё нет
-    for (let [storeName, config] of Object.entries(STORES)) {
-        if (!db.objectStoreNames.contains(storeName)) {
-            const store = db.createObjectStore(storeName, { 
-                keyPath: config.keyPath, 
-                autoIncrement: config.autoIncrement || false 
-            });
-            if (config.indexes) {
-                config.indexes.forEach(indexName => {
-                    store.createIndex(indexName, indexName, { unique: false });
-                });
+            const db = event.target.result;
+            // Создаём только те хранилища, которых ещё нет
+            for (let [storeName, config] of Object.entries(STORES)) {
+                if (!db.objectStoreNames.contains(storeName)) {
+                    const store = db.createObjectStore(storeName, {
+                        keyPath: config.keyPath,
+                        autoIncrement: config.autoIncrement || false
+                    });
+                    if (config.indexes) {
+                        config.indexes.forEach(indexName => {
+                            store.createIndex(indexName, indexName, { unique: false });
+                        });
+                    }
+                }
             }
-        }
-    }
+        };
+    });
 };
 
 // Вспомогательная функция для получения хранилища в транзакции
@@ -136,7 +137,7 @@ App.db.migrateFromLocalStorage = async function() {
         fuelLog: 'fuel_log',
         tireLog: 'tires',
         workCosts: 'work_costs', // но work_costs нет в нашей схеме, пропустим
-        baseMileage: null, // не храним отдельно, входит в settings
+        baseMileage: null,
         baseMotohours: null,
         purchaseDate: null,
         settings: 'settings'
@@ -145,7 +146,6 @@ App.db.migrateFromLocalStorage = async function() {
     for (let [localKey, storeName] of Object.entries(mapping)) {
         if (storeName && data[localKey] && Array.isArray(data[localKey]) && data[localKey].length) {
             for (let item of data[localKey]) {
-                // Убедимся, что есть id
                 if (!item.id && storeName !== 'settings') {
                     item.id = item.uuid || crypto.randomUUID();
                 }
@@ -158,11 +158,8 @@ App.db.migrateFromLocalStorage = async function() {
         const settingsItem = { id: 1, ...data.settings };
         await App.db.put('settings', settingsItem).catch(console.warn);
     }
-    // Дополнительно: mileage_history? В localStorage нет отдельно, но есть в App.store.mileageHistory, который может быть не в кэше? Пока пропустим.
     console.log('[DB] Migration completed');
-    // Опционально: сохранить флаг, что миграция выполнена, чтобы не повторять
     localStorage.setItem('vesta_migrated_to_indexeddb', 'true');
-    // Удаляем старый кэш localStorage по желанию
     if (confirm('Данные успешно перенесены в новую базу. Очистить старый localStorage для экономии места?')) {
         localStorage.removeItem(cacheKey);
         localStorage.removeItem(App.config.PENDING_KEY);
@@ -201,5 +198,4 @@ App.db.transaction = async function(storeNames, mode, callback) {
         throw e;
     }
     return result;
-    }
 };
