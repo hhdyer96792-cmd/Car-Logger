@@ -604,3 +604,4 @@ App.supa.getVehicleState = async function(carId) {
     if (error) throw error;
     return data || null;
 };
+};
