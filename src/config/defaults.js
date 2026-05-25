@@ -7,7 +7,7 @@ App.defaults = {
         currentMotohours: 0,
         avgDailyMileage: 45,
         avgDailyMotohours: 1.8,
-        notificationMethod: 'telegram'
+        notificationMethod: 'telegram',
         reminderDays: '7,2',
         telegramEnabled: true
     },
