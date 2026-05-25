@@ -412,7 +412,69 @@ App.supa.deleteCarDocument = async function(docId) {
     return true;
 };
 
-// ========== Получение списка пользователей с доступом к автомобилю ==========
+// ---------- Мульти-авто и совместный доступ ----------
+App.supa.loadCars = function() {
+    ensureSupabase();
+    return App.supabase.from('cars').select('*').then(({ data, error }) => {
+        if (error) throw error;
+        return data || [];
+    });
+};
+
+App.supa.createCar = function(name) {
+    return App.supa.getCurrentUserId().then(function(userId) {
+        ensureSupabase();
+        return App.supabase.from('cars').insert({ user_id: userId, name: name }).select().single();
+    });
+};
+
+App.supa.deleteCar = function(carId) {
+    ensureSupabase();
+    return App.supabase.from('cars').delete().eq('id', carId).select();
+};
+
+App.supa.renameCar = function(carId, newName) {
+    ensureSupabase();
+    return App.supabase.from('cars').update({ name: newName }).eq('id', carId).select().single();
+};
+
+App.supa.inviteUserToCar = function(carId, email) {
+    ensureSupabase();
+    return App.supabase.from('car_shares').insert({ car_id: carId, invited_email: email }).select().single();
+};
+
+App.supa.getPendingInvites = function() {
+    return App.supa.getCurrentUserId().then(function(userId) {
+        if (!userId) return [];
+        return App.supabase.from('car_shares')
+            .select('*, cars(name)')
+            .eq('invited_user_id', userId)
+            .eq('accepted', false);
+    });
+};
+
+App.supa.acceptInvite = async function(inviteId) {
+    const userId = await App.supa.getCurrentUserId();
+    ensureSupabase();
+    return App.supabase.from('car_shares')
+        .update({ accepted: true, invited_user_id: userId })
+        .eq('id', inviteId)
+        .select();
+};
+
+App.supa.declineInvite = function(inviteId) {
+    ensureSupabase();
+    return App.supabase.from('car_shares').delete().eq('id', inviteId).select();
+};
+
+App.supa.getInviteByCode = function(code) {
+    ensureSupabase();
+    return App.supabase.from('car_shares')
+        .select('*, cars(name)')
+        .eq('invite_code', code)
+        .maybeSingle();
+};
+
 App.supa.getCarShares = function(carId) {
     ensureSupabase();
     return App.supabase.from('car_shares')
@@ -420,16 +482,13 @@ App.supa.getCarShares = function(carId) {
         .eq('car_id', carId);
 };
 
-// ---------- Мульти-авто и совместный доступ (окончание) ----------
 App.supa.deleteCarShare = function(shareId) {
     ensureSupabase();
     return App.supabase.from('car_shares')
         .delete()
         .eq('id', shareId)
         .select();
-};
-
-// ========== Состояние автомобиля (vehicle_state) ==========
+        // ========== Дополнительные методы для автомобилей ==========
 App.supa.getVehicleState = async function(carId) {
     const { data, error } = await App.supabase
         .from('vehicle_state')
