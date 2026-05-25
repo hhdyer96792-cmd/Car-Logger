@@ -548,4 +548,17 @@ App.supa.createInviteLink = async function(carId) {
     const inviteCode = data.invite_code;
     return window.location.origin + '/Car-K3eper/?invite=' + inviteCode;
 };
+// ===== СТРАХОВКА – заглушки для vehicle_state =====
+if (!App.supa.getVehicleState) {
+    App.supa.getVehicleState = async function(carId) {
+        console.warn('[Supabase] getVehicleState не определена, возвращаем null');
+        return null;
+    };
+}
+if (!App.supa.updateVehicleState) {
+    App.supa.updateVehicleState = async function(carId, updates) {
+        console.warn('[Supabase] updateVehicleState не определена, пропускаем');
+        return true;
+    };
+}
 };
