@@ -245,24 +245,21 @@ App.ui.pages.renderDeleteAccountBlock = function(container) {
             }
 
             try {
-                const { error: fnError } = await App.supabase.functions.invoke('delete-user-data', {
-                    body: { user_id: user.id }
-                });
-                if (fnError) throw new Error(fnError.message);
+    // Вызываем единую Edge Function для удаления аккаунта (user_id берётся из JWT)
+    const { error: fnError } = await App.supabase.functions.invoke('delete-account', {
+        body: {} // user_id не передаём, он берётся из JWT
+    });
+    if (fnError) throw new Error(fnError.message);
 
-                const { error: deleteError } = await App.supabase.functions.invoke('delete-user-auth', {
-                    body: { user_id: user.id }
-                });
-                if (deleteError) throw new Error(deleteError.message);
-
-                await App.supabase.auth.signOut();
-                localStorage.clear();
-                sessionStorage.clear();
-                window.location.reload();
-            } catch (err) {
-                console.error(err);
-                App.toast('Ошибка при удалении аккаунта: ' + err.message, 'error');
-            }
+    // Выходим из системы и очищаем локальное хранилище
+    await App.supabase.auth.signOut();
+    localStorage.clear();
+    sessionStorage.clear();
+    window.location.reload();
+} catch (err) {
+    console.error(err);
+    App.toast('Ошибка при удалении аккаунта: ' + err.message, 'error');
+}
         });
         deleteBtn.hasListener = true;
     }
