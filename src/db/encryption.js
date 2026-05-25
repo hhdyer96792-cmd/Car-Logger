@@ -196,3 +196,4 @@ App.db.encryption.decryptSettings = async function(encryptedSettings, masterKey)
     }
     return settings;
 };
+}
