@@ -198,5 +198,4 @@ App.db.transaction = async function(storeNames, mode, callback) {
         throw e;
     }
     return result;
-    }
 };
