@@ -131,6 +131,7 @@ App.ui.pages.renderRecoveryCodesBlock = function(container) {
         </div>
     `;
     App.initIcons();
+    // Инициализируем обработчики резервных кодов (уникальные, без дублей)
     if (typeof App.ui.pages.initRecoveryCodesUI === 'function') {
         App.ui.pages.initRecoveryCodesUI();
     }
@@ -245,21 +246,21 @@ App.ui.pages.renderDeleteAccountBlock = function(container) {
             }
 
             try {
-    // Вызываем единую Edge Function для удаления аккаунта (user_id берётся из JWT)
-    const { error: fnError } = await App.supabase.functions.invoke('delete-account', {
-        body: {} // user_id не передаём, он берётся из JWT
-    });
-    if (fnError) throw new Error(fnError.message);
+                // Вызываем единую Edge Function для удаления аккаунта (user_id берётся из JWT)
+                const { error: fnError } = await App.supabase.functions.invoke('delete-account', {
+                    body: {} // user_id не передаём, он берётся из JWT
+                });
+                if (fnError) throw new Error(fnError.message);
 
-    // Выходим из системы и очищаем локальное хранилище
-    await App.supabase.auth.signOut();
-    localStorage.clear();
-    sessionStorage.clear();
-    window.location.reload();
-} catch (err) {
-    console.error(err);
-    App.toast('Ошибка при удалении аккаунта: ' + err.message, 'error');
-}
+                // Выходим из системы и очищаем локальное хранилище
+                await App.supabase.auth.signOut();
+                localStorage.clear();
+                sessionStorage.clear();
+                window.location.reload();
+            } catch (err) {
+                console.error(err);
+                App.toast('Ошибка при удалении аккаунта: ' + err.message, 'error');
+            }
         });
         deleteBtn.hasListener = true;
     }
@@ -573,12 +574,13 @@ App.ui.pages.populateSettingsFields = async function() {
     App.initIcons();
 };
 
-// ==================== ОСТАЛЬНЫЕ ФУНКЦИИ (экспорт, резервные коды, PIN и т.д.) ====================
+// ==================== РЕЗЕРВНЫЕ КОДЫ (инициализация) ====================
 App.ui.pages.initRecoveryCodesUI = function() {
     var showBtn = document.getElementById('show-recovery-btn');
     var genBtn = document.getElementById('gen-new-codes-btn');
     if (!showBtn || !genBtn) return;
 
+    // Удаляем старые обработчики, клонируя кнопки
     const newShowBtn = showBtn.cloneNode(true);
     const newGenBtn = genBtn.cloneNode(true);
     showBtn.parentNode.replaceChild(newShowBtn, showBtn);
@@ -618,15 +620,18 @@ App.ui.pages.initRecoveryCodesUI = function() {
             await App.supabase.from('recovery_codes').insert({ user_id: user.id, code_hash: code });
         }
         App.ui.alertModal('Новые коды:\n\n' + codes.join('\n'));
+        // Обновляем список
         showBtn.click();
     });
 };
 
+// ==================== PIN-код (быстрый вход) ====================
 App.ui.pages.renderPinSettings = async function() {
     const container = document.getElementById('pin-settings-container');
     if (!container) return;
 
     if (!App.db || !App.db._db) {
+        console.log('[PIN] Database not ready, retrying in 500ms');
         setTimeout(() => App.ui.pages.renderPinSettings(), 500);
         return;
     }
@@ -703,10 +708,9 @@ App.ui.pages.renderPinSettings = async function() {
     App.initIcons();
 };
 
-// Заглушка
+// ==================== ЭКСПОРТ, СТАТИСТИКА И ПРОЧЕЕ ====================
 App.ui.pages.subscribeToPush = function() {};
 
-// ==================== ЭКСПОРТ ====================
 App.ui.pages.openPhotoFolder = function() {
     App.toast('Фотографии теперь хранятся в Supabase Storage', 'info');
 };
@@ -890,9 +894,9 @@ App.ui.pages.generateServiceReport = function() {
     var reportHtml = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Сервисная история</title><style>body{font-family:sans-serif;margin:20px}h1{color:#3498db}h2{border-bottom:1px solid #ccc}table{width:100%;border-collapse:collapse;margin-bottom:20px}td,th{border:1px solid #ddd;padding:8px}th{background:#f2f2f2}.stat-card{display:inline-block;background:#f9f9f9;padding:10px;margin:5px;border-radius:8px}</style></head><body><h1>Сервисная история</h1><p><strong>Дата:</strong>' + new Date().toLocaleDateString('ru-RU') + '</p><p><strong>Пробег:</strong>' + App.store.settings.currentMileage.toLocaleString() + ' км</p><h2>Расходы</h2><div>' +
         '<div class="stat-card">ТО: ' + totalMaintenance.toFixed(2) + ' ₽</div><div class="stat-card">Топливо: ' + totalFuel.toFixed(2) + ' ₽</div><div class="stat-card">Всего: ' + totalCost.toFixed(2) + ' ₽</div><div class="stat-card">1 км: ' + avgCostPerKm.toFixed(2) + ' ₽</div></div><h2>Операции</h2><table><thead><tr><th>Категория</th><th>Операция</th><th>Интервал км</th><th>Интервал мес</th><th>Последнее ТО</th><th>Последний пробег</th></tr></thead><tbody>';
     App.store.operations.forEach(function(op) { reportHtml += '<tr><td>' + App.utils.escapeHtml(op.category) + '</td><td>' + App.utils.escapeHtml(op.name) + '</td><td>' + (op.intervalKm || '—') + '</td><td>' + (op.intervalMonths || '—') + '</td><td>' + (op.lastDate || '—') + '</td><td>' + (op.lastMileage || '—') + '</td></tr>'; });
-    reportHtml += '</tbody></table><h2>История ТО</h2><table><thead><tr><th>Дата</th><th>Операция</th><th>Пробег</th><th>Запчасти</th><th>Работа</th><th>DIY</th><th>Прим.</th></tr></thead><tbody>';
+    reportHtml += '</tbody><tr><h2>История ТО</h2><table><thead><tr><th>Дата</th><th>Операция</th><th>Пробег</th><th>Запчасти</th><th>Работа</th><th>DIY</th><th>Прим.</th></tr></thead><tbody>';
     App.store.serviceRecords.sort(function(a,b){return new Date(b.date)-new Date(a.date);}).forEach(function(rec){ var op=App.store.operations.find(function(o){return o.id==rec.operation_id;}); reportHtml+='<tr><td>'+ (rec.date||'')+'</td><td>'+ App.utils.escapeHtml(op?op.name:'Неизвестно')+'</td><td>'+ (rec.mileage||'')+'</td><td>'+ (rec.parts_cost||'0')+'</td><td>'+ (rec.work_cost||'0')+'</td><td>'+ (rec.is_diy===true?'Да':'Нет')+'</td><td>'+ (rec.notes||'')+'</td></tr>'; });
-    reportHtml += '</tbody></table></body></html>';
+    reportHtml += '</tbody></tr></body></html>';
     var element = document.createElement('div');
     element.innerHTML = reportHtml;
     document.body.appendChild(element);
@@ -911,222 +915,7 @@ App.ui.pages.forceSync = function() {
     App.toast('Данные уже синхронизированы с Supabase', 'info');
 };
 
-// ==================== РЕЗЕРВНЫЕ КОДЫ ====================
-App.ui.pages.initRecoveryCodesUI = function() {
-    var showBtn = document.getElementById('show-recovery-btn');
-    var genBtn = document.getElementById('gen-new-codes-btn');
-    if (!showBtn || !genBtn) return;
-
-    showBtn.addEventListener('click', async function() {
-        var { data: { user } } = await App.supabase.auth.getUser();
-        if (!user) return;
-        var { data: codes } = await App.supabase.from('recovery_codes')
-            .select('code_hash, used')
-            .eq('user_id', user.id)
-            .order('created_at', { ascending: false });
-
-        var unused = codes.filter(c => !c.used);
-        var listEl = document.getElementById('recovery-codes-list');
-        if (!listEl) return;
-        if (unused.length === 0) {
-            listEl.innerHTML = '<p class="hint">Все коды использованы. Сгенерируйте новые.</p>';
-            return;
-        }
-        listEl.innerHTML = '<p>Неиспользованные коды:</p><ul>' +
-            unused.map(c => '<li>' + c.code_hash + '</li>').join('') + '</ul>';
-    });
-
-    genBtn.addEventListener('click', async function() {
-        var { data: { user } } = await App.supabase.auth.getUser();
-        if (!user) return;
-        App.ui.confirmModalAsync('Старые коды будут удалены. Продолжить?').then(async function(confirmed) {
-            if (!confirmed) return;
-            await App.supabase.from('recovery_codes').delete().eq('user_id', user.id);
-            var codes = [];
-            for (var i = 0; i < 8; i++) {
-                var code = Array.from({length: 8}, () => Math.floor(Math.random() * 10)).join('');
-                codes.push(code);
-                await App.supabase.from('recovery_codes').insert({ user_id: user.id, code_hash: code });
-            }
-            App.ui.alertModal('Новые коды:\n\n' + codes.join('\n'));
-            document.getElementById('show-recovery-btn').click();
-        });
-    });
-};
-
-// ==================== PREMIUM БЛОК ====================
-App.ui.pages.renderPremiumBlock = function() {
-    const container = document.getElementById('premium-settings-container');
-    if (!container) return;
-    
-    if (!App.store.isPremium) {
-        container.innerHTML = `
-            <div class="card">
-                <h3><i data-lucide="crown"></i> Premium</h3>
-                <p>Расширьте возможности приложения:</p>
-                <ul style="margin: 12px 0 12px 20px;">
-                    <li><i data-lucide="git-compare"></i> Сравнение автомобилей в автопарке</li>
-                    <li><i data-lucide="map-pin"></i> Геолокация и построение маршрутов</li>
-                    <li><i data-lucide="bluetooth"></i> Подключение ELM-адаптера (OBD2)</li>
-                    <li><i data-lucide="search"></i> Поиск запчастей по VIN</li>
-                    <li><i data-lucide="clock"></i> Автоматическое добавление истории ТО</li>
-                    <li><i data-lucide="database"></i> Синхронизация с внешними базами</li>
-                </ul>
-                <div style="display: flex; gap: 8px;">
-                    <input type="text" id="premium-key-input" placeholder="Введите ключ активации" style="flex: 1;">
-                    <button id="premium-activate-btn" class="primary-btn">Активировать</button>
-                </div>
-                <div id="premium-status-message" style="margin-top: 8px;"></div>
-                <p class="hint">Ключ можно приобрести на сайте или получить у администратора.</p>
-            </div>
-        `;
-        const activateBtn = document.getElementById('premium-activate-btn');
-        const keyInput = document.getElementById('premium-key-input');
-        const statusDiv = document.getElementById('premium-status-message');
-        if (activateBtn) {
-            activateBtn.onclick = async () => {
-                const key = keyInput.value.trim();
-                if (!key) {
-                    statusDiv.innerHTML = '<span style="color: var(--danger);"><i data-lucide="alert-triangle"></i> Введите ключ</span>';
-                    App.initIcons();
-                    return;
-                }
-                try {
-                    const result = await App.premium.activateKey(key);
-                    if (result.success) {
-                        statusDiv.innerHTML = '<span style="color: var(--success);"><i data-lucide="check-circle"></i> Подписка активирована! Обновите страницу.</span>';
-                        setTimeout(() => window.location.reload(), 2000);
-                    } else {
-                        statusDiv.innerHTML = `<span style="color: var(--danger);"><i data-lucide="x-circle"></i> ${result.error}</span>`;
-                    }
-                } catch (err) {
-                    statusDiv.innerHTML = `<span style="color: var(--danger);"><i data-lucide="x-circle"></i> Ошибка: ${err.message}</span>`;
-                }
-                App.initIcons();
-            };
-        }
-    } else {
-        container.innerHTML = `
-            <div class="card">
-                <h3><i data-lucide="crown"></i> Premium активно!</h3>
-                <p>Ваши премиум-функции:</p>
-                <ul id="premium-features-list" style="margin: 12px 0 12px 20px;"></ul>
-                ${App.store.premiumExpiresAt ? `<p>Подписка действительна до: ${new Date(App.store.premiumExpiresAt).toLocaleDateString()}</p>` : ''}
-                <button id="premium-deactivate-device-btn" class="secondary-btn">Отвязать это устройство</button>
-            </div>
-        `;
-        const list = document.getElementById('premium-features-list');
-        if (list && App.store.premiumFeatures) {
-            const featureNames = {
-                'fleet_comparison': 'Сравнение автомобилей',
-                'geolocation_api': 'Геолокация и маршруты',
-                'elm_integration': 'ELM-адаптер (OBD2)',
-                'parts_search_by_vin': 'Поиск запчастей по VIN',
-                'auto_service_history': 'Авто-история ТО',
-                'external_sync': 'Синхронизация с внешними БД'
-            };
-            App.store.premiumFeatures.forEach(f => {
-                const li = document.createElement('li');
-                li.textContent = featureNames[f] || f;
-                list.appendChild(li);
-            });
-        }
-        const deactivateBtn = document.getElementById('premium-deactivate-device-btn');
-        if (deactivateBtn) {
-            deactivateBtn.onclick = async () => {
-                await App.premium.deactivateDevice();
-                window.location.reload();
-            };
-        }
-    }
-    App.initIcons();
-};
-
-// ==================== PIN-код (быстрый вход) ====================
-App.ui.pages.renderPinSettings = async function() {
-    const container = document.getElementById('pin-settings-container');
-    if (!container) return;
-    
-     if (!App.db || !App.db._db) {
-        // База данных ещё не инициализирована – ждём и пробуем снова через 500 мс
-        console.log('[PIN] Database not ready, retrying in 500ms');
-        setTimeout(() => App.ui.pages.renderPinSettings(), 500);
-        return;
-    }
-
-    const hasPin = App.localAuth && await App.localAuth.isPinSet();
-    const supported = App.localAuth && App.localAuth.isPinSupported();
-
-    if (!supported) {
-        container.innerHTML = '<p class="hint"><i data-lucide="info"></i> PIN-код не поддерживается вашим браузером.</p>';
-        App.initIcons();
-        return;
-    }
-
-    if (hasPin) {
-        container.innerHTML = `
-            <div class="card">
-                <h3><i data-lucide="lock"></i> Быстрый вход по PIN</h3>
-                <p>PIN-код установлен. Вы можете сбросить его.</p>
-                <button id="pin-reset-btn" class="secondary-btn">Сбросить PIN</button>
-            </div>
-        `;
-        document.getElementById('pin-reset-btn')?.addEventListener('click', async () => {
-            if (await App.ui.confirmModalAsync('Сбросить PIN? Придётся заново вводить мастер-пароль.')) {
-                await App.localAuth.resetPin();
-                App.ui.pages.renderPinSettings();
-                App.toast('PIN сброшен', 'success');
-            }
-        });
-    } else {
-        container.innerHTML = `
-            <div class="card">
-                <h3><i data-lucide="fingerprint"></i> Быстрый вход по PIN</h3>
-                <p>Установите PIN-код (4+ цифр), чтобы не вводить мастер-пароль при каждом запуске.</p>
-                <button id="pin-setup-btn" class="primary-btn">Установить PIN</button>
-            </div>
-        `;
-        document.getElementById('pin-setup-btn')?.addEventListener('click', async () => {
-            const masterKey = App.db.encryption.getMasterKey();
-            if (!masterKey) {
-                App.toast('Мастер-пароль не активен. Выйдите и войдите снова.', 'error');
-                return;
-            }
-            const masterPassword = await App.ui.promptModalAsync('Подтвердите мастер-пароль', '');
-            if (!masterPassword) return;
-            const salt = App.db.encryption.getStoredSalt();
-            const isValid = await App.db.encryption.verifyMasterKey(masterPassword, salt);
-            if (!isValid) {
-                App.toast('Неверный мастер-пароль', 'error');
-                return;
-            }
-            let pinSet = false;
-            while (!pinSet) {
-                const pin = await App.ui.promptModalAsync('Установите PIN-код (минимум 4 цифры)', '');
-                if (pin && pin.length >= 4 && /^\d+$/.test(pin)) {
-                    const confirmPin = await App.ui.promptModalAsync('Подтвердите PIN-код', '');
-                    if (confirmPin === pin) {
-                        try {
-                            await App.localAuth.setPin(pin, masterPassword);
-                            App.toast('PIN-код сохранён', 'success');
-                            App.ui.pages.renderPinSettings();
-                            pinSet = true;
-                        } catch (err) {
-                            App.toast('Ошибка: ' + err.message, 'error');
-                        }
-                    } else {
-                        App.toast('PIN-коды не совпадают', 'error');
-                    }
-                } else {
-                    App.toast('PIN должен содержать минимум 4 цифры', 'error');
-                }
-            }
-        });
-    }
-    App.initIcons();
-};
-
-// Инициализация UI
+// Инициализация при загрузке вкладки
 if (document.getElementById('tab-settings')) {
-    App.ui.pages.initRecoveryCodesUI();
+    App.ui.pages.populateSettingsFields();
 }
