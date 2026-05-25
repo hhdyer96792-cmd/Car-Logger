@@ -164,7 +164,7 @@ export async function showVehicleInfoModal(query, type = 'vin') {
                 <tr><th>Трансмиссия</th><td>${App.utils.escapeHtml(info.transmission || info.transmissie || '—')}</td></tr>
                 <tr><th>Тип кузова</th><td>${App.utils.escapeHtml(info.bodyType || info.carrosserie || '—')}</td></tr>
             </table>
-            ${App.store.isPremium ? '<hr><button id="search-parts-btn" class="primary-btn">🔧 Найти запчасти</button>' : '<p class="hint">🔒 Поиск запчастей доступен в Premium-подписке</p>'}
+            ${App.store.isPremium ? '<hr><button id="search-parts-btn" class="primary-btn"><i data-lucide="wrench"></i> Найти запчасти</button>' : '<p class="hint"><i data-lucide="lock"></i> Поиск запчастей доступен в Premium-подписке</p>'}
         `
         const resultModal = App.ui.createModal('Автомобиль по запросу', html)
         if (App.store.isPremium) {
