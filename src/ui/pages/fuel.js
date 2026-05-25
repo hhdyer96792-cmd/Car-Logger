@@ -346,7 +346,6 @@ App.ui.pages.renderFuelCostPie = function(period) {
     });
     var labels = Object.keys(typeCost);
     var data = labels.map(function(l) { return typeCost[l]; });
-    // Фиксированное соответствие цветов
     var colorMap = {
         'Бензин': '#E53935',
         'Дизель': '#FF8C00',
@@ -461,16 +460,15 @@ App.ui.pages.renderFuelCards = function() {
             html += '<button class="icon-btn" data-action="edit-fuel" data-idx="' + originalIndex + '"><i data-lucide="pencil"></i></button>';
             html += '<button class="icon-btn" data-action="delete-fuel" data-idx="' + originalIndex + '"><i data-lucide="trash-2"></i></button>';
             html += '</div>';
-            html += '</div>'; // card-header
-            html += '</div>'; // card-item
+            html += '</div>';
+            html += '</div>';
         });
 
-        html += '</div></div>'; // accordion-body, accordion-group
+        html += '</div></div>';
     });
 
     container.innerHTML = html;
 
-    // Обработчики аккордеонов
     container.querySelectorAll('.accordion-header').forEach(function(header) {
         header.addEventListener('click', function() {
             var body = header.nextElementSibling;
@@ -520,19 +518,19 @@ App.ui.pages.checkFuelOrderConflicts = function(dateISO, mileage, excludeRowInde
     var message = '';
     if (prev && prev.mileage > mileage) {
         conflict = true;
-        message += '⚠️ Пробег (' + mileage + ' км) меньше предыдущей заправки от ' + prev.date + ' (' + prev.mileage + ' км). ';
+        message += '⚠ Пробег (' + mileage + ' км) меньше предыдущей заправки от ' + prev.date + ' (' + prev.mileage + ' км). ';
     }
     if (next && next.mileage < mileage) {
         conflict = true;
-        message += '⚠️ Пробег (' + mileage + ' км) больше следующей заправки от ' + next.date + ' (' + next.mileage + ' км). ';
+        message += '⚠ Пробег (' + mileage + ' км) больше следующей заправки от ' + next.date + ' (' + next.mileage + ' км). ';
     }
     if (prev && prev.date > dateISO) {
         conflict = true;
-        message += '⚠️ Дата (' + dateISO + ') раньше предыдущей заправки от ' + prev.date + '. ';
+        message += '⚠ Дата (' + dateISO + ') раньше предыдущей заправки от ' + prev.date + '. ';
     }
     if (next && next.date < dateISO) {
         conflict = true;
-        message += '⚠️ Дата (' + dateISO + ') позже следующей заправки от ' + next.date + '. ';
+        message += '⚠ Дата (' + dateISO + ') позже следующей заправки от ' + next.date + '. ';
     }
     return { hasConflict: conflict, message: message, prevRecord: prev, nextRecord: next };
 };
@@ -570,7 +568,7 @@ App.ui.pages.openFuelModal = function(record) {
     var modal = App.ui.createModal(isEdit ? '<i data-lucide="fuel"></i> Редактировать заправку' : '<i data-lucide="fuel"></i> Добавить заправку', content);
     var form = modal.querySelector('#fuel-form');
 
-    form.onsubmit = function(e) {
+    form.onsubmit = async function(e) {
         e.preventDefault();
         var formEl = e.target;
         var dateStr = formEl.querySelector('[name="date"]').value.trim();
@@ -584,7 +582,8 @@ App.ui.pages.openFuelModal = function(record) {
         var id = d.id || null;
         var conflict = App.ui.pages.checkFuelOrderConflicts(dateISO, mileage, id ? null : null);
         if (conflict.hasConflict) {
-            if (!confirm(conflict.message + '\n\nСохранить, несмотря на нарушение порядка?')) return;
+            const confirmed = await App.ui.confirmModalAsync(conflict.message + '\n\nСохранить, несмотря на нарушение порядка?');
+            if (!confirmed) return;
         }
 
         modal.remove();
@@ -652,10 +651,10 @@ App.ui.pages.deleteFuelEntry = function(idx) {
     });
 };
 
-App.ui.pages.startVoiceFuelInput = function() {
+App.ui.pages.startVoiceFuelInput = async function() {
     var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) {
-        alert('Распознавание речи не поддерживается в этом браузере');
+        await App.ui.alertModal('Распознавание речи не поддерживается в этом браузере');
         return;
     }
     var rec = new SR();
@@ -669,16 +668,16 @@ App.ui.pages.startVoiceFuelInput = function() {
         App.ui.pages.parseFuelVoice(text);
         if (voiceBtn) voiceBtn.classList.remove('recording');
     };
-    rec.onerror = function(e) {
+    rec.onerror = async function(e) {
         if (voiceBtn) voiceBtn.classList.remove('recording');
-        alert(e.error === 'not-allowed' ? 'Доступ к микрофону запрещён.' : 'Ошибка распознавания: ' + e.error);
+        await App.ui.alertModal(e.error === 'not-allowed' ? 'Доступ к микрофону запрещён.' : 'Ошибка распознавания: ' + e.error);
     };
 };
 
-App.ui.pages.parseFuelVoice = function(text) {
+App.ui.pages.parseFuelVoice = async function(text) {
     var nums = text.match(/\d+(?:[.,]\d+)?/g);
     if (!nums || nums.length < 2) {
-        alert('Скажите пробег и литры. Например: "пробег двенадцать тысяч литров сорок два"');
+        await App.ui.alertModal('Скажите пробег и литры. Например: "пробег двенадцать тысяч литров сорок два"');
         return;
     }
     var mileage = parseInt(nums[0]);
