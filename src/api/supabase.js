@@ -412,6 +412,14 @@ App.supa.deleteCarDocument = async function(docId) {
     return true;
 };
 
+// ========== Получение списка пользователей с доступом к автомобилю ==========
+App.supa.getCarShares = function(carId) {
+    ensureSupabase();
+    return App.supabase.from('car_shares')
+        .select('*')
+        .eq('car_id', carId);
+};
+
 // ---------- Мульти-авто и совместный доступ (окончание) ----------
 App.supa.deleteCarShare = function(shareId) {
     ensureSupabase();
