@@ -1,0 +1,206 @@
+1. Структура фронтенда (ключевые модули и их взаимосвязи)
+
+```
+src/
+├── config/                     # константы, настройки приложения
+│   ├── constants.js            # APP_VERSION, ключи localStorage, премиум-функции
+│   └── defaults.js             # начальные значения для store
+├── utils/                      # вспомогательные функции
+│   ├── dom.js                  # тосты, иконки, синхронизация статуса
+│   ├── dates.js                # преобразование дат, маски ввода
+│   └── validate.js             # валидация чисел
+├── api/                        # слой работы с Supabase и офлайн-очередью
+│   ├── supabase.js             # DAL: методы для всех таблиц, загрузка/сохранение
+│   └── storage.js              # CRUD с проверкой online/offline, queueAction
+├── state/
+│   └── store.js                # единый источник данных, загрузка из IndexedDB
+├── db/                         # работа с IndexedDB и синхронизация
+│   ├── indexedDB.js            # инициализация, хранилища, CRUD, миграция
+│   ├── sync.js                 # обработка очереди pendingActions, конфликты
+│   ├── encryption.js           # шифрование/дешифрование, верификация пароля
+│   └── killSwitch.js           # проверка remote kill, уничтожение базы
+├── logic/                      # бизнес-логика (не зависит от UI)
+│   ├── planner.js              # расчёт планов ТО, дней до события
+│   ├── statistics.js           # фильтрация, агрегация расходов
+│   ├── operations.js           # добавление записей ТО, валидация
+│   └── timeline.js             # группировка затрат по месяцам, прогнозы
+├── modules/                    # динамически загружаемые модули (премиум)
+│   ├── moduleLoader.js         # import() с проверкой прав
+│   ├── premium.js              # проверка статуса подписки, активация ключа
+│   └── premium/                # конкретные премиум-функции
+│       ├── imageCache.js       # кэширование фото (Cache API + IndexedDB)
+│       ├── geolocation.js      # карта, маршруты (Leaflet, OSRM, Nominatim)
+│       ├── elm.js              # Web Bluetooth, ELM327, синхронизация данных
+│       └── partsSearch.js      # VIN/номер → характеристики авто + поиск запчастей
+├── ui/                         # компоненты и страницы
+│   ├── components/
+│   │   ├── modal.js            # модальные окна, confirm/prompt Promise
+│   │   ├── charts.js           # графики на главной (расход, затраты)
+│   │   └── timelineCharts.js   # графики для десктопного дашборда
+│   └── pages/
+│       ├── dashboard.js        # главный экран (мобильный/десктоп)
+│       ├── maintenance.js      # ТО: операции, прогресс-бары, гистограммы
+│       ├── stats.js            # финансы: метрики, сравнение периодов
+│       ├── history.js          # история ТО с фильтрами
+│       ├── fuel.js             # заправки, графики цены и расхода
+│       ├── tires.js            # шины, калькулятор, износ
+│       ├── parts.js            # запчасти, поиск, склад
+│       ├── settings.js         # настройки, Premium, смена паролей
+│       ├── cars.js             # автомобили, документы, VIN/номер поиск
+│       └── importCsv.js        # импорт CSV для разных типов
+├── events.js                   # глобальные обработчики кликов, навигация, online/offline
+├── main.js                     # точка входа: инициализация DB, Supabase, auth, kill, premium
+└── vendor/
+    └── supabase.min.js         # клиент Supabase
+```
+
+Взаимодействие между модулями (упрощённая диаграмма)
+
+```
+[main.js] → инициализирует App.db, App.supa, проверяет kill, запускает синхронизацию
+         → устанавливает обработчики auth и online/offline
+         → вызывает App.events.init() и переключает на вкладку dashboard
+
+[events.js] → слушает клики на кнопки (data-action)
+           → вызывает методы страниц (App.ui.pages.*)
+           → при online/offline вызывает App.db.sync.forceSync()
+
+[store.js]   ←→ [db/indexedDB.js]   (загрузка/сохранение данных)
+[store.js]   ←→ [api/storage.js]    (при онлайн-запросах обновляет и БД, и сервер)
+
+[api/storage.js] → вызывает [api/supabase.js] (онлайн) или
+                 → [state/store.js].addPendingAction (офлайн) + обновляет IndexedDB
+
+[api/supabase.js] → напрямую общается с Supabase (через App.supabase)
+
+[db/sync.js]   → читает pendingActions из IndexedDB, отправляет через supabase, удаляет при успехе
+[db/encryption.js] → используется [store.js] при загрузке/сохранении настроек
+[db/killSwitch.js] → периодически проверяет RPC, при активации уничтожает БД
+
+[modules/moduleLoader.js] → динамический import() премиум-модулей
+[modules/premium.js] → проверяет подписку, активирует ключ
+[ui/pages/cars.js] → вызывает moduleLoader.load('premium/partsSearch') для VIN/номера
+```
+
+2. Взаимодействие фронтенда с бэкендом (Supabase)
+
+Основные сущности (таблицы) и операции
+
+Таблица Операции через App.supa Используется в
+operations load, save, delete maintenance.js
+fuel_log load, save, delete fuel.js
+tires load, save, delete tires.js
+parts load, save, delete parts.js
+history load, save, delete history.js, maintenance.js
+mileage_log load, save (addMileageRecord) dashboard.js, events.js
+cars load, create, rename, delete cars.js
+car_shares get, createInvite, accept, decline, delete cars.js
+vehicle_state get, upsert cars.js (базовые параметры)
+user_settings upsert settings.js, storage.js
+push_subscriptions upsert, delete settings.js
+recovery_codes select, insert, delete main.js (генерация)
+calendar_tokens get, create cars.js
+car_documents load, add, update, delete cars.js
+kill_switches RPC check_kill_switch killSwitch.js
+subscription_keys RPC activate_premium_key premium.js
+user_devices RPC check_premium_status, deactivate_device premium.js
+subscription_key_features (связка) premium.js
+vin_cache select, upsert (через Edge Function) partsSearch.js
+plate_cache select, upsert (через Edge Function) partsSearch.js
+parts_cache select, upsert (через Edge Function) partsSearch.js
+
+Edge Functions
+
+Функция Вызывается из Назначение
+vin-lookup partsSearch.getVehicleInfo() Декодировать VIN через NHTSA, кэшировать результат
+dvla-lookup partsSearch.getVehicleInfoByPlate() Получить данные по британскому номеру (DVLA API)
+rdw-lookup partsSearch.getVehicleInfoByPlate() Получить данные по нидерландскому номеру (открытое API)
+parts-search partsSearch.searchPartsByVIN/OEM() Поиск запчастей через 17vin.com (требуется API-ключ)
+calendar-feed cars.subscribeToCalendar() Генерация iCal для планов ТО (используется в календаре)
+secure-reset-password main.js (recoverVia...) Сброс пароля через резервный код / Telegram
+send-telegram-recovery main.js (recoverViaTelegram) Отправка кода восстановления в Telegram
+
+Поток данных при офлайн-операции
+
+1. Пользователь добавляет операцию (offline) → storage.saveOperation() видит !navigator.onLine → queueAction() добавляет запись в pending_actions IndexedDB → обновляет App.store и IndexedDB через saveOperationToDB() → показывает тост.
+2. При возврате сети → событие online вызывает App.db.sync.forceSync() → sync.js читает все pending_actions, отправляет по очереди в Supabase.
+3. Если сервер возвращает 409 (конфликт), загружается серверная версия и заменяет локальную (Last Write Wins).
+4. После успешной отправки действие удаляется из очереди.
+
+Шифрование
+
+· Поля telegramToken, telegramChatId, vin, plateNumber хранятся в settings в зашифрованном виде (AES-GCM).
+· Ключ шифрования получается из пароля пользователя (PBKDF2) и хранится в памяти сессии.
+· При первом сохранении создаётся верификационная строка CarLoggerVerified.
+· При смене пароля шифрования все секреты перешифровываются.
+
+3. Структура таблиц Supabase (основные колонки)
+
+```sql
+-- Основные таблицы (без изменений)
+operations (id, category, name, interval_km, interval_months, interval_motohours, last_date, last_mileage, last_motohours, user_id, car_id)
+fuel_log (id, date, mileage, liters, price_per_liter, full_tank, fuel_type, notes, user_id, car_id)
+tires (id, date, type, mileage, model, size, wear, notes, purchase_cost, mount_cost, is_diy, user_id, car_id)
+parts (id, operation, oem, analog, price, supplier, link, comment, in_stock, location, purchase_date, user_id, car_id)
+history (id, operation_id, date, mileage, motohours, parts_cost, work_cost, is_diy, notes, photo_url, user_id, car_id)
+mileage_log (id, date, mileage, motohours, user_id, car_id)
+cars (id, name, user_id)
+car_shares (id, car_id, invited_email, invited_user_id, invite_code, accepted, created_at)
+vehicle_state (car_id, current_mileage, current_motohours, avg_daily_mileage, avg_daily_motohours, car_brand, car_model, car_year, plate_number, vin, base_mileage, base_motohours, purchase_date, purchase_cost)
+user_settings (user_id, car_id, telegram_token, telegram_chat_id, notification_method, reminder_days)
+push_subscriptions (user_id, player_id, updated_at)
+recovery_codes (id, user_id, code_hash, used, created_at)
+calendar_tokens (id, car_id, token)
+car_documents (id, car_id, user_id, type, date, photo_url, amount, notes, created_at)
+
+-- Kill switch
+kill_switches (id, user_id, database_id, kill_code, activated, request_timestamp, activated_timestamp, requested_by, created_at)
+kill_notifications (id, admin_email, user_id, database_id, message, sent, created_at)
+
+-- Premium подписка
+subscription_keys (id, key_value, owner_user_id, max_devices, created_at, expires_at, is_active)
+user_devices (id, user_id, device_id, device_name, activated_at, last_used_at, is_active)
+subscription_key_features (key_id, feature_name)
+
+-- Кэши для поиска запчастей
+vin_cache (vin, data, source, created_at, expires_at)
+plate_cache (plate, country, data, created_at, expires_at)
+parts_cache (id, key, data, created_at, expires_at)
+```
+
+RLS политики (пример)
+
+· Для всех таблиц с user_id или car_id созданы политики, ограничивающие доступ только к записям, где user_id = auth.uid() или car_id принадлежит пользователю (через cars или car_shares).
+· Таблицы кэша (vin_cache, plate_cache, parts_cache) разрешают SELECT и INSERT для аутентифицированных пользователей (без привязки к конкретному пользователю).
+· kill_switches доступна только для служебной роли (администратора).
+
+4. Схема взаимодействия при поиске запчастей (пример)
+
+```
+[Пользователь вводит VIN на вкладке Автомобиль]
+    ↓
+cars.js → vinInfoBtn → App.modules.load('premium/partsSearch')
+    ↓
+partsSearch.showVehicleInfoModal(vin)
+    ↓
+getVehicleInfo(vin) →
+    ├─ Проверка локального кэша (IndexedDB, 30 дней)
+    ├─ Локальный декодер @cardog/corgi (офлайн)
+    └─ Вызов Edge Function vin-lookup (NHTSA, кэширует в Supabase)
+    ↓
+[Отображение таблицы с характеристиками авто]
+    ↓
+[Premium пользователь нажимает «Найти запчасти»]
+    ↓
+searchPartsByVIN(vin) →
+    ├─ Кэш IndexedDB (7 дней)
+    └─ Edge Function parts-search → запрос к 17vin.com с токеном
+    ↓
+[Отображение списка OEM, цен, поставщиков]
+```
+
+Все операции кэшируются на уровне Supabase и IndexedDB для минимизации запросов к платным API.
+
+---
+
+Данная структура и взаимодействия полностью отражают текущее состояние приложения после рефакторинга. Любой новый разработчик, ознакомившись с этим документом, сможет быстро понять архитектуру, найти нужные файлы и продолжить развитие проекта.

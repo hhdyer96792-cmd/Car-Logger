@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Redirecting...</title>
+  <script>
+    // Определяем базовый путь: берём текущий путь, убираем последний сегмент (404.html)
+    var pathSegments = location.pathname.split('/');
+    // если последний сегмент пустой (в конце слеш), убираем его
+    if (pathSegments[pathSegments.length - 1] === '') pathSegments.pop();
+    // убираем имя текущего файла (обычно 404.html)
+    pathSegments.pop();
+    var basePath = pathSegments.join('/');
+    if (!basePath) basePath = ''; // на случай корня
+
+    // Сохраняем исходный URL для восстановления в SPA
+    sessionStorage.redirect = location.href;
+
+    // Перенаправляем на index.html, сохраняя query и hash
+    window.location.href = basePath + '/index.html' + (location.search ? location.search : '') + (location.hash ? location.hash : '');
+  </script>
+</head>
+<body>
+  Redirecting...
+</body>
+</html>

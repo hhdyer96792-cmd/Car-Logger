@@ -1,0 +1,597 @@
+// src/events.js
+window.App = window.App || {};
+App.events = App.events || {};
+
+// Храним текущую активную вкладку, чтобы избежать повторных рендеров
+App.events.currentActiveTab = null;
+
+App.events.init = function() {
+    App.events.setupDelegation();
+    App.events.initNavigation();
+    App.events.initTheme();
+    App.events.initDirectListeners();
+    App.events.initHistoryFilters();
+    App.events.initStatsListeners();
+    
+    // ===== НОВЫЕ СЛУШАТЕЛИ СЕТИ =====
+    window.addEventListener('online', function() {
+        if (typeof App.toast === 'function') {
+            App.toast('Сеть восстановлена. Запускаем синхронизацию...', 'success');
+        }
+        if (typeof App.db.sync.forceSync === 'function') {
+            App.db.sync.forceSync();
+        }
+    });
+
+    window.addEventListener('offline', function() {
+        if (typeof App.toast === 'function') {
+            App.toast('Вы офлайн. Изменения будут сохранены локально и синхронизируются позже.', 'warning');
+        }
+    });
+    // ===== КОНЕЦ НОВЫХ СЛУШАТЕЛЕЙ =====
+};
+
+App.events.setupDelegation = function() {
+    document.body.addEventListener('click', function(e) {
+        var target = e.target.closest('[data-action]');
+        if (!target) return;
+        var action = target.dataset.action;
+
+        switch (action) {
+            case 'add-record':
+                var opId = target.dataset.opId;
+                var opName = target.dataset.opName;
+                if (opId && opName) App.ui.pages.openServiceModal(opId, opName);
+                break;
+            case 'delete-op':
+                var delOpId = target.dataset.opId;
+                if (!delOpId) return;
+                App.ui.confirmModal('Удалить операцию? Это действие нельзя отменить.', function() {
+                    App.storage.deleteOperation(delOpId).then(function() {
+                        App.storage.loadAllData();
+                        App.toast('Операция удалена', 'success');
+                    }).catch(function(err) {
+                        console.error(err);
+                        App.toast('Не удалось удалить операцию (недостаточно прав)', 'error');
+                    });
+                });
+                break;
+            case 'calendar':
+                var calOpId = target.dataset.opId;
+                var calOpName = target.dataset.opName;
+                var calPlanDate = target.dataset.planDate;
+                var calPlanMileage = target.dataset.planMileage;
+                if (calOpId && calPlanDate) {
+                    App.events.addToCalendar(calOpId, calOpName, calPlanDate, calPlanMileage);
+                }
+                break;
+            case 'shopping-list':
+                var shopOpId = target.dataset.opId;
+                if (shopOpId) App.ui.pages.generateShoppingList(shopOpId);
+                break;
+            case 'edit-part':
+                var partId = target.dataset.id;
+                var part = App.store.parts.find(function(p) { return p.id == partId; });
+                if (part) App.ui.pages.openPartForm(part);
+                break;
+            case 'delete-part':
+                var delPartId = target.dataset.id;
+                if (!delPartId) return;
+                App.ui.confirmModal('Удалить запчасть?', function() {
+                    App.ui.pages.deletePart(delPartId);
+                });
+                break;
+            case 'search-part':
+                var oem = target.dataset.oem;
+                if (oem) App.ui.pages.showCatalogMenu(target, oem);
+                break;
+            case 'price-history':
+                var histPartId = target.dataset.id;
+                var histPart = App.store.parts.find(function(p) { return p.id == histPartId; });
+                if (histPart) App.ui.pages.showPriceHistoryChart(histPart);
+                break;
+            case 'edit-fuel':
+                var fuelIdx = parseInt(target.dataset.idx);
+                var fuelRec = App.store.fuelLog[fuelIdx];
+                if (fuelRec) {
+                    fuelRec.id = fuelRec.id;
+                    App.ui.pages.openFuelModal(fuelRec);
+                }
+                break;
+            case 'delete-fuel':
+                var delFuelIdx = parseInt(target.dataset.idx);
+                if (isNaN(delFuelIdx)) return;
+                if (!confirm('Удалить заправку?')) return;
+                App.ui.pages.deleteFuelEntry(delFuelIdx);
+                break;
+            case 'edit-tire':
+                var tireIdx = parseInt(target.dataset.idx);
+                var tireRec = App.store.tireLog[tireIdx];
+                if (tireRec) {
+                    App.ui.pages.openTireModal(tireRec);
+                }
+                break;
+            case 'delete-tire':
+                var delTireIdx = parseInt(target.dataset.idx);
+                if (isNaN(delTireIdx)) return;
+                if (!confirm('Удалить запись о шинах?')) return;
+                App.ui.pages.deleteTireEntry(delTireIdx);
+                break;
+            case 'edit-history':
+                var histRow = target.dataset.row;
+                if (histRow) App.ui.pages.openHistoryEdit(histRow);
+                break;
+            case 'delete-history':
+                var delHistRow = target.dataset.row;
+                if (!delHistRow) return;
+                if (!confirm('Удалить запись из истории? Это действие нельзя отменить.')) return;
+                App.ui.pages.deleteHistoryEntry(delHistRow);
+                break;
+            case 'execute-plan':
+                var planOpId = target.dataset.opId;
+                var planOpName = target.dataset.opName;
+                if (planOpId && planOpName) App.ui.pages.openServiceModal(planOpId, planOpName);
+                break;
+        }
+    });
+};
+
+App.events.addToCalendar = function(opId, opName, planDate, planMileage) {
+    var parts = App.store.parts.filter(function(p) {
+        var op = App.store.operations.find(function(o) { return o.id == opId; });
+        return p.operation === opName || p.operation === (op ? op.category : '');
+    });
+
+    var partsList = '';
+    if (parts.length > 0) {
+        partsList = '\\n\\nСписок запчастей:\\n';
+        parts.forEach(function(p) {
+            var status = (p.inStock && p.inStock > 0) ? '✅' : '☐';
+            partsList += status + ' ' + (p.oem || p.analog || p.operation) + (p.price ? ' (' + p.price + '₽)' : '') + '\\n';
+        });
+    }
+
+    var description = 'Пробег: ' + (planMileage || '—') + ' км.' + partsList;
+    var uid = opId + '-vesta-' + planDate;
+    var dtStart = planDate.replace(/-/g, '') + 'T090000';
+    var dtEnd   = planDate.replace(/-/g, '') + 'T100000';
+    var now = new Date().toISOString().replace(/[-:]/g, '').slice(0, 15) + 'Z';
+
+    var icsContent = 'BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Vesta Dashboard//RU\r\nCALSCALE:GREGORIAN\r\nMETHOD:PUBLISH\r\n' +
+        'BEGIN:VEVENT\r\n' +
+        'UID:' + uid + '\r\n' +
+        'DTSTART:' + dtStart + '\r\n' +
+        'DTEND:' + dtEnd + '\r\n' +
+        'SUMMARY:ТО: ' + opName + '\r\n' +
+        'DESCRIPTION:' + description + '\r\n' +
+        'DTSTAMP:' + now + '\r\n' +
+        'END:VEVENT\r\n' +
+        'END:VCALENDAR';
+    var blob = new Blob([icsContent], { type: 'text/calendar;charset=utf-8' });
+    var link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = opName.replace(/\s/g, '_') + '_' + planDate + '.ics';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    App.toast('Событие календаря скачано', 'success');
+};
+
+App.events.initNavigation = function() {
+    document.querySelectorAll('.sidebar-item').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            var tab = btn.dataset.tab;
+            if (tab) App.events.switchToTab(tab);
+        });
+    });
+
+    document.querySelectorAll('.bottom-nav-item').forEach(function(btn) {
+        if (btn.id === 'more-menu-btn') return;
+        btn.addEventListener('click', function() {
+            var tab = btn.dataset.tab;
+            if (tab) App.events.switchToTab(tab);
+            App.events.closeDrawer();
+        });
+    });
+
+    var moreBtn = document.getElementById('more-menu-btn');
+    if (moreBtn) moreBtn.addEventListener('click', App.events.openDrawer);
+
+    var drawer = document.getElementById('drawer-menu');
+    if (drawer) {
+        drawer.querySelector('.drawer-overlay').addEventListener('click', App.events.closeDrawer);
+        drawer.querySelectorAll('.drawer-item[data-tab]').forEach(function(item) {
+            item.addEventListener('click', function() {
+                App.events.switchToTab(item.dataset.tab);
+                App.events.closeDrawer();
+            });
+        });
+    }
+
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape' && drawer && !drawer.classList.contains('hidden')) {
+            App.events.closeDrawer();
+        }
+    });
+};
+
+App.events.switchToTab = function(tabId) {
+    // Если вкладка уже активна – ничего не делаем (предотвращает лишние перерисовки)
+    if (App.events.currentActiveTab === tabId) return;
+
+    document.body.style.overflow = '';
+    var allTabs = document.querySelectorAll('.tab-content');
+    allTabs.forEach(function(tab) {
+        if (tab.id === 'tab-' + tabId) {
+            tab.classList.remove('active');
+            setTimeout(function() {
+                tab.classList.add('active');
+            }, 10);
+        } else {
+            tab.classList.remove('active');
+        }
+    });
+
+    document.querySelectorAll('.sidebar-item, .bottom-nav-item').forEach(function(btn) {
+        btn.classList.remove('active');
+        if (btn.dataset.tab === tabId) btn.classList.add('active');
+    });
+
+    App.events.closeDrawer();
+
+    // Запоминаем текущую вкладку
+    App.events.currentActiveTab = tabId;
+
+    switch (tabId) {
+        case 'dashboard':
+            if (typeof App.ui.pages.renderDashboard === 'function') App.ui.pages.renderDashboard();
+            break;
+        case 'to':
+            (async function() {
+                if (!App.store.operations || App.store.operations.length === 0) {
+                    await App.storage.loadAllData();
+                }
+                if (typeof App.ui.pages.renderTotalCost === 'function') App.ui.pages.renderTotalCost();
+                if (typeof App.ui.pages.renderTOStats === 'function') App.ui.pages.renderTOStats();
+                if (typeof App.ui.pages.renderOilResourceCard === 'function') App.ui.pages.renderOilResourceCard();
+                if (typeof App.ui.pages.renderResourceBars === 'function') App.ui.pages.renderResourceBars();
+                if (typeof App.ui.pages.renderTOCostChart === 'function') App.ui.pages.renderTOCostChart();
+                if (typeof App.ui.pages.renderTOCategoryPieChart === 'function') App.ui.pages.renderTOCategoryPieChart();
+                if (typeof App.ui.pages.renderTOTable === 'function') App.ui.pages.renderTOTable();
+            })();
+            break;
+        case 'stats':
+            if (typeof App.ui.pages.renderFinanceTab === 'function') App.ui.pages.renderFinanceTab();
+            break;
+        case 'history':
+            if (typeof App.ui.pages.initHistoryFilters === 'function') App.ui.pages.initHistoryFilters();
+            if (typeof App.ui.pages.renderHistoryCards === 'function') App.ui.pages.renderHistoryCards();
+            break;
+        case 'fuel':
+            if (typeof App.ui.pages.renderFuelTab === 'function') App.ui.pages.renderFuelTab();
+            break;
+        case 'tires':
+            if (typeof App.ui.pages.renderTiresTab === 'function') App.ui.pages.renderTiresTab();
+            break;
+        case 'parts':
+            if (typeof App.ui.pages.renderPartsTab === 'function') App.ui.pages.renderPartsTab();
+            break;
+        case 'car':
+            if (typeof App.ui.pages.renderCarTab === 'function') App.ui.pages.renderCarTab();
+            break;
+          case 'settings':
+            if (typeof App.ui.pages.populateSettingsFields === 'function') App.ui.pages.populateSettingsFields();
+            // Добавляем проверку статуса подписки при открытии вкладки настроек
+            if (typeof App.ui.pages.checkPushSubscriptionStatus === 'function') {
+App.ui.pages.checkPushSubscriptionStatus();
+            }
+            break;
+    }
+
+    setTimeout(function() { App.initIcons(); }, 150);
+};
+
+App.events.openDrawer = function() {
+    var drawer = document.getElementById('drawer-menu');
+    if (drawer) {
+        drawer.classList.remove('hidden');
+        document.body.classList.add('drawer-open');
+    }
+};
+
+App.events.closeDrawer = function() {
+    var drawer = document.getElementById('drawer-menu');
+    if (drawer) {
+        drawer.classList.add('hidden');
+        document.body.classList.remove('drawer-open');
+    }
+};
+
+App.events.initTheme = function() {
+    var savedTheme = localStorage.getItem(App.config.THEME_KEY);
+    if (savedTheme) {
+        App.events.applyTheme(savedTheme);
+    } else {
+        var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        App.events.applyTheme(prefersDark ? 'dark' : 'light');
+    }
+
+    var themeToggle = document.getElementById('theme-toggle');
+    if (themeToggle) themeToggle.addEventListener('click', App.events.toggleTheme);
+
+    var sidebarTheme = document.getElementById('sidebar-theme');
+    if (sidebarTheme) sidebarTheme.addEventListener('click', App.events.toggleTheme);
+};
+
+App.events.applyTheme = function(theme) {
+    if (theme === 'dark') {
+        document.body.classList.add('dark');
+        var themeToggle = document.getElementById('theme-toggle');
+        if (themeToggle) themeToggle.innerHTML = '<i data-lucide="sun"></i>';
+        var sidebarTheme = document.getElementById('sidebar-theme');
+        if (sidebarTheme) sidebarTheme.innerHTML = '<i data-lucide="sun"></i>';
+    } else {
+        document.body.classList.remove('dark');
+        var themeToggle = document.getElementById('theme-toggle');
+        if (themeToggle) themeToggle.innerHTML = '<i data-lucide="moon"></i>';
+        var sidebarTheme = document.getElementById('sidebar-theme');
+        if (sidebarTheme) sidebarTheme.innerHTML = '<i data-lucide="moon"></i>';
+    }
+    localStorage.setItem(App.config.THEME_KEY, theme);
+    App.initIcons();
+};
+
+App.events.toggleTheme = function() {
+    var isDark = document.body.classList.contains('dark');
+    App.events.applyTheme(isDark ? 'light' : 'dark');
+};
+
+App.events.initDirectListeners = function() {
+    var addOperationBtn = document.getElementById('add-operation-btn');
+    if (addOperationBtn) addOperationBtn.addEventListener('click', function() { App.ui.pages.openOperationForm(null); });
+
+    var exportBtn = document.getElementById('export-btn');
+    if (exportBtn) exportBtn.addEventListener('click', App.ui.pages.exportToExcelAll);
+
+    var importBtn = document.getElementById('import-btn');
+    var importFile = document.getElementById('import-file');
+    if (importBtn && importFile) {
+        importBtn.addEventListener('click', function() { importFile.click(); });
+        importFile.addEventListener('change', App.events.handleImport);
+    }
+
+    var updateMileageBtn = document.getElementById('update-mileage-btn');
+    if (updateMileageBtn) updateMileageBtn.addEventListener('click', App.events.updateMileageAndAverages);
+
+    var addFuelBtn = document.getElementById('add-fuel-btn');
+    if (addFuelBtn) addFuelBtn.addEventListener('click', function() { App.ui.pages.openFuelModal(null); });
+
+    var voiceFuelBtn = document.getElementById('voice-fuel-btn');
+    if (voiceFuelBtn) voiceFuelBtn.addEventListener('click', App.ui.pages.startVoiceFuelInput);
+
+    var addTireBtn = document.getElementById('add-tire-btn');
+    if (addTireBtn) addTireBtn.addEventListener('click', function() { App.ui.pages.openTireModal(null); });
+
+    var addPartBtn = document.getElementById('add-part-btn');
+    if (addPartBtn) addPartBtn.addEventListener('click', function() { App.ui.pages.openPartForm(null); });
+
+    var saveSettingsBtn = document.getElementById('save-settings-btn');
+    if (saveSettingsBtn) saveSettingsBtn.addEventListener('click', App.ui.pages.saveSettings);
+
+    var subscribePushBtn = document.getElementById('subscribe-push-btn');
+    if (subscribePushBtn) subscribePushBtn.addEventListener('click', App.ui.pages.subscribeToPush);
+
+    var exportDataBtn = document.getElementById('export-data-btn');
+    if (exportDataBtn) exportDataBtn.addEventListener('click', App.ui.pages.handleExport);
+
+    var generatePdfBtn = document.getElementById('generate-pdf-btn');
+    if (generatePdfBtn) generatePdfBtn.addEventListener('click', App.ui.pages.generateServiceReport);
+
+    var toggleOwnershipBtn = document.getElementById('toggle-ownership-unit');
+    if (toggleOwnershipBtn) toggleOwnershipBtn.addEventListener('click', App.ui.pages.toggleOwnershipUnit);
+
+    var dashUpdateMileageBtn = document.getElementById('dash-update-mileage-btn');
+    if (dashUpdateMileageBtn) dashUpdateMileageBtn.addEventListener('click', function() {
+        App.events.switchToTab('to');
+        var newMileageInput = document.getElementById('new-mileage');
+        if (newMileageInput) setTimeout(function() { newMileageInput.focus(); }, 200);
+    });
+
+    var dashAddFuelBtn = document.getElementById('dash-add-fuel-btn');
+    if (dashAddFuelBtn) dashAddFuelBtn.addEventListener('click', function() { App.ui.pages.openFuelModal(null); });
+
+    var dashAddServiceBtn = document.getElementById('dash-add-service-btn');
+    if (dashAddServiceBtn) dashAddServiceBtn.addEventListener('click', function() {
+        var upcoming = document.getElementById('dash-upcoming-container');
+        var firstOp = upcoming?.querySelector('.top5-name');
+        if (firstOp) {
+            var opName = firstOp.textContent;
+            var op = App.store.operations.find(function(o) { return o.name === opName; });
+            if (op) App.ui.pages.openServiceModal(op.id, op.name);
+            else App.events.switchToTab('to');
+        } else {
+            App.events.switchToTab('to');
+        }
+    });
+
+    var dashPredictBtn = document.getElementById('dash-predict-btn');
+    if (dashPredictBtn) dashPredictBtn.addEventListener('click', function() {
+        var target = parseFloat(document.getElementById('dash-target-mileage')?.value);
+        if (isNaN(target)) return;
+        var result = App.logic.predictMileageDate(target);
+        var resultEl = document.getElementById('dash-prediction-result');
+        if (resultEl) {
+            if (result) {
+                resultEl.textContent = 'Ожидаемая дата: ' + result.toLocaleDateString('ru-RU', { year: 'numeric', month: 'long', day: 'numeric' });
+            } else {
+                resultEl.textContent = 'Недостаточно данных или некорректный пробег.';
+            }
+        }
+        App.initIcons();
+    });
+
+    var resetZoomBtn = document.getElementById('reset-all-zoom');
+    if (resetZoomBtn) resetZoomBtn.addEventListener('click', function() {
+        ['fuelConsumptionChart', 'fuelPriceChart', 'costsChart'].forEach(function(id) {
+            var chart = App.charts.activeCharts[id];
+            if (chart && typeof chart.resetZoom === 'function') chart.resetZoom();
+        });
+    });
+
+    var toCostPeriod = document.getElementById('to-cost-period');
+    if (toCostPeriod) {
+        toCostPeriod.addEventListener('change', function() {
+            if (document.getElementById('tab-to')?.classList.contains('active')) {
+                App.ui.pages.renderTOCostChart();
+            }
+        });
+    }
+
+    var settingsThemeToggle = document.getElementById('settings-theme-toggle');
+    if (settingsThemeToggle) {
+        settingsThemeToggle.addEventListener('click', function() {
+            App.events.toggleTheme();
+            var isDark = document.body.classList.contains('dark');
+            this.innerHTML = isDark ? '<i data-lucide="sun"></i> Светлая тема' : '<i data-lucide="moon"></i> Тёмная тема';
+            App.initIcons();
+        });
+    }
+};
+
+App.events.initHistoryFilters = function() {
+    ['history-period-select', 'history-operation-filter', 'history-category-filter', 'history-executor-filter',
+     'history-search', 'history-diy-only', 'history-cost-min', 'history-cost-max', 'history-mileage-min', 'history-mileage-max', 'history-sort-order'
+    ].forEach(function(id) {
+        var el = document.getElementById(id);
+        if (el) {
+            var eventType = (el.tagName === 'INPUT' && el.type === 'checkbox') ? 'change' : (el.tagName === 'INPUT' ? 'input' : 'change');
+            el.addEventListener(eventType, App.ui.pages.renderHistoryCards);
+        }
+    });
+
+    var resetFiltersBtn = document.getElementById('history-reset-filters');
+    if (resetFiltersBtn) {
+        resetFiltersBtn.addEventListener('click', function() {
+            ['history-period-select', 'history-operation-filter', 'history-category-filter', 'history-executor-filter',
+             'history-search', 'history-diy-only', 'history-cost-min', 'history-cost-max', 'history-mileage-min', 'history-mileage-max', 'history-sort-order'
+            ].forEach(function(id) {
+                var el = document.getElementById(id);
+                if (el) {
+                    if (el.type === 'checkbox') el.checked = false;
+                    else el.value = '';
+                }
+            });
+            document.getElementById('history-sort-order').value = 'date-desc';
+            App.ui.pages.renderHistoryCards();
+        });
+    }
+};
+
+App.events.initStatsListeners = function() {
+    var periodSelect = document.getElementById('stats-period-select');
+    if (periodSelect) {
+        periodSelect.value = localStorage.getItem(App.config.STATS_PERIOD_KEY) || 'all';
+        periodSelect.addEventListener('change', function() {
+            localStorage.setItem(App.config.STATS_PERIOD_KEY, periodSelect.value);
+            if (document.getElementById('tab-stats')?.classList.contains('active')) {
+                App.ui.pages.renderFinanceTab();
+            }
+        });
+    }
+};
+
+App.events.handleImport = function(e) {
+    var file = e.target.files[0];
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function(ev) {
+        try {
+            var d = JSON.parse(ev.target.result);
+            App.store.operations = d.operations || [];
+            App.store.settings = d.settings || App.defaults.settings;
+            App.store.parts = d.parts || [];
+            App.store.fuelLog = d.fuelLog || [];
+            App.store.tireLog = d.tireLog || [];
+            App.store.workCosts = d.workCosts || [];
+            App.store.saveToLocalStorage();
+            if (typeof App.renderAll === 'function') App.renderAll();
+            App.toast('Импорт выполнен', 'success');
+        } catch (err) {
+            App.toast('Ошибка импорта', 'error');
+        }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+};
+
+App.events.updateMileageAndAverages = function() {
+    var m = document.getElementById('dash-new-mileage');
+    var h = document.getElementById('dash-new-motohours');
+    if (!m) m = document.getElementById('new-mileage');
+    if (!h) h = document.getElementById('new-motohours');
+    if (!m || !h) {
+        console.warn('Поля пробега/моточасов не найдены на текущей странице');
+        return;
+    }
+
+    var newM = App.utils.validateNumberInput(m, false);
+    var newH = App.utils.validateNumberInput(h, true);
+    if (newM === null || newH === null) return;
+
+    if (newM < (App.store.baseMileage || 0)) {
+        App.toast('Значение пробега меньше базового. Исправьте базовое значение на вкладке Автомобиль', 'error');
+        return;
+    }
+    if (newH < (App.store.baseMotohours || 0)) {
+        App.toast('Значение моточасов меньше базового. Исправьте базовое значение на вкладке Автомобиль', 'error');
+        return;
+    }
+
+    var today = new Date().toISOString().split('T')[0];
+    App.storage.addMileageRecord(today, newM, newH);
+    App.store.mileageHistory.push({
+        uuid: crypto.randomUUID(),
+        date: today,
+        mileage: newM,
+        motohours: newH
+    });
+    App.store.mileageHistory.sort(function(a, b) { return new Date(a.date) - new Date(b.date); });
+
+    if (App.store.mileageHistory.length >= 2) {
+        var last = App.store.mileageHistory[App.store.mileageHistory.length - 1];
+        var prev = App.store.mileageHistory[App.store.mileageHistory.length - 2];
+        var days = (new Date(last.date) - new Date(prev.date)) / 86400000;
+        if (days > 0) {
+            App.store.settings.avgDailyMileage = (last.mileage - prev.mileage) / days;
+            App.store.settings.avgDailyMotohours = (last.motohours - prev.motohours) / days;
+        }
+    } else {
+        App.store.settings.avgDailyMileage = App.store.baseMileage > 0 ? (newM - App.store.baseMileage) / 30 : 20;
+        App.store.settings.avgDailyMotohours = App.store.baseMotohours > 0 ? (newH - App.store.baseMotohours) / 30 : 1.65;
+    }
+
+    App.store.settings.currentMileage = newM;
+    App.store.settings.currentMotohours = newH;
+
+    if (App.config.USE_SUPABASE) {
+        App.storage.addMileageRecord(today, newM, newH)
+            .then(function() {
+                return App.storage.saveSettings({
+                    currentMileage: newM,
+                    currentMotohours: newH,
+                    avgDailyMileage: App.store.settings.avgDailyMileage,
+                    avgDailyMotohours: App.store.settings.avgDailyMotohours,
+                    telegramToken: App.store.settings.telegramToken,
+                    telegramChatId: App.store.settings.telegramChatId,
+                    notificationMethod: App.store.settings.notificationMethod
+                });
+            })
+            .catch(function(err) {
+                console.error('Ошибка сохранения пробега в Supabase:', err);
+            });
+    }
+
+    if (typeof App.renderAll === 'function') App.renderAll();
+    if (typeof App.ui.pages.renderTop5Widget === 'function') App.ui.pages.renderTop5Widget();
+    App.toast('Пробег и моточасы обновлены', 'success');
+};
