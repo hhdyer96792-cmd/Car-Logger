@@ -594,4 +594,5 @@ App.supa.createInviteLink = async function(carId) {
     if (error) throw error;
     const inviteCode = data.invite_code;
     return window.location.origin + '/Car-K3eper/?invite=' + inviteCode;
+}
 };
