@@ -36,7 +36,6 @@ App.ui.pages.addCarDocument = async function(doc) {
             amount: newDoc.amount,
             notes: newDoc.notes || ''
         });
-        // Премиум-кэширование фото (асинхронно, без блокировки)
         if (App.store.isPremium && typeof App.modules.load === 'function') {
             App.modules.load('premium/imageCache', true).then(imageCache => {
                 if (imageCache && imageCache.cachePhotoAfterUpload) {
@@ -419,12 +418,11 @@ App.ui.pages.renderCarTab = function() {
         App.ui.pages.initCsvImport();
     }
     
-           var vinContainer = document.querySelector('.car-fields-grid');
+    var vinContainer = document.querySelector('.car-fields-grid');
     if (vinContainer) {
         var oldVinInput = document.getElementById('car-vin');
         var wrapper = null;
         
-        // Создаём wrapper, если его ещё нет
         if (oldVinInput && !document.getElementById('vin-info-btn')) {
             wrapper = document.createElement('div');
             wrapper.style.display = 'flex';
@@ -446,7 +444,6 @@ App.ui.pages.renderCarTab = function() {
             wrapper = oldVinInput ? oldVinInput.parentNode : null;
         }
         
-        // Добавляем кнопку "Инфо по номеру", если её ещё нет
         if (wrapper && !document.getElementById('plate-info-btn')) {
             var plateBtn = document.createElement('button');
             plateBtn.id = 'plate-info-btn';
@@ -458,7 +455,6 @@ App.ui.pages.renderCarTab = function() {
             App.initIcons();
         }
         
-        // Обработчик для VIN
         var vinInfoBtn = document.getElementById('vin-info-btn');
         if (vinInfoBtn) {
             vinInfoBtn.addEventListener('click', async () => {
@@ -483,16 +479,15 @@ App.ui.pages.renderCarTab = function() {
             });
         }
         
-        // Обработчик для номера
         var plateInfoBtn = document.getElementById('plate-info-btn');
         if (plateInfoBtn) {
             plateInfoBtn.addEventListener('click', async () => {
-                const country = prompt('Введите страну (uk - Великобритания, nl - Нидерланды):');
+                const country = await App.ui.promptModalAsync('Введите страну', 'uk - Великобритания, nl - Нидерланды');
                 if (!country || !['uk', 'nl'].includes(country.toLowerCase())) {
                     App.toast('Поддерживаемые страны: uk, nl', 'warning');
                     return;
                 }
-                const plate = prompt('Введите регистрационный номер:');
+                const plate = await App.ui.promptModalAsync('Регистрационный номер', '');
                 if (!plate) return;
                 if (!App.store.isPremium) {
                     App.modules.showUpgradeModal();
@@ -511,8 +506,8 @@ App.ui.pages.renderCarTab = function() {
         }
         
         App.initIcons();
-    }   
-};      
+    }
+};
 
 App.ui.pages.loadCarDetails = function(carId) {
     var s = App.store.settings;
@@ -526,7 +521,7 @@ App.ui.pages.loadCarDetails = function(carId) {
 /* ========== ОСНОВНЫЕ ПАРАМЕТРЫ ========== */
 App.ui.pages.renderBasicParams = async function() {
     let baseMileage = 0, baseMotohours = 0, purchaseDate = '', purchaseCost = 0;
-    if (App.store.activeCarId) {
+    if (App.store.activeCarId && App.supa && typeof App.supa.getVehicleState === 'function') {
         try {
             const state = await App.supa.getVehicleState(App.store.activeCarId);
             if (state) {
@@ -560,7 +555,6 @@ App.ui.pages.renderBasicParams = async function() {
     App.store.purchaseCost = purchaseCost;
     App.ui.pages.updateOwnershipCost();
 
-    // ---- Обработчики ----
     document.getElementById('save-params-btn').onclick = async function() {
         var newBaseMileage = parseInt(document.getElementById('set-base-mileage').value) || 0;
         var newBaseMotohours = parseInt(document.getElementById('set-base-motohours').value) || 0;
@@ -568,7 +562,7 @@ App.ui.pages.renderBasicParams = async function() {
         var newPurchaseDate = dateStr ? App.utils.ddmmYYYYtoISO(dateStr) : null;
         var newPurchaseCost = parseFloat(document.getElementById('purchase-cost').value) || 0;
 
-        if (App.store.activeCarId) {
+        if (App.store.activeCarId && App.supa && typeof App.supa.updateVehicleState === 'function') {
             await App.supa.updateVehicleState(App.store.activeCarId, {
                 baseMileage: newBaseMileage,
                 baseMotohours: newBaseMotohours,
@@ -611,7 +605,7 @@ App.ui.pages.renderBasicParams = async function() {
             document.getElementById('set-base-motohours').value = '';
             document.getElementById('purchase-date').value = '';
             document.getElementById('purchase-cost').value = '';
-            if (App.store.activeCarId) {
+            if (App.store.activeCarId && App.supa && typeof App.supa.updateVehicleState === 'function') {
                 App.supa.updateVehicleState(App.store.activeCarId, {
                     baseMileage: null,
                     baseMotohours: null,
@@ -994,7 +988,7 @@ App.ui.pages.showInitialParamsModal = function() {
         var purchaseDate = dateStr ? App.utils.ddmmYYYYtoISO(dateStr) : null;
         var purchaseCost = parseFloat(document.getElementById('init-purchase-cost').value) || 0;
 
-        if (App.store.activeCarId) {
+        if (App.store.activeCarId && App.supa && typeof App.supa.updateVehicleState === 'function') {
             await App.supa.updateVehicleState(App.store.activeCarId, {
                 baseMileage: baseMileage,
                 baseMotohours: baseMotohours,
@@ -1021,7 +1015,6 @@ App.ui.pages.showInitialParamsModal = function() {
 
 App.ui.pages.checkAndShowInitialParamsModal = async function() {
     if (!App.store.activeCarId) return;
-    // Проверяем, определена ли функция
     if (typeof App.supa.getVehicleState !== 'function') {
         console.warn('[Cars] getVehicleState not available, skip initial params modal');
         return;
@@ -1066,7 +1059,7 @@ App.ui.pages.renderSharingListForCarTab = function() {
             }
             var html = '<ul style="list-style:none; padding:0;">';
             shares.forEach(function(share) {
-                var statusIcon = share.accepted ? '✅' : '⏳';
+                var statusIcon = share.accepted ? '<i data-lucide="check-circle" style="color:var(--success);"></i>' : '<i data-lucide="clock" style="color:var(--warning);"></i>';
                 var statusText = share.accepted ? 'Принято' : 'Ожидает';
                 var emailOrId = share.invited_email || (share.invited_user_id ? 'ID: ' + share.invited_user_id.substring(0,8) : '—');
                 html += '<li style="display:flex; align-items:center; justify-content:space-between; padding:8px 0; border-bottom:1px solid var(--border);">';
