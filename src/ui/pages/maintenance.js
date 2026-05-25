@@ -621,22 +621,31 @@ App.ui.pages.openOperationForm = function(op) {
     modal.querySelector('.cancel-btn').onclick = function() { modal.remove(); };
 };
 
-App.ui.pages.generateShoppingList = function(opId) {
+App.ui.pages.generateShoppingList = async function(opId) {
     var op = App.store.operations.find(function(o) { return o.id == opId; });
     if (!op) return;
     var items = App.store.parts.filter(function(p) { return p.operation === op.name || p.operation === op.category; });
-    if (!items.length) { alert('Нет запчастей для этой операции'); return; }
-    var list = '🛒 ' + op.name + ':\n';
+    if (!items.length) {
+        await App.ui.alertModal('Нет запчастей для этой операции');
+        return;
+    }
+    var listHtml = '<div><i data-lucide="shopping-cart"></i> <strong>' + App.utils.escapeHtml(op.name) + ':</strong></div><ul style="margin-left:20px;">';
     items.forEach(function(p) {
         var stock = p.inStock || 0;
-        var location = p.location ? ' (' + p.location + ')' : '';
+        var location = p.location ? ' (' + App.utils.escapeHtml(p.location) + ')' : '';
         if (stock > 0) {
-            list += '- ' + (p.oem || p.analog) + ' ' + (p.price ? p.price + '₽' : '') + ' — ✅ есть на складе: ' + stock + ' шт.' + location + '\n';
+            listHtml += '<li><i data-lucide="check-circle" style="color:var(--success);"></i> ' + 
+                App.utils.escapeHtml(p.oem || p.analog) + ' ' + (p.price ? p.price + ' ₽' : '') + 
+                ' — есть на складе: ' + stock + ' шт.' + location + '</li>';
         } else {
-            list += '- ' + (p.oem || p.analog) + ' ' + (p.price ? p.price + '₽' : '') + ' — ❌ нужно купить\n';
+            listHtml += '<li><i data-lucide="x-circle" style="color:var(--danger);"></i> ' + 
+                App.utils.escapeHtml(p.oem || p.analog) + ' ' + (p.price ? p.price + ' ₽' : '') + 
+                ' — нужно купить</li>';
         }
     });
-    alert(list);
+    listHtml += '</ul>';
+    App.ui.createModal('Список запчастей', listHtml);
+    App.initIcons();
 };
 
 // Глобальная функция генерации ICS (используется в events.js и dashboard.js)
@@ -655,13 +664,13 @@ function generateICS(plan) {
             return p.operation === op.name || p.operation === op.category;
         });
         var partsList = '';
-        if (parts.length > 0) {
-            partsList = '\\n\\nСписок запчастей:\\n';
-            parts.forEach(function(p) {
-                var status = (p.inStock && p.inStock > 0) ? '✅' : '☐';
-                partsList += status + ' ' + (p.oem || p.analog || p.operation) + (p.price ? ' (' + p.price + '₽)' : '') + '\\n';
-            });
-        }
+if (parts.length > 0) {
+    partsList = '\\n\\nСписок запчастей:\\n';
+    parts.forEach(function(p) {
+        var status = (p.inStock && p.inStock > 0) ? '[x]' : '[ ]';
+        partsList += status + ' ' + (p.oem || p.analog || p.operation) + (p.price ? ' (' + p.price + '₽)' : '') + '\\n';
+    });
+}
 
         var description = 'Пробег: ' + planData.planMileage + ' км. Категория: ' + (op.category || '') + partsList;
 
