@@ -695,78 +695,17 @@
     </div>
 </div>
 
-        <!-- Настройки (единственный полный блок) -->
-        <div id="tab-settings" class="tab-content">
-            <div class="card">
-                <h3><i data-lucide="palette"></i> Тема</h3>
-                <button id="settings-theme-toggle" class="secondary-btn"><i data-lucide="moon"></i> Переключить тему</button>
-            </div>
-            <div class="card"><h3><i data-lucide="bell"></i> Уведомления</h3>
-    <label>Способ уведомлений:
-        <select id="notification-method">
-            <option value="telegram">Только Telegram</option>
-            <option value="push">Только браузер (Push)</option>
-            <option value="both">Telegram + браузер</option>
-        </select>
-    </label>
+        <!-- Настройки (полностью переработанная вкладка) -->
+<div id="tab-settings" class="tab-content">
+    <!-- 1. Карточка уведомлений -->
+    <div id="notifications-card-container"></div>
 
-    <!-- Блок привязки Telegram (рендерится динамически через JS) -->
-    <div id="telegram-bind-area"></div>
+    <!-- 2. Карточка быстрого входа по PIN -->
+    <div id="pin-settings-container"></div>
 
-    <!-- Новое поле для дней напоминания (через запятую) -->
-    <div class="form-group">
-        <label for="reminder-days-input">Дни напоминания (через запятую)</label>
-        <input type="text" id="reminder-days-input" placeholder="7,2,1" value="7,2">
-        <p class="hint">Уведомления придут за указанное количество дней до планового ТО</p>
-    </div>
-
-    <!-- Чекбокс включения/отключения Telegram уведомлений -->
-    <div class="form-group">
-        <label>
-            <input type="checkbox" id="telegram-toggle" checked>
-            <i data-lucide="message-circle"></i> Получать уведомления в Telegram
-        </label>
-        <p class="hint">Отключите, если не хотите получать напоминания о ТО в Telegram</p>
-    </div>
-
-    <div id="push-settings">
-        <p id="push-status">Push-уведомления не настроены.</p>
-        <button id="subscribe-push-btn" class="secondary-btn"><i data-lucide="bell"></i> Подписаться на уведомления</button>
-        <button id="unsubscribe-push-btn" class="secondary-btn" style="display:none;"><i data-lucide="bell-off"></i> Отписаться от уведомлений</button>
-    </div>
-
-    <div style="display:flex; gap:8px; align-items:center; margin-top:12px;">
-        <button id="save-settings-btn" class="primary-btn"><i data-lucide="save"></i> Сохранить настройки</button>
-        <button id="telegram-info-btn" class="icon-btn" title="Как подключить Telegram"><i data-lucide="info"></i></button>
-    </div>
-    <div id="premium-settings-container"></div>
-    <div id="settings-result"></div>
+    <!-- 3. Аккордеон с остальными настройками -->
+    <div id="settings-accordion-container"></div>
 </div>
-            <div class="card">
-                <h3><i data-lucide="key"></i> Резервные коды</h3>
-                <div id="recovery-codes-container">
-                    <button id="show-recovery-btn" class="secondary-btn">Показать неиспользованные коды</button>
-                    <button id="gen-new-codes-btn" class="secondary-btn" style="margin-left:8px;">Сгенерировать новые</button>
-                    <div id="recovery-codes-list" style="margin-top:12px;"></div>
-                </div>
-                </div>
-                <!-- Смена пароля шифрования (мастер-пароль для локальных данных) -->
-<div class="card">
-    <h3><i data-lucide="key"></i> Смена пароля шифрования</h3>
-    <p class="hint">Используется для защиты чувствительных данных (токены Telegram, VIN, номер).</p>
-    <button id="change-encryption-password-btn" class="secondary-btn">Сменить пароль шифрования</button>
-    <div id="encryption-password-status" class="hint" style="margin-top:8px;"></div>
-</div>
-
-<!-- Смена пароля учётной записи (для входа в приложение) -->
-<div class="card">
-    <h3><i data-lucide="log-in"></i> Смена пароля учётной записи</h3>
-    <p class="hint">Пароль, который используется для входа в приложение (через Supabase).</p>
-    <button id="change-account-password-btn" class="secondary-btn">Сменить пароль входа</button>
-    <div id="account-password-status" class="hint" style="margin-top:8px;"></div>
-</div>
-<div id="pin-settings-container"></div>
-        </div>
     </div>   <!-- конец data-panel -->
 </div>   <!-- конец app-container -->
 
