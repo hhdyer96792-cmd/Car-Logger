@@ -594,14 +594,6 @@ App.supa.createInviteLink = async function(carId) {
     if (error) throw error;
     const inviteCode = data.invite_code;
     return window.location.origin + '/Car-K3eper/?invite=' + inviteCode;
-}
-App.supa.getVehicleState = async function(carId) {
-    const { data, error } = await App.supabase
-        .from('vehicle_state')
-        .select('base_mileage, base_motohours, purchase_date, purchase_cost')
-        .eq('car_id', carId)
-        .maybeSingle();
-    if (error) throw error;
-    return data || null;
 };
+
 };
