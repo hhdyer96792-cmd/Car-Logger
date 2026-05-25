@@ -482,4 +482,4 @@ App.supa.createInviteLink = async function(carId) {
 };
 
 // ========== Закрываем объект App.supa ==========
-};
+}
