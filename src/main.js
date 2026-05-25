@@ -502,44 +502,102 @@
                         var mobileRowOnline = document.getElementById('mobile-header-row2');
                         if (mobileRowOnline) mobileRowOnline.style.display = 'flex';
 
-                        // ===== ЗАПРОС ПАРОЛЯ ДЛЯ ШИФРОВАНИЯ =====
-                        if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-                            if (typeof App.ui.promptModalAsync === 'function') {
-                                const password = await App.ui.promptModalAsync('Введите пароль для расшифровки данных', '');
-                                if (password) {
-                                    const salt = App.db.encryption.getStoredSalt();
-                                    const isValid = await App.db.encryption.verifyMasterKey(password, salt);
-                                    if (isValid) {
-                                        const { key } = await App.db.encryption.initMasterKey(password, salt);
-                                        App.db.encryption.setMasterKey(key, salt);
-                                        await App.store.loadFromIndexedDB();
-                                        if (typeof App.renderAll === 'function') App.renderAll();
-                                        App.toast('Расшифровка успешна', 'success');
-                                    } else {
-                                        App.toast('Неверный пароль. Чувствительные данные не будут расшифрованы.', 'error');
-                                    }
-                                } else {
-                                    App.toast('Без пароля чувствительные данные будут недоступны', 'warning');
-                                }
-                            } else {
-                                var pwd = await App.ui.promptModalAsync('Введите пароль для расшифровки данных', '');
-                                if (pwd) {
-                                    const salt = App.db.encryption.getStoredSalt();
-                                    const isValid = await App.db.encryption.verifyMasterKey(pwd, salt);
-                                    if (isValid) {
-                                        const { key } = await App.db.encryption.initMasterKey(pwd, salt);
-                                        App.db.encryption.setMasterKey(key, salt);
-                                        await App.store.loadFromIndexedDB();
-                                        if (typeof App.renderAll === 'function') App.renderAll();
-                                        App.toast('Расшифровка успешна', 'success');
-                                    } else {
-                                        App.toast('Неверный пароль. Чувствительные данные не будут расшифрованы.', 'error');
-                                    }
-                                } else {
-                                    App.toast('Без пароля чувствительные данные будут недоступны', 'warning');
-                                }
-                            }
+                        // ===== ЗАПРОС ПАРОЛЯ ДЛЯ ШИФРОВАНИЯ (с поддержкой PIN) =====
+if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+    let masterKey = null;
+    let masterPassword = null;
+
+    // 1. Проверяем, есть ли установленный PIN
+    const hasPin = App.localAuth && await App.localAuth.isPinSet();
+
+    if (hasPin) {
+        // Запрашиваем PIN
+        const pin = await App.ui.promptModalAsync('Быстрый доступ', 'Введите PIN-код (4+ цифр)');
+        if (pin) {
+            masterPassword = await App.localAuth.verifyPin(pin);
+            if (masterPassword) {
+                // PIN верен, расшифровываем мастер-пароль
+                const salt = App.db.encryption.getStoredSalt();
+                const { key } = await App.db.encryption.initMasterKey(masterPassword, salt);
+                App.db.encryption.setMasterKey(key, salt);
+                await App.store.loadFromIndexedDB();
+                if (typeof App.renderAll === 'function') App.renderAll();
+                App.toast('Расшифровка по PIN успешна', 'success');
+            } else {
+                App.toast('Неверный PIN-код. Попробуйте ещё раз или используйте мастер-пароль.', 'error');
+            }
+        }
+    }
+
+    // 2. Если PIN не помог или не установлен – запрашиваем мастер-пароль
+    if (!masterPassword) {
+        if (typeof App.ui.promptModalAsync === 'function') {
+            const password = await App.ui.promptModalAsync('Введите мастер-пароль', '');
+            if (password) {
+                const salt = App.db.encryption.getStoredSalt();
+                const isValid = await App.db.encryption.verifyMasterKey(password, salt);
+                if (isValid) {
+                    const { key } = await App.db.encryption.initMasterKey(password, salt);
+                    App.db.encryption.setMasterKey(key, salt);
+                    await App.store.loadFromIndexedDB();
+                    if (typeof App.renderAll === 'function') App.renderAll();
+                    App.toast('Расшифровка успешна', 'success');
+                    masterPassword = password;
+                } else {
+                    App.toast('Неверный мастер-пароль.', 'error');
+                }
+            } else {
+                App.toast('Без пароля чувствительные данные будут недоступны', 'warning');
+            }
+        } else {
+            // fallback для старых браузеров
+            var pwd = await App.ui.promptModalAsync('Введите мастер-пароль', '');
+            if (pwd) {
+                const salt = App.db.encryption.getStoredSalt();
+                const isValid = await App.db.encryption.verifyMasterKey(pwd, salt);
+                if (isValid) {
+                    const { key } = await App.db.encryption.initMasterKey(pwd, salt);
+                    App.db.encryption.setMasterKey(key, salt);
+                    await App.store.loadFromIndexedDB();
+                    if (typeof App.renderAll === 'function') App.renderAll();
+                    App.toast('Расшифровка успешна', 'success');
+                    masterPassword = pwd;
+                } else {
+                    App.toast('Неверный мастер-пароль.', 'error');
+                }
+            } else {
+                App.toast('Без пароля чувствительные данные будут недоступны', 'warning');
+            }
+        }
+    }
+
+    // 3. Если мастер-пароль получен и PIN не был установлен – предложить настроить PIN
+    if (masterPassword && !hasPin && App.localAuth && App.localAuth.isPinSupported()) {
+        const wantPin = await App.ui.confirmModalAsync('Настроить быстрый вход по PIN-коду? При следующем запуске достаточно будет ввести PIN.');
+        if (wantPin) {
+            let pinSet = false;
+            while (!pinSet) {
+                const pin = await App.ui.promptModalAsync('Установите PIN-код (минимум 4 цифры)', '');
+                if (pin && pin.length >= 4 && /^\d+$/.test(pin)) {
+                    const confirmPin = await App.ui.promptModalAsync('Подтвердите PIN-код', 'Введите PIN ещё раз');
+                    if (confirmPin === pin) {
+                        try {
+                            await App.localAuth.setPin(pin, masterPassword);
+                            App.toast('PIN-код сохранён', 'success');
+                            pinSet = true;
+                        } catch (err) {
+                            App.toast('Ошибка сохранения PIN: ' + err.message, 'error');
                         }
+                    } else {
+                        App.toast('PIN-коды не совпадают', 'error');
+                    }
+                } else {
+                    App.toast('PIN должен содержать минимум 4 цифры', 'error');
+                }
+            }
+        }
+    }
+}
                         // ===== КОНЕЦ БЛОКА ШИФРОВАНИЯ =====
 
                         // ===== ИНИЦИАЛИЗАЦИЯ ПРЕМИУМ-ФУНКЦИЙ =====
