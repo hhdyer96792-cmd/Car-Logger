@@ -2,7 +2,6 @@
 window.App = window.App || {};
 App.events = App.events || {};
 
-// Храним текущую активную вкладку, чтобы избежать повторных рендеров
 App.events.currentActiveTab = null;
 
 App.events.init = function() {
@@ -13,7 +12,6 @@ App.events.init = function() {
     App.events.initHistoryFilters();
     App.events.initStatsListeners();
     
-    // ===== НОВЫЕ СЛУШАТЕЛИ СЕТИ =====
     window.addEventListener('online', function() {
         if (typeof App.toast === 'function') {
             App.toast('Сеть восстановлена. Запускаем синхронизацию...', 'success');
@@ -28,11 +26,10 @@ App.events.init = function() {
             App.toast('Вы офлайн. Изменения будут сохранены локально и синхронизируются позже.', 'warning');
         }
     });
-    // ===== КОНЕЦ НОВЫХ СЛУШАТЕЛЕЙ =====
 };
 
 App.events.setupDelegation = function() {
-    document.body.addEventListener('click', function(e) {
+    document.body.addEventListener('click', async function(e) {
         var target = e.target.closest('[data-action]');
         if (!target) return;
         var action = target.dataset.action;
@@ -46,15 +43,16 @@ App.events.setupDelegation = function() {
             case 'delete-op':
                 var delOpId = target.dataset.opId;
                 if (!delOpId) return;
-                App.ui.confirmModal('Удалить операцию? Это действие нельзя отменить.', function() {
-                    App.storage.deleteOperation(delOpId).then(function() {
-                        App.storage.loadAllData();
+                if (await App.ui.confirmModalAsync('Удалить операцию? Это действие нельзя отменить.')) {
+                    try {
+                        await App.storage.deleteOperation(delOpId);
+                        await App.storage.loadAllData();
                         App.toast('Операция удалена', 'success');
-                    }).catch(function(err) {
+                    } catch (err) {
                         console.error(err);
                         App.toast('Не удалось удалить операцию (недостаточно прав)', 'error');
-                    });
-                });
+                    }
+                }
                 break;
             case 'calendar':
                 var calOpId = target.dataset.opId;
@@ -77,9 +75,9 @@ App.events.setupDelegation = function() {
             case 'delete-part':
                 var delPartId = target.dataset.id;
                 if (!delPartId) return;
-                App.ui.confirmModal('Удалить запчасть?', function() {
+                if (await App.ui.confirmModalAsync('Удалить запчасть?')) {
                     App.ui.pages.deletePart(delPartId);
-                });
+                }
                 break;
             case 'search-part':
                 var oem = target.dataset.oem;
@@ -101,8 +99,9 @@ App.events.setupDelegation = function() {
             case 'delete-fuel':
                 var delFuelIdx = parseInt(target.dataset.idx);
                 if (isNaN(delFuelIdx)) return;
-                if (!confirm('Удалить заправку?')) return;
-                App.ui.pages.deleteFuelEntry(delFuelIdx);
+                if (await App.ui.confirmModalAsync('Удалить заправку?')) {
+                    App.ui.pages.deleteFuelEntry(delFuelIdx);
+                }
                 break;
             case 'edit-tire':
                 var tireIdx = parseInt(target.dataset.idx);
@@ -114,8 +113,9 @@ App.events.setupDelegation = function() {
             case 'delete-tire':
                 var delTireIdx = parseInt(target.dataset.idx);
                 if (isNaN(delTireIdx)) return;
-                if (!confirm('Удалить запись о шинах?')) return;
-                App.ui.pages.deleteTireEntry(delTireIdx);
+                if (await App.ui.confirmModalAsync('Удалить запись о шинах?')) {
+                    App.ui.pages.deleteTireEntry(delTireIdx);
+                }
                 break;
             case 'edit-history':
                 var histRow = target.dataset.row;
@@ -124,8 +124,9 @@ App.events.setupDelegation = function() {
             case 'delete-history':
                 var delHistRow = target.dataset.row;
                 if (!delHistRow) return;
-                if (!confirm('Удалить запись из истории? Это действие нельзя отменить.')) return;
-                App.ui.pages.deleteHistoryEntry(delHistRow);
+                if (await App.ui.confirmModalAsync('Удалить запись из истории? Это действие нельзя отменить.')) {
+                    App.ui.pages.deleteHistoryEntry(delHistRow);
+                }
                 break;
             case 'execute-plan':
                 var planOpId = target.dataset.opId;
