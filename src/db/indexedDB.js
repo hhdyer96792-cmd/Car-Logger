@@ -22,7 +22,8 @@ const STORES = {
     vin_info: { keyPath: 'id' },
     plate_info: { keyPath: 'id' },
     parts_cache: { keyPath: 'id' },
-    encrypted_secrets: { keyPath: 'id' }
+    encrypted_secrets: { keyPath: 'id' },
+    local_auth: { keyPath: 'id' }
 };
 
 // Инициализация: открытие БД, создание хранилищ, миграция из localStorage
@@ -160,7 +161,8 @@ App.db.migrateFromLocalStorage = async function() {
     }
     console.log('[DB] Migration completed');
     localStorage.setItem('vesta_migrated_to_indexeddb', 'true');
-    if (confirm('Данные успешно перенесены в новую базу. Очистить старый localStorage для экономии места?')) {
+    const clearStorage = await App.ui.confirmModalAsync('Данные успешно перенесены в новую базу. Очистить старый localStorage для экономии места?');
+if (clearStorage) {
         localStorage.removeItem(cacheKey);
         localStorage.removeItem(App.config.PENDING_KEY);
         localStorage.removeItem(App.config.CALENDAR_CACHE_KEY);
