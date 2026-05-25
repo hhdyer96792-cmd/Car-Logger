@@ -2,7 +2,6 @@
 window.App = window.App || {};
 App.premium = App.premium || {};
 
-// Уникальный идентификатор устройства (хранится в localStorage)
 App.premium.getDeviceId = function() {
     let deviceId = localStorage.getItem('vesta_device_id');
     if (!deviceId) {
@@ -12,21 +11,19 @@ App.premium.getDeviceId = function() {
     return deviceId;
 };
 
-// Проверка статуса подписки (возвращает активность, tier и срок действия)
 App.premium.checkStatus = async function() {
     if (!App.supabase || !App.store.activeCarId) return { active: false, tier: 'free' };
     
     const { data: { user } } = await App.supabase.auth.getUser();
     if (!user) return { active: false, tier: 'free' };
     
-    const deviceId = App.premium.getDeviceId();
+    // Функция get_user_premium_status в БД ожидает только p_user_id (1 аргумент)
     let data = null;
     let error = null;
     
     try {
         const result = await App.supabase.rpc('get_user_premium_status', {
-            p_user_id: user.id,
-            p_device_id: deviceId
+            p_user_id: user.id
         });
         data = result.data;
         error = result.error;
@@ -40,12 +37,10 @@ App.premium.checkStatus = async function() {
         return { active: false, tier: 'free' };
     }
     
-    // Сохраняем статус в App.store
     App.store.premiumTier = data.tier;
     App.store.premiumExpiresAt = data.expires_at;
     App.store.isPremium = (data.active && data.tier !== 'free');
     
-    // Если подписка активна, загружаем модули согласно тарифу
     if (data.active && data.tier !== 'free') {
         await App.premium.loadModulesByTier(data.tier);
     }
@@ -53,7 +48,6 @@ App.premium.checkStatus = async function() {
     return data;
 };
 
-// Активация ключа
 App.premium.activateKey = async function(keyValue) {
     if (!App.supabase) throw new Error('Supabase not initialized');
     const { data: { user } } = await App.supabase.auth.getUser();
@@ -88,7 +82,6 @@ App.premium.activateKey = async function(keyValue) {
     return data;
 };
 
-// Деактивация устройства
 App.premium.deactivateDevice = async function() {
     if (!App.supabase) return;
     const { data: { user } } = await App.supabase.auth.getUser();
@@ -110,7 +103,6 @@ App.premium.deactivateDevice = async function() {
     App.store.premiumFeatures = [];
 };
 
-// Динамическая загрузка модулей в зависимости от tier
 App.premium.loadModulesByTier = async function(tier) {
     const features = [];
     if (tier === 'premium' || tier === 'ultra') {
@@ -121,7 +113,6 @@ App.premium.loadModulesByTier = async function(tier) {
     }
     for (const feature of features) {
         try {
-            // Проверяем, доступен ли модуль через moduleLoader
             if (App.modules && typeof App.modules.load === 'function') {
                 await App.modules.load(`premium/${feature}`, true);
                 console.log(`[Premium] Модуль ${feature} загружен (тариф ${tier})`);
@@ -134,7 +125,6 @@ App.premium.loadModulesByTier = async function(tier) {
     }
 };
 
-// Инициализация премиум-функций (вызывается после входа)
 App.premium.init = async function() {
     try {
         const status = await App.premium.checkStatus();
@@ -145,7 +135,6 @@ App.premium.init = async function() {
         console.error('[Premium] Ошибка инициализации:', err);
     }
     
-    // Периодическая проверка (раз в час)
     setInterval(() => {
         App.premium.checkStatus().catch(err => console.error('[Premium] Ошибка периодической проверки:', err));
     }, 60 * 60 * 1000);
