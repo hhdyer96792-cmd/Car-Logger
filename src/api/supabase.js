@@ -488,7 +488,55 @@ App.supa.deleteCarShare = function(shareId) {
         .delete()
         .eq('id', shareId)
         .select();
-        // ========== Дополнительные методы для автомобилей ==========
+ // ========== Документы автомобиля ==========
+App.supa.loadCarDocuments = function() {
+    return App.supa.fetchTable('car_documents').then(({ data, error }) => {
+        if (error) throw error;
+        return (data || []).map(doc => ({
+            id: doc.id,
+            type: doc.type,
+            date: doc.date,
+            photoUrl: doc.photo_url,
+            amount: doc.amount,
+            notes: doc.notes || ''
+        }));
+    });
+};
+
+App.supa.addCarDocument = async function(doc) {
+    const userId = await App.supa.getCurrentUserId();
+    const record = {
+        car_id: App.store.activeCarId,
+        user_id: userId,
+        type: doc.type,
+        date: doc.date,
+        photo_url: doc.photoUrl,
+        amount: doc.amount,
+        notes: doc.notes
+    };
+    const { data, error } = await App.supabase.from('car_documents').insert(record).select().single();
+    if (error) throw error;
+    return { id: data.id, ...doc };
+};
+
+App.supa.updateCarDocument = async function(docId, updates) {
+    const { error } = await App.supabase.from('car_documents').update({
+        type: updates.type,
+        date: updates.date,
+        amount: updates.amount,
+        notes: updates.notes
+    }).eq('id', docId);
+    if (error) throw error;
+    return true;
+};
+
+App.supa.deleteCarDocument = async function(docId) {
+    const { error } = await App.supabase.from('car_documents').delete().eq('id', docId);
+    if (error) throw error;
+    return true;
+};
+
+// ========== Состояние автомобиля ==========
 App.supa.getVehicleState = async function(carId) {
     const { data, error } = await App.supabase
         .from('vehicle_state')
@@ -536,7 +584,7 @@ App.supa.createCalendarToken = async function(carId) {
     return data.token;
 };
 
-// ========== Приглашения (создание ссылки) ==========
+// ========== Приглашения ==========
 App.supa.createInviteLink = async function(carId) {
     const { data, error } = await App.supabase
         .from('car_shares')
