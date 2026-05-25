@@ -36,6 +36,7 @@ App.ui.pages.addCarDocument = async function(doc) {
             amount: newDoc.amount,
             notes: newDoc.notes || ''
         });
+        // Премиум-кэширование фото (асинхронно, без блокировки)
         if (App.store.isPremium && typeof App.modules.load === 'function') {
             App.modules.load('premium/imageCache', true).then(imageCache => {
                 if (imageCache && imageCache.cachePhotoAfterUpload) {
@@ -418,11 +419,12 @@ App.ui.pages.renderCarTab = function() {
         App.ui.pages.initCsvImport();
     }
     
-    var vinContainer = document.querySelector('.car-fields-grid');
+           var vinContainer = document.querySelector('.car-fields-grid');
     if (vinContainer) {
         var oldVinInput = document.getElementById('car-vin');
         var wrapper = null;
         
+        // Создаём wrapper, если его ещё нет
         if (oldVinInput && !document.getElementById('vin-info-btn')) {
             wrapper = document.createElement('div');
             wrapper.style.display = 'flex';
@@ -444,6 +446,7 @@ App.ui.pages.renderCarTab = function() {
             wrapper = oldVinInput ? oldVinInput.parentNode : null;
         }
         
+        // Добавляем кнопку "Инфо по номеру", если её ещё нет
         if (wrapper && !document.getElementById('plate-info-btn')) {
             var plateBtn = document.createElement('button');
             plateBtn.id = 'plate-info-btn';
@@ -455,6 +458,7 @@ App.ui.pages.renderCarTab = function() {
             App.initIcons();
         }
         
+        // Обработчик для VIN
         var vinInfoBtn = document.getElementById('vin-info-btn');
         if (vinInfoBtn) {
             vinInfoBtn.addEventListener('click', async () => {
@@ -479,6 +483,7 @@ App.ui.pages.renderCarTab = function() {
             });
         }
         
+        // Обработчик для номера
         var plateInfoBtn = document.getElementById('plate-info-btn');
         if (plateInfoBtn) {
             plateInfoBtn.addEventListener('click', async () => {
@@ -521,7 +526,7 @@ App.ui.pages.loadCarDetails = function(carId) {
 /* ========== ОСНОВНЫЕ ПАРАМЕТРЫ ========== */
 App.ui.pages.renderBasicParams = async function() {
     let baseMileage = 0, baseMotohours = 0, purchaseDate = '', purchaseCost = 0;
-    if (App.store.activeCarId && App.supa && typeof App.supa.getVehicleState === 'function') {
+    if (App.store.activeCarId) {
         try {
             const state = await App.supa.getVehicleState(App.store.activeCarId);
             if (state) {
@@ -563,7 +568,7 @@ App.ui.pages.renderBasicParams = async function() {
         var newPurchaseDate = dateStr ? App.utils.ddmmYYYYtoISO(dateStr) : null;
         var newPurchaseCost = parseFloat(document.getElementById('purchase-cost').value) || 0;
 
-        if (App.store.activeCarId && App.supa && typeof App.supa.updateVehicleState === 'function') {
+        if (App.store.activeCarId) {
             await App.supa.updateVehicleState(App.store.activeCarId, {
                 baseMileage: newBaseMileage,
                 baseMotohours: newBaseMotohours,
@@ -606,7 +611,7 @@ App.ui.pages.renderBasicParams = async function() {
             document.getElementById('set-base-motohours').value = '';
             document.getElementById('purchase-date').value = '';
             document.getElementById('purchase-cost').value = '';
-            if (App.store.activeCarId && App.supa && typeof App.supa.updateVehicleState === 'function') {
+            if (App.store.activeCarId) {
                 App.supa.updateVehicleState(App.store.activeCarId, {
                     baseMileage: null,
                     baseMotohours: null,
@@ -1016,9 +1021,15 @@ App.ui.pages.showInitialParamsModal = function() {
 
 App.ui.pages.checkAndShowInitialParamsModal = async function() {
     if (!App.store.activeCarId) return;
+    // Проверяем, определена ли функция
+    if (typeof App.supa.getVehicleState !== 'function') {
+        console.warn('[Cars] getVehicleState not available, skip initial params modal');
+        return;
+    }
     try {
         const state = await App.supa.getVehicleState(App.store.activeCarId);
-        if (!state || (state.base_mileage === null && state.base_motohours === null && state.purchase_date === null && state.purchase_cost === null)) {
+        if (!state || (state.base_mileage === null && state.base_motohours === null && 
+            state.purchase_date === null && state.purchase_cost === null)) {
             if (!sessionStorage.getItem('initial_params_shown')) {
                 sessionStorage.setItem('initial_params_shown', '1');
                 App.ui.pages.showInitialParamsModal();
