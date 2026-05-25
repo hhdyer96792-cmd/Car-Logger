@@ -67,47 +67,51 @@
         }
 
         // ===== ИНИЦИАЛИЗАЦИЯ INDEXEDDB, МИГРАЦИЯ, ЗАГРУЗКА ДАННЫХ, KILL SWITCH =====
-        (async function initDatabase() {
-            try {
-                await App.db.init();
-                const migrated = localStorage.getItem('vesta_migrated_to_indexeddb');
-                if (!migrated) {
-                    const confirmMigration = await App.ui.confirmModalAsync('Перенести существующие данные в новую базу? (рекомендуется)');
-                    if (confirmMigration) {
-                        await App.db.migrateFromLocalStorage();
-                        localStorage.setItem('vesta_migrated_to_indexeddb', 'true');
-                    }
-                }
-                await App.store.loadFromIndexedDB();
-                const { data: { session } } = await App.supabase.auth.getSession();
-                if (session) {
-                    const isKilled = await App.db.killSwitch.check();
-                    if (isKilled) {
-                        await App.db.killSwitch.destroyLocalDB();
-                        return;
-                    }
-                    if (typeof App.db.killSwitch.startPeriodicCheck === 'function') {
-                        App.db.killSwitch.startPeriodicCheck();
-                    }
-                }
-                if (navigator.onLine) {
-                    await App.db.sync.processSyncQueue();
-                } else {
-                    console.log('[Main] Офлайн-режим, синхронизация отложена');
-                }
-                setInterval(() => {
-                    if (navigator.onLine && App.db.sync && !App.db.sync._isRunning) {
-                        App.db.sync.processSyncQueue().catch(console.error);
-                    }
-                }, 60000);
-            } catch (err) {
-                console.error('Ошибка инициализации IndexedDB:', err);
-                if (typeof App.toast === 'function') {
-                    App.toast('Не удалось открыть базу данных. Некоторые функции будут недоступны.', 'error');
-                }
-                App.store.initFromLocalStorage();
+(async function initDatabase() {
+    try {
+        await App.db.init();
+        const migrated = localStorage.getItem('vesta_migrated_to_indexeddb');
+        // Получаем текущую сессию (если пользователь не вошёл – сессии нет)
+        const { data: { session } } = await App.supabase.auth.getSession();
+
+        // Миграция предлагается только если пользователь авторизован и миграция ещё не выполнялась
+        if (!migrated && session) {
+            const confirmMigration = await App.ui.confirmModalAsync('Перенести существующие данные в новую базу? (рекомендуется)');
+            if (confirmMigration) {
+                await App.db.migrateFromLocalStorage();
+                localStorage.setItem('vesta_migrated_to_indexeddb', 'true');
             }
-        })();
+        }
+        await App.store.loadFromIndexedDB();
+        
+        if (session) {
+            const isKilled = await App.db.killSwitch.check();
+            if (isKilled) {
+                await App.db.killSwitch.destroyLocalDB();
+                return;
+            }
+            if (typeof App.db.killSwitch.startPeriodicCheck === 'function') {
+                App.db.killSwitch.startPeriodicCheck();
+            }
+        }
+        if (navigator.onLine) {
+            await App.db.sync.processSyncQueue();
+        } else {
+            console.log('[Main] Офлайн-режим, синхронизация отложена');
+        }
+        setInterval(() => {
+            if (navigator.onLine && App.db.sync && !App.db.sync._isRunning) {
+                App.db.sync.processSyncQueue().catch(console.error);
+            }
+        }, 60000);
+    } catch (err) {
+        console.error('Ошибка инициализации IndexedDB:', err);
+        if (typeof App.toast === 'function') {
+            App.toast('Не удалось открыть базу данных. Некоторые функции будут недоступны.', 'error');
+        }
+        App.store.initFromLocalStorage();
+    }
+})();
 
         App.renderAll = function() {
             var activeTab = document.querySelector('.tab-content.active');
