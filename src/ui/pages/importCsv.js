@@ -10,10 +10,10 @@ App.ui.pages.initCsvImport = function() {
      var html = '<p class="hint">Выберите тип данных и загрузите CSV‑файл. Первая строка должна содержать заголовки.</p>';
  html += '<div style="display:flex; gap:8px; margin-bottom:12px;">';
  html += '<select id="csv-import-type" style="flex:1;">';
- html += '<option value="to">📋 Журнал ТО</option>';
- html += '<option value="fuel">⛽ Топливо</option>';
- html += '<option value="tires">🛞 Шины</option>';
- html += '<option value="parts">📦 Запчасти</option>';
+ html += '<option value="to">Журнал ТО</option>';
+html += '<option value="fuel">Топливо</option>';
+html += '<option value="tires">Шины</option>';
+html += '<option value="parts">Запчасти</option>';
  html += '</select>';
  html += '<button id="csv-download-template" class="secondary-btn">Шаблон</button>';
  html += '</div>';
