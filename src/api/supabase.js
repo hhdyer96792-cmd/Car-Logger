@@ -293,7 +293,7 @@ App.supa.saveHistoryRecord = async function(record) {
     }
 };
 
-// ========== НОВЫЙ МЕТОД для пробега ==========
+// ========== Метод для пробега ==========
 App.supa.addMileageRecord = async function(date, mileage, motohours) {
     const userId = await App.supa.getCurrentUserId();
     const record = {
@@ -490,7 +490,7 @@ App.supa.deleteCarShare = function(shareId) {
         .select();
 };
 
-// ========== Состояние автомобиля (vehicle_state) ==========
+// ========== Дополнительные методы для автомобиля ==========
 App.supa.getVehicleState = async function(carId) {
     const { data, error } = await App.supabase
         .from('vehicle_state')
@@ -549,17 +549,3 @@ App.supa.createInviteLink = async function(carId) {
     const inviteCode = data.invite_code;
     return window.location.origin + '/Car-K3eper/?invite=' + inviteCode;
 };
-
-// ========== СТРАХОВОЧНЫЕ ЗАГЛУШКИ ДЛЯ ОТСУТСТВУЮЩИХ RPC ==========
-// Эти функции могут отсутствовать на сервере, но их вызовы не должны ломать приложение
-if (!App.supabase.rpc) {
-    console.warn('[Supabase] RPC functions may not be available');
-}
-
-// Заглушка для get_user_premium_status (если RPC не создана)
-App.supa.getUserPremiumStatus = async function(userId, deviceId) {
-    console.warn('[Supabase] getUserPremiumStatus не реализована, возвращаем free');
-    return { active: false, tier: 'free', expires_at: null };
-};
-
-// Если нужно, можно переопределить App.premium.checkStatus, но оставим как есть
