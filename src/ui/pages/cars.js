@@ -443,8 +443,7 @@ if (oldVinInput && !document.getElementById('vin-info-btn')) {
     wrapper.appendChild(btn);
     App.initIcons();
 } else {
-    // Если кнопка VIN уже есть, находим родительский div
-    wrapper = oldVinInput?.parentNode;
+    wrapper = oldVinInput ? oldVinInput.parentNode : null;
 }
 
 // Добавляем кнопку "Инфо по номеру", если её ещё нет
