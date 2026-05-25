@@ -1,6 +1,6 @@
 // src/api/supabase.js
 window.App = window.App || {};
-App.supa = App.supa || {};
+if (!App.supa) App.supa = {};
 
 let cachedUserId = null;
 
@@ -19,6 +19,7 @@ App.supa.fetchTable = function(tableName) {
     }
     return query;
 };
+
 
 App.supa.insertRow = function(tableName, record) {
     ensureSupabase();
