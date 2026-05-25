@@ -641,6 +641,13 @@ App.ui.pages.renderPremiumBlock = function() {
 App.ui.pages.renderPinSettings = async function() {
     const container = document.getElementById('pin-settings-container');
     if (!container) return;
+    
+     if (!App.db || !App.db._db) {
+        // База данных ещё не инициализирована – ждём и пробуем снова через 500 мс
+        console.log('[PIN] Database not ready, retrying in 500ms');
+        setTimeout(() => App.ui.pages.renderPinSettings(), 500);
+        return;
+    }
 
     const hasPin = App.localAuth && await App.localAuth.isPinSet();
     const supported = App.localAuth && App.localAuth.isPinSupported();
