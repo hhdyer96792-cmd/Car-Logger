@@ -1,6 +1,6 @@
 // src/api/supabase.js
 window.App = window.App || {};
-if (!App.supa) App.supa = {};
+App.supa = App.supa || {};
 
 let cachedUserId = null;
 
@@ -19,7 +19,6 @@ App.supa.fetchTable = function(tableName) {
     }
     return query;
 };
-
 
 App.supa.insertRow = function(tableName, record) {
     ensureSupabase();
@@ -446,7 +445,7 @@ App.supa.inviteUserToCar = function(carId, email) {
 
 App.supa.getPendingInvites = function() {
     return App.supa.getCurrentUserId().then(function(userId) {
-        if (!userId) return [];
+        if (!userId) return { data: [], error: null };
         return App.supabase.from('car_shares')
             .select('*, cars(name)')
             .eq('invited_user_id', userId)
@@ -489,7 +488,9 @@ App.supa.deleteCarShare = function(shareId) {
         .delete()
         .eq('id', shareId)
         .select();
-        // ========== Дополнительные методы для автомобилей ==========
+};
+
+// ========== Состояние автомобиля (vehicle_state) ==========
 App.supa.getVehicleState = async function(carId) {
     const { data, error } = await App.supabase
         .from('vehicle_state')
@@ -548,17 +549,17 @@ App.supa.createInviteLink = async function(carId) {
     const inviteCode = data.invite_code;
     return window.location.origin + '/Car-K3eper/?invite=' + inviteCode;
 };
-// ===== СТРАХОВКА – заглушки для vehicle_state =====
-if (!App.supa.getVehicleState) {
-    App.supa.getVehicleState = async function(carId) {
-        console.warn('[Supabase] getVehicleState не определена, возвращаем null');
-        return null;
-    };
+
+// ========== СТРАХОВОЧНЫЕ ЗАГЛУШКИ ДЛЯ ОТСУТСТВУЮЩИХ RPC ==========
+// Эти функции могут отсутствовать на сервере, но их вызовы не должны ломать приложение
+if (!App.supabase.rpc) {
+    console.warn('[Supabase] RPC functions may not be available');
 }
-if (!App.supa.updateVehicleState) {
-    App.supa.updateVehicleState = async function(carId, updates) {
-        console.warn('[Supabase] updateVehicleState не определена, пропускаем');
-        return true;
-    };
-}
+
+// Заглушка для get_user_premium_status (если RPC не создана)
+App.supa.getUserPremiumStatus = async function(userId, deviceId) {
+    console.warn('[Supabase] getUserPremiumStatus не реализована, возвращаем free');
+    return { active: false, tier: 'free', expires_at: null };
 };
+
+// Если нужно, можно переопределить App.premium.checkStatus, но оставим как есть
