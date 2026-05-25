@@ -177,7 +177,7 @@ App.db.migrateFromLocalStorage = async function() {
     }
 };
 
-// Обёртка для транзакций, если нужно несколько операций атомарно
+// Обёртка для транзакций
 App.db.transaction = async function(storeNames, mode, callback) {
     const db = App.db._db;
     if (!db) throw new Error('DB not initialized');
@@ -198,4 +198,5 @@ App.db.transaction = async function(storeNames, mode, callback) {
         throw e;
     }
     return result;
+    }
 };
