@@ -20,11 +20,20 @@ App.premium.checkStatus = async function() {
     if (!user) return { active: false, tier: 'free' };
     
     const deviceId = App.premium.getDeviceId();
-    // Новая RPC-функция get_user_premium_status (создать в Supabase)
-    const { data, error } = await App.supabase.rpc('get_user_premium_status', {
-        p_user_id: user.id,
-        p_device_id: deviceId
-    });
+    let data = null;
+    let error = null;
+    
+    try {
+        const result = await App.supabase.rpc('get_user_premium_status', {
+            p_user_id: user.id,
+            p_device_id: deviceId
+        });
+        data = result.data;
+        error = result.error;
+    } catch (err) {
+        error = err;
+        console.error('[Premium] Исключение при вызове RPC:', err);
+    }
     
     if (error || !data) {
         console.error('[Premium] Ошибка проверки статуса:', error);
@@ -34,7 +43,7 @@ App.premium.checkStatus = async function() {
     // Сохраняем статус в App.store
     App.store.premiumTier = data.tier;
     App.store.premiumExpiresAt = data.expires_at;
-    App.store.isPremium = (data.active && data.tier !== 'free'); // флаг для обратной совместимости
+    App.store.isPremium = (data.active && data.tier !== 'free');
     
     // Если подписка активна, загружаем модули согласно тарифу
     if (data.active && data.tier !== 'free') {
@@ -44,7 +53,7 @@ App.premium.checkStatus = async function() {
     return data;
 };
 
-// Активация ключа (без изменений, только вызывает обновление статуса)
+// Активация ключа
 App.premium.activateKey = async function(keyValue) {
     if (!App.supabase) throw new Error('Supabase not initialized');
     const { data: { user } } = await App.supabase.auth.getUser();
@@ -53,15 +62,27 @@ App.premium.activateKey = async function(keyValue) {
     const deviceId = App.premium.getDeviceId();
     const deviceName = navigator.userAgent || 'Unknown device';
     
-    const { data, error } = await App.supabase.rpc('activate_premium_key', {
-        p_key: keyValue,
-        p_user_id: user.id,
-        p_device_id: deviceId,
-        p_device_name: deviceName
-    });
+    let data = null;
+    let error = null;
     
-    if (error) throw error;
-    if (!data.success) throw new Error(data.error);
+    try {
+        const result = await App.supabase.rpc('activate_premium_key', {
+            p_key: keyValue,
+            p_user_id: user.id,
+            p_device_id: deviceId,
+            p_device_name: deviceName
+        });
+        data = result.data;
+        error = result.error;
+    } catch (err) {
+        error = err;
+        console.error('[Premium] Исключение при активации ключа:', err);
+    }
+    
+    if (error || !data || !data.success) {
+        const errMsg = data?.error || error?.message || 'Неизвестная ошибка';
+        throw new Error(errMsg);
+    }
     
     await App.premium.checkStatus();
     return data;
@@ -74,17 +95,22 @@ App.premium.deactivateDevice = async function() {
     if (!user) return;
     
     const deviceId = App.premium.getDeviceId();
-    await App.supabase.rpc('deactivate_device', {
-        p_user_id: user.id,
-        p_device_id: deviceId
-    });
+    
+    try {
+        await App.supabase.rpc('deactivate_device', {
+            p_user_id: user.id,
+            p_device_id: deviceId
+        });
+    } catch (err) {
+        console.error('[Premium] Ошибка деактивации устройства:', err);
+    }
     
     App.store.isPremium = false;
     App.store.premiumTier = 'free';
     App.store.premiumFeatures = [];
 };
 
-// Динамическая загрузка модулей в зависимости от tier (новый метод)
+// Динамическая загрузка модулей в зависимости от tier
 App.premium.loadModulesByTier = async function(tier) {
     const features = [];
     if (tier === 'premium' || tier === 'ultra') {
@@ -95,8 +121,13 @@ App.premium.loadModulesByTier = async function(tier) {
     }
     for (const feature of features) {
         try {
-            await App.modules.load(`premium/${feature}`, true);
-            console.log(`[Premium] Модуль ${feature} загружен (тариф ${tier})`);
+            // Проверяем, доступен ли модуль через moduleLoader
+            if (App.modules && typeof App.modules.load === 'function') {
+                await App.modules.load(`premium/${feature}`, true);
+                console.log(`[Premium] Модуль ${feature} загружен (тариф ${tier})`);
+            } else {
+                console.warn(`[Premium] moduleLoader не доступен, не могу загрузить ${feature}`);
+            }
         } catch (err) {
             console.warn(`[Premium] Не удалось загрузить модуль ${feature}:`, err);
         }
@@ -105,12 +136,17 @@ App.premium.loadModulesByTier = async function(tier) {
 
 // Инициализация премиум-функций (вызывается после входа)
 App.premium.init = async function() {
-    const status = await App.premium.checkStatus();
-    if (status.active && status.tier !== 'free') {
-        await App.premium.loadModulesByTier(status.tier);
+    try {
+        const status = await App.premium.checkStatus();
+        if (status.active && status.tier !== 'free') {
+            await App.premium.loadModulesByTier(status.tier);
+        }
+    } catch (err) {
+        console.error('[Premium] Ошибка инициализации:', err);
     }
+    
     // Периодическая проверка (раз в час)
     setInterval(() => {
-        App.premium.checkStatus().catch(console.error);
+        App.premium.checkStatus().catch(err => console.error('[Premium] Ошибка периодической проверки:', err));
     }, 60 * 60 * 1000);
 };
