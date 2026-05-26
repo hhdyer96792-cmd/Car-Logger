@@ -1292,5 +1292,32 @@ App.ui.pages.generateServiceReport = function() {
 App.ui.pages.forceSync = function() {
     App.toast('Данные уже синхронизированы с Supabase', 'info');
 };
+// ========== ОБНОВЛЕНИЕ СЕЛЕКТОРА АВТОМОБИЛЕЙ НА ВКЛАДКЕ ==========
+App.ui.pages.updateCarSelectorOnCarTab = function() {
+    const selector = document.getElementById('car-page-selector');
+    if (!selector) return;
+    if (!App.store.cars || App.store.cars.length === 0) {
+        selector.innerHTML = '<option value="">-- Нет автомобилей --</option>';
+        return;
+    }
+    let html = '';
+    App.store.cars.forEach(car => {
+        const selected = (car.id === App.store.activeCarId) ? ' selected' : '';
+        html += `<option value="${car.id}"${selected}>${App.utils.escapeHtml(car.name)}</option>`;
+    });
+    selector.innerHTML = html;
+    
+    // Удаляем старый обработчик, чтобы не дублировать
+    const newSelector = selector.cloneNode(true);
+    selector.parentNode.replaceChild(newSelector, selector);
+    newSelector.addEventListener('change', (e) => {
+        const carId = e.target.value;
+        if (carId) {
+            App.store.setActiveCar(carId);
+            if (typeof App.storage.loadAllData === 'function') App.storage.loadAllData();
+        }
+    });
+    App.initIcons();
+};
     
 };
