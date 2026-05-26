@@ -490,9 +490,15 @@
             App.store.mileageHistory = [];
             App.store.cars = [];
             App.store.activeCarId = null;
-            localStorage.removeItem('vesta_active_car_id');
-            if (typeof App.store.saveToLocalStorage === 'function') App.store.saveToLocalStorage();
-            App.supabase.auth.signOut().catch(function(e) { console.warn('Signout error', e); });
+localStorage.removeItem('vesta_active_car_id');
+if (typeof App.store.saveToLocalStorage === 'function') App.store.saveToLocalStorage();
+
+// Очистка всей IndexedDB
+if (typeof App.db.clearAllStores === 'function') {
+    await App.db.clearAllStores();
+}
+
+App.supabase.auth.signOut().catch(function(e) { console.warn('Signout error', e); });
             isLoggedIn = false;
             setInstallButtonVisible(false);
             if (sidebarLoginBtn) sidebarLoginBtn.style.display = '';
