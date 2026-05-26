@@ -100,15 +100,24 @@ App.db.sync._updateLocalId = async function(entityType, oldId, newId) {
         case 'part': storeArray = App.store.parts; storeName = 'parts'; break;
         case 'history': storeArray = App.store.serviceRecords; storeName = 'service_records'; break;
         case 'mileage':
-        storeArray = App.store.mileageHistory;
-        storeName = 'mileage_log';
-        break;
+            storeArray = App.store.mileageHistory;
+            storeName = 'mileage_log';
+            break;
         default: return;
     }
     const item = storeArray.find(i => i.id == oldId);
     if (item) {
         item.id = newId;
         await App.db.put(storeName, item);
+    }
+
+    // ДОПОЛНИТЕЛЬНО: для операции обновляем operation_id в связанных записях истории
+    if (entityType === 'operation') {
+        const historyRecords = App.store.serviceRecords.filter(rec => rec.operation_id == oldId);
+        for (const rec of historyRecords) {
+            rec.operation_id = newId;
+            await App.db.put('service_records', rec);
+        }
     }
 };
 
