@@ -1,4 +1,4 @@
-// src/ui/components/modal.js
+// src/ui/components/modal.js (исправленный)
 window.App = window.App || {};
 App.ui = App.ui || {};
 
@@ -101,7 +101,6 @@ App.ui.confirmModal = function(message, onConfirm) {
     });
 };
 
-// Promise-версия confirmModal
 App.ui.confirmModalAsync = function(message) {
     return new Promise(function(resolve) {
         var content = '<p style="margin-bottom:16px;">' + App.utils.escapeHtml(message) + '</p>' +
@@ -127,7 +126,6 @@ App.ui.confirmModalAsync = function(message) {
         if (yesBtn) yesBtn.onclick = function() { onResult(true); };
         if (noBtn) noBtn.onclick = function() { onResult(false); };
         
-        // Обработка закрытия через крестик или оверлей
         var originalRemove = modal.remove;
         modal.remove = function() {
             originalRemove.call(modal);
@@ -136,7 +134,45 @@ App.ui.confirmModalAsync = function(message) {
     });
 };
 
-// Старая версия promptModal (с колбэком) – для обратной совместимости
+// Простая Promise-версия promptModal (без подмены createModal)
+App.ui.promptModalAsync = function(title, defaultValue) {
+    return new Promise(function(resolve) {
+        var content = '<input type="text" id="prompt-input" value="' + App.utils.escapeHtml(defaultValue || '') + '" style="width:100%; margin-bottom:16px;">' +
+            '<div class="modal-actions" style="display:flex; gap:8px; justify-content:flex-end;">' +
+                '<button id="prompt-ok-btn" class="primary-btn">ОК</button>' +
+                '<button id="prompt-cancel-btn" class="secondary-btn">Отмена</button>' +
+            '</div>';
+        var modal = App.ui.createModal(title, content);
+        var input = modal.querySelector('#prompt-input');
+        var okBtn = modal.querySelector('#prompt-ok-btn');
+        var cancelBtn = modal.querySelector('#prompt-cancel-btn');
+        var resolved = false;
+
+        function cleanup() {
+            if (modal && modal.parentNode) modal.remove();
+        }
+        function onResult(value) {
+            if (resolved) return;
+            resolved = true;
+            cleanup();
+            resolve(value);
+        }
+        input.focus();
+        input.select();
+        okBtn.onclick = function() { onResult(input.value); };
+        cancelBtn.onclick = function() { onResult(null); };
+        input.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') onResult(input.value);
+        });
+        var originalRemove = modal.remove;
+        modal.remove = function() {
+            originalRemove.call(modal);
+            onResult(null);
+        };
+    });
+};
+
+// Старая версия promptModal с колбэком (для обратной совместимости)
 App.ui.promptModal = function(title, defaultValue, onSubmit) {
     var content = '<input type="text" id="prompt-input" value="' + App.utils.escapeHtml(defaultValue || '') + '" style="margin-bottom:16px;">' +
         '<div class="modal-actions" style="display:flex; gap:8px; justify-content:flex-end;">' +
@@ -145,62 +181,30 @@ App.ui.promptModal = function(title, defaultValue, onSubmit) {
         '</div>';
     var modal = App.ui.createModal(title, content);
     var input = document.getElementById('prompt-input');
-    input.focus();
-    input.select();
     var okBtn = document.getElementById('prompt-ok-btn');
     var cancelBtn = document.getElementById('prompt-cancel-btn');
-    
+    var resolved = false;
     function cleanup() {
-        if (modal && modal.remove) modal.remove();
+        if (modal && modal.parentNode) modal.remove();
     }
-    
-    if (okBtn) {
-        okBtn.addEventListener('click', function() {
-            var val = input.value;
-            cleanup();
-            if (typeof onSubmit === 'function') onSubmit(val);
-        });
-    }
-    if (cancelBtn) {
-        cancelBtn.addEventListener('click', function() {
-            cleanup();
-            if (typeof onSubmit === 'function') onSubmit(null);
-        });
-    }
+    okBtn.onclick = function() {
+        if (resolved) return;
+        resolved = true;
+        var val = input.value;
+        cleanup();
+        if (typeof onSubmit === 'function') onSubmit(val);
+    };
+    cancelBtn.onclick = function() {
+        if (resolved) return;
+        resolved = true;
+        cleanup();
+        if (typeof onSubmit === 'function') onSubmit(null);
+    };
     input.addEventListener('keydown', function(e) {
-        if (e.key === 'Enter') {
-            if (okBtn) okBtn.click();
-        }
+        if (e.key === 'Enter') okBtn.click();
     });
-};
-
-// Новая Promise-версия promptModal, корректно обрабатывающая отмену (крестик, оверлей, Escape)
-App.ui.promptModalAsync = function(title, defaultValue) {
-    return new Promise(function(resolve) {
-        var originalCreateModal = App.ui.createModal;
-        var modalResolved = false;
-        function cleanup() {
-            if (modalResolved) return;
-            modalResolved = true;
-            App.ui.createModal = originalCreateModal;
-        }
-        // Временно подменяем createModal, чтобы перехватывать закрытие модалки
-        App.ui.createModal = function(modalTitle, modalContent) {
-            var modal = originalCreateModal(modalTitle, modalContent);
-            var originalRemove = modal.remove;
-            modal.remove = function() {
-                cleanup();
-                originalRemove.call(modal);
-                // При закрытии модалки без подтверждения (крестик, оверлей) – резолвим null
-                resolve(null);
-            };
-            return modal;
-        };
-        // Вызываем оригинальный promptModal с колбэком
-        App.ui.promptModal(title, defaultValue || '', function(value) {
-            cleanup();
-            resolve(value);
-        });
+    modal.addEventListener('click', function(e) {
+        if (e.target === modal) cancelBtn.click();
     });
 };
 
