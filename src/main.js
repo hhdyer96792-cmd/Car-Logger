@@ -356,63 +356,108 @@
                     const mobileRowOnline = document.getElementById('mobile-header-row2');
                     if (mobileRowOnline) mobileRowOnline.style.display = 'flex';
 
-                    // Временно отключаем шифрование для диагностики
-if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-    // Пропускаем запрос пароля
-    console.log('Шифрование отключено для теста');
-    await App.store.loadFromIndexedDB();
-    if (typeof App.renderAll === 'function') App.renderAll();
-}
+                    // ========== БЛОК МАСТЕР-ПАРОЛЯ (ИСПРАВЛЕННЫЙ) ==========
+                    if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+                        let masterPassword = null;
+                        const hasPin = App.localAuth && await App.localAuth.isPinSet();
+                        if (hasPin) {
+                            const pin = await App.ui.promptModalAsync('Быстрый доступ', 'Введите PIN-код (4+ цифр)');
+                            if (pin) {
+                                masterPassword = await App.localAuth.verifyPin(pin);
+                                if (masterPassword) {
+                                    const salt = App.db.encryption.getStoredSalt();
+                                    const { key } = await App.db.encryption.initMasterKey(masterPassword, salt);
+                                    App.db.encryption.setMasterKey(key, salt);
+                                    await App.store.loadFromIndexedDB();
+                                    if (typeof App.renderAll === 'function') App.renderAll();
+                                    App.toast('Расшифровка по PIN успешна', 'success');
+                                } else {
+                                    App.toast('Неверный PIN-код. Попробуйте мастер-пароль.', 'error');
+                                }
+                            }
+                        }
+                        if (!masterPassword) {
+                            const hasMasterPassword = localStorage.getItem('vesta_master_password_set') === 'true';
+                            const message = hasMasterPassword ? 'Введите мастер-пароль' : 'Установите мастер-пароль для шифрования данных (запомните его!)';
+                            const password = await App.ui.promptModalAsync('Мастер-пароль', message);
+                            if (password) {
+                                const salt = App.db.encryption.getStoredSalt();
+                                let isValid = false;
+                                if (hasMasterPassword) {
+                                    isValid = await App.db.encryption.verifyMasterKey(password, salt);
+                                } else {
+                                    const { key, salt: newSalt } = await App.db.encryption.initMasterKey(password, null);
+                                    App.db.encryption.setMasterKey(key, newSalt);
+                                    await App.db.encryption.saveVerificationString(key);
+                                    localStorage.setItem('vesta_master_password_set', 'true');
+                                    isValid = true;
+                                    console.log('[Main] Мастер-пароль сохранён, соль создана');
+                                }
+                                if (isValid) {
+                                    if (hasMasterPassword) {
+                                        const { key } = await App.db.encryption.initMasterKey(password, salt);
+                                        App.db.encryption.setMasterKey(key, salt);
+                                    }
+                                    await App.store.loadFromIndexedDB();
+                                    if (typeof App.renderAll === 'function') App.renderAll();
+                                    App.toast(hasMasterPassword ? 'Расшифровка успешна' : 'Мастер-пароль сохранён', 'success');
+                                    masterPassword = password;
+                                } else {
+                                    App.toast('Неверный мастер-пароль', 'error');
+                                }
+                            } else {
+                                App.toast('Без мастер-пароля чувствительные данные будут недоступны', 'warning');
+                            }
+                        }
+                        if (masterPassword && !hasPin && App.localAuth && App.localAuth.isPinSupported()) {
+                            const wantPin = await App.ui.confirmModalAsync('Настроить быстрый вход по PIN-коду?');
+                            if (wantPin) {
+                                let pinSet = false;
+                                while (!pinSet) {
+                                    const pin = await App.ui.promptModalAsync('PIN-код (4+ цифры)', '');
+                                    if (pin && pin.length >= 4 && /^\d+$/.test(pin)) {
+                                        const confirmPin = await App.ui.promptModalAsync('Подтвердите PIN', '');
+                                        if (confirmPin === pin) {
+                                            try {
+                                                await App.localAuth.setPin(pin, masterPassword);
+                                                App.toast('PIN сохранён', 'success');
+                                                pinSet = true;
+                                            } catch (err) {
+                                                App.toast('Ошибка: ' + err.message, 'error');
+                                            }
+                                        } else {
+                                            App.toast('PIN не совпадают', 'error');
+                                        }
+                                    } else {
+                                        App.toast('PIN должен быть 4+ цифры', 'error');
+                                    }
+                                }
+                            }
+                        }
+                    }
 
-// ========== ПРЯМАЯ ЗАГРУЗКА АВТОМОБИЛЕЙ (минуя loadCars) ==========
-if (typeof App.store !== 'undefined') {
-    try {
-        // Получаем текущего пользователя
-        const { data: { user } } = await App.supabase.auth.getUser();
-        if (!user) throw new Error('Пользователь не найден');
-        
-        // Загружаем автомобили из Supabase
-        const { data: cars, error } = await App.supabase
-            .from('cars')
-            .select('*')
-            .eq('user_id', user.id);
-        
-        if (error) throw error;
-        
-        if (cars && cars.length > 0) {
-            // Сохраняем в IndexedDB
-            for (const car of cars) {
-                await App.db.put('cars', car);
-            }
-            // Обновляем глобальное состояние
-            App.store.cars = cars;
-            if (!App.store.activeCarId || !cars.some(c => c.id == App.store.activeCarId)) {
-                App.store.setActiveCar(cars[0].id);
-            }
-            localStorage.setItem('vesta_active_car_id', App.store.activeCarId);
-            console.log('[Main] Автомобили загружены:', cars);
-        } else {
-            // Создаём автомобиль, если нет ни одного
-            console.log('[Main] Автомобилей нет, создаём...');
-            const { data: newCar, error: createError } = await App.supabase
-                .from('cars')
-                .insert({ name: 'Мой автомобиль', user_id: user.id })
-                .select()
-                .single();
-            if (createError) throw createError;
-            await App.db.put('cars', newCar);
-            App.store.cars = [newCar];
-            App.store.setActiveCar(newCar.id);
-            localStorage.setItem('vesta_active_car_id', newCar.id);
-            console.log('[Main] Автомобиль создан:', newCar);
-        }
-        // Обновляем UI
-        if (typeof App.ui.pages.renderCarSelector === 'function') App.ui.pages.renderCarSelector();
-        if (typeof App.ui.pages.renderCarTab === 'function') App.ui.pages.renderCarTab();
-    } catch (err) {
-        console.error('[Main] Ошибка загрузки/создания автомобилей:', err);
-    }
-}
+                    // Получение имени пользователя
+                    const { data: { user } } = await App.supabase.auth.getUser();
+                    const username = user?.user_metadata?.username || '';
+                    if (username) localStorage.setItem('vesta_username', username);
+                    updateUsernameDisplay(username);
+
+                    if (typeof App.ui.pages.checkPushSubscriptionStatus === 'function') {
+                        App.ui.pages.checkPushSubscriptionStatus();
+                    }
+
+                    if (event === 'PASSWORD_RECOVERY') {
+                        const newPassword = await App.ui.promptModalAsync('Новый пароль', 'Введите новый пароль (минимум 6 символов)');
+                        if (newPassword && newPassword.length >= 6) {
+                            const { error } = await App.supabase.auth.updateUser({ password: newPassword });
+                            if (error) App.toast('Ошибка смены пароля', 'error');
+                            else {
+                                App.toast('Пароль изменён', 'success');
+                                window.location.hash = '';
+                                window.location.search = '';
+                            }
+                        }
+                    }
 
                     // ========== БЛОК АВТОМОБИЛЯ (ИСПРАВЛЕННЫЙ) ==========
                     if (typeof App.store !== 'undefined' && typeof App.store.loadCars === 'function') {
