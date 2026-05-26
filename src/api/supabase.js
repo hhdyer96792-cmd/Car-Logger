@@ -3,34 +3,30 @@ window.App = window.App || {};
 App.supa = App.supa || {};
 
 let cachedUserId = null;
-let retryCount = 0;
-const MAX_RETRIES = 3;
-const RETRY_DELAY = 500;
 
-function ensureSupabase() {
-    if (!App.supabase) throw new Error('Supabase client not initialized');
-    return App.supabase;
-}
-
-// ========== Утилита повторных попыток при ошибках блокировки ==========
-async function withRetry(fn, context = 'unknown') {
+// Функция повторных попыток при ошибках блокировки
+async function withRetry(fn, maxRetries = 3, delay = 500, context = 'unknown') {
     let lastError;
-    for (let i = 0; i <= MAX_RETRIES; i++) {
+    for (let i = 0; i <= maxRetries; i++) {
         try {
             return await fn();
         } catch (err) {
             lastError = err;
-            // Если ошибка связана с блокировкой (Lock), ждём и повторяем
-            if (err.message?.includes('Lock') || err.message?.includes('stole') || err?.toString().includes('Lock')) {
-                console.warn(`[Supabase] Lock conflict in ${context}, retry ${i+1}/${MAX_RETRIES}`);
-                await new Promise(r => setTimeout(r, RETRY_DELAY * (i + 1)));
+            const isLockError = err.message && (err.message.includes('Lock') || err.message.includes('stole') || err.toString().includes('Lock'));
+            if (isLockError && i < maxRetries) {
+                console.warn(`[Supabase] Lock conflict in ${context}, retry ${i+1}/${maxRetries}`);
+                await new Promise(r => setTimeout(r, delay * (i + 1)));
                 continue;
             }
-            // Другие ошибки не повторяем
             throw err;
         }
     }
     throw lastError;
+}
+
+function ensureSupabase() {
+    if (!App.supabase) throw new Error('Supabase client not initialized');
+    return App.supabase;
 }
 
 // ----- Универсальные запросы -----
@@ -63,7 +59,7 @@ App.supa.getCurrentUserId = async function() {
     if (cachedUserId) return cachedUserId;
     ensureSupabase();
     try {
-        const { data: { user } } = await withRetry(() => App.supabase.auth.getUser(), 'getUser');
+        const { data: { user } } = await withRetry(() => App.supabase.auth.getUser(), 3, 500, 'getUser');
         cachedUserId = user?.id || null;
         return cachedUserId;
     } catch (err) {
@@ -76,7 +72,7 @@ App.supa.clearUserIdCache = function() {
     cachedUserId = null;
 };
 
-// ----- Загрузка данных с повторными попытками -----
+// ----- Загрузка данных -----
 App.supa.loadOperations = function() {
     return withRetry(() => App.supa.fetchTable('operations').then(({ data, error }) => {
         if (error) throw error;
@@ -93,7 +89,7 @@ App.supa.loadOperations = function() {
             lastMotohours: op.last_motohours || 0,
             updatedAt: op.updated_at
         }));
-    }), 'loadOperations');
+    }), 3, 500, 'loadOperations');
 };
 
 App.supa.loadFuelLog = function() {
@@ -109,7 +105,7 @@ App.supa.loadFuelLog = function() {
             fuelType: f.fuel_type || 'Бензин',
             notes: f.notes || ''
         }));
-    }), 'loadFuelLog');
+    }), 3, 500, 'loadFuelLog');
 };
 
 App.supa.loadTires = function() {
@@ -128,7 +124,7 @@ App.supa.loadTires = function() {
             mountCost: parseFloat(t.mount_cost) || 0,
             isDIY: t.is_diy || false
         }));
-    }), 'loadTires');
+    }), 3, 500, 'loadTires');
 };
 
 App.supa.loadParts = function() {
@@ -148,7 +144,7 @@ App.supa.loadParts = function() {
             location: p.location || '',
             dateAdded: p.purchase_date || ''
         }));
-    }), 'loadParts');
+    }), 3, 500, 'loadParts');
 };
 
 App.supa.loadHistory = function() {
@@ -168,7 +164,7 @@ App.supa.loadHistory = function() {
             user_id: h.user_id,
             rowIndex: h.id
         }));
-    }), 'loadHistory');
+    }), 3, 500, 'loadHistory');
 };
 
 App.supa.loadSettings = function() {
@@ -196,7 +192,7 @@ App.supa.loadSettings = function() {
             plateNumber: vs.data?.plate_number || '',
             vin: vs.data?.vin || ''
         };
-    }, 'loadSettings');
+    }, 3, 500, 'loadSettings');
 };
 
 App.supa.loadMileageHistory = function() {
@@ -207,7 +203,7 @@ App.supa.loadMileageHistory = function() {
             mileage: parseFloat(m.mileage) || 0,
             motohours: parseFloat(m.motohours) || 0
         })).sort((a, b) => new Date(a.date) - new Date(b.date));
-    }), 'loadMileageHistory');
+    }), 3, 500, 'loadMileageHistory');
 };
 
 // ----- Сохранение данных -----
@@ -369,17 +365,28 @@ App.supa.uploadPhoto = async function(file) {
     const userId = await App.supa.getCurrentUserId();
     if (!userId) throw new Error('Not authenticated');
     ensureSupabase();
+    
     const fileExt = file.name.split('.').pop();
     const fileName = `${Date.now()}_${Math.random().toString(36).substring(2)}.${fileExt}`;
     const filePath = `${userId}/${App.store.activeCarId || 'default'}/${fileName}`;
+    
     const { data, error } = await App.supabase.storage
         .from('vesta-photos')
-        .upload(filePath, file, { cacheControl: '3600', upsert: false });
+        .upload(filePath, file, {
+            cacheControl: '3600',
+            upsert: false
+        });
+    
     if (error) throw error;
-    const { data: urlData } = App.supabase.storage.from('vesta-photos').getPublicUrl(filePath);
+    
+    const { data: urlData } = App.supabase.storage
+        .from('vesta-photos')
+        .getPublicUrl(filePath);
+    
     return urlData.publicUrl;
 };
 
+// ---------- Документы автомобиля ----------
 App.supa.loadCarDocuments = function() {
     return withRetry(() => App.supa.fetchTable('car_documents').then(({ data, error }) => {
         if (error) throw error;
@@ -391,7 +398,7 @@ App.supa.loadCarDocuments = function() {
             amount: doc.amount,
             notes: doc.notes || ''
         }));
-    }), 'loadCarDocuments');
+    }), 3, 500, 'loadCarDocuments');
 };
 
 App.supa.addCarDocument = async function(doc) {
@@ -427,6 +434,7 @@ App.supa.deleteCarDocument = async function(docId) {
     return true;
 };
 
+// ---------- Мульти-авто и совместный доступ ----------
 App.supa.loadCars = function() {
     ensureSupabase();
     return App.supabase.from('cars').select('*').then(({ data, error }) => {
@@ -459,7 +467,7 @@ App.supa.inviteUserToCar = function(carId, email) {
 
 App.supa.getPendingInvites = function() {
     return App.supa.getCurrentUserId().then(function(userId) {
-        if (!userId) return [];
+        if (!userId) return { data: [], error: null };
         return App.supabase.from('car_shares')
             .select('*, cars(name)')
             .eq('invited_user_id', userId)
@@ -513,7 +521,7 @@ App.supa.getVehicleState = async function(carId) {
             .maybeSingle();
         if (error) throw error;
         return data || null;
-    }, 'getVehicleState');
+    }, 3, 500, 'getVehicleState');
 };
 
 App.supa.updateVehicleState = async function(carId, updates) {
@@ -563,16 +571,10 @@ App.supa.createInviteLink = async function(carId) {
     return window.location.origin + '/Car-K3eper/?invite=' + inviteCode;
 };
 
-// ===== СТРАХОВКА – заглушки для отсутствующих функций =====
+// Страховка
 if (!App.supa.getVehicleState) {
-    App.supa.getVehicleState = async function(carId) {
-        console.warn('[Supabase] getVehicleState не определена, возвращаем null');
-        return null;
-    };
+    App.supa.getVehicleState = async function(carId) { return null; };
 }
 if (!App.supa.updateVehicleState) {
-    App.supa.updateVehicleState = async function(carId, updates) {
-        console.warn('[Supabase] updateVehicleState не определена, пропускаем');
-        return true;
-    };
+    App.supa.updateVehicleState = async function(carId, updates) { return true; };
 }
