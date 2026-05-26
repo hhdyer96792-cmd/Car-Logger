@@ -1,4 +1,4 @@
-// src/ui/pages/cars.js
+// src/ui/pages/cars.js (исправленный: кнопки VIN/номер под полем, экспортные функции перенесены, исправлена проверка getVehicleState)
 window.App = window.App || {};
 App.ui.pages = App.ui.pages || {};
 
@@ -418,41 +418,42 @@ App.ui.pages.renderCarTab = function() {
         App.ui.pages.initCsvImport();
     }
     
+    // Исправление расположения кнопок VIN/номер (под полем ввода)
     var vinContainer = document.querySelector('.car-fields-grid');
     if (vinContainer) {
         var oldVinInput = document.getElementById('car-vin');
         var wrapper = null;
         
         if (oldVinInput && !document.getElementById('vin-info-btn')) {
+            // Создаём wrapper для поля VIN и кнопок под ним
             wrapper = document.createElement('div');
             wrapper.style.display = 'flex';
+            wrapper.style.flexDirection = 'column';
             wrapper.style.gap = '8px';
-            wrapper.style.alignItems = 'center';
             oldVinInput.parentNode.insertBefore(wrapper, oldVinInput);
             wrapper.appendChild(oldVinInput);
-            oldVinInput.style.flex = '1';
             
-            var btn = document.createElement('button');
-            btn.id = 'vin-info-btn';
-            btn.className = 'secondary-btn';
-            btn.innerHTML = '<i data-lucide="info"></i> Инфо по VIN';
-            btn.style.width = 'auto';
-            btn.style.whiteSpace = 'nowrap';
-            wrapper.appendChild(btn);
-            App.initIcons();
-        } else {
-            wrapper = oldVinInput ? oldVinInput.parentNode : null;
-        }
-        
-        if (wrapper && !document.getElementById('plate-info-btn')) {
+            var btnContainer = document.createElement('div');
+            btnContainer.style.display = 'flex';
+            btnContainer.style.gap = '8px';
+            btnContainer.style.flexWrap = 'wrap';
+            
+            var vinBtn = document.createElement('button');
+            vinBtn.id = 'vin-info-btn';
+            vinBtn.className = 'secondary-btn';
+            vinBtn.innerHTML = '<i data-lucide="info"></i> Инфо по VIN';
+            btnContainer.appendChild(vinBtn);
+            
             var plateBtn = document.createElement('button');
             plateBtn.id = 'plate-info-btn';
             plateBtn.className = 'secondary-btn';
             plateBtn.innerHTML = '<i data-lucide="flag"></i> Инфо по номеру';
-            plateBtn.style.width = 'auto';
-            plateBtn.style.whiteSpace = 'nowrap';
-            wrapper.appendChild(plateBtn);
+            btnContainer.appendChild(plateBtn);
+            
+            wrapper.appendChild(btnContainer);
             App.initIcons();
+        } else if (oldVinInput) {
+            wrapper = oldVinInput.parentNode;
         }
         
         var vinInfoBtn = document.getElementById('vin-info-btn');
@@ -506,7 +507,7 @@ App.ui.pages.renderCarTab = function() {
         }
         
         App.initIcons();
-    }
+    }   
 };
 
 App.ui.pages.loadCarDetails = function(carId) {
