@@ -3,10 +3,34 @@ window.App = window.App || {};
 App.supa = App.supa || {};
 
 let cachedUserId = null;
+let retryCount = 0;
+const MAX_RETRIES = 3;
+const RETRY_DELAY = 500;
 
 function ensureSupabase() {
     if (!App.supabase) throw new Error('Supabase client not initialized');
     return App.supabase;
+}
+
+// ========== Утилита повторных попыток при ошибках блокировки ==========
+async function withRetry(fn, context = 'unknown') {
+    let lastError;
+    for (let i = 0; i <= MAX_RETRIES; i++) {
+        try {
+            return await fn();
+        } catch (err) {
+            lastError = err;
+            // Если ошибка связана с блокировкой (Lock), ждём и повторяем
+            if (err.message?.includes('Lock') || err.message?.includes('stole') || err?.toString().includes('Lock')) {
+                console.warn(`[Supabase] Lock conflict in ${context}, retry ${i+1}/${MAX_RETRIES}`);
+                await new Promise(r => setTimeout(r, RETRY_DELAY * (i + 1)));
+                continue;
+            }
+            // Другие ошибки не повторяем
+            throw err;
+        }
+    }
+    throw lastError;
 }
 
 // ----- Универсальные запросы -----
@@ -38,18 +62,23 @@ App.supa.deleteRow = function(tableName, id) {
 App.supa.getCurrentUserId = async function() {
     if (cachedUserId) return cachedUserId;
     ensureSupabase();
-    const { data: { user } } = await App.supabase.auth.getUser();
-    cachedUserId = user?.id || null;
-    return cachedUserId;
+    try {
+        const { data: { user } } = await withRetry(() => App.supabase.auth.getUser(), 'getUser');
+        cachedUserId = user?.id || null;
+        return cachedUserId;
+    } catch (err) {
+        console.error('[Supabase] getCurrentUserId failed:', err);
+        return null;
+    }
 };
 
 App.supa.clearUserIdCache = function() {
     cachedUserId = null;
 };
 
-// ----- Загрузка данных -----
+// ----- Загрузка данных с повторными попытками -----
 App.supa.loadOperations = function() {
-    return App.supa.fetchTable('operations').then(({ data, error }) => {
+    return withRetry(() => App.supa.fetchTable('operations').then(({ data, error }) => {
         if (error) throw error;
         return (data || []).map(op => ({
             id: op.id,
@@ -64,11 +93,11 @@ App.supa.loadOperations = function() {
             lastMotohours: op.last_motohours || 0,
             updatedAt: op.updated_at
         }));
-    });
+    }), 'loadOperations');
 };
 
 App.supa.loadFuelLog = function() {
-    return App.supa.fetchTable('fuel_log').then(({ data, error }) => {
+    return withRetry(() => App.supa.fetchTable('fuel_log').then(({ data, error }) => {
         if (error) throw error;
         return (data || []).map(f => ({
             id: f.id,
@@ -80,11 +109,11 @@ App.supa.loadFuelLog = function() {
             fuelType: f.fuel_type || 'Бензин',
             notes: f.notes || ''
         }));
-    });
+    }), 'loadFuelLog');
 };
 
 App.supa.loadTires = function() {
-    return App.supa.fetchTable('tires').then(({ data, error }) => {
+    return withRetry(() => App.supa.fetchTable('tires').then(({ data, error }) => {
         if (error) throw error;
         return (data || []).map(t => ({
             id: t.id,
@@ -99,11 +128,11 @@ App.supa.loadTires = function() {
             mountCost: parseFloat(t.mount_cost) || 0,
             isDIY: t.is_diy || false
         }));
-    });
+    }), 'loadTires');
 };
 
 App.supa.loadParts = function() {
-    return App.supa.fetchTable('parts').then(({ data, error }) => {
+    return withRetry(() => App.supa.fetchTable('parts').then(({ data, error }) => {
         if (error) throw error;
         return (data || []).map(p => ({
             id: p.id,
@@ -119,11 +148,11 @@ App.supa.loadParts = function() {
             location: p.location || '',
             dateAdded: p.purchase_date || ''
         }));
-    });
+    }), 'loadParts');
 };
 
 App.supa.loadHistory = function() {
-    return App.supa.fetchTable('history').then(({ data, error }) => {
+    return withRetry(() => App.supa.fetchTable('history').then(({ data, error }) => {
         if (error) throw error;
         return (data || []).map(h => ({
             id: h.id,
@@ -139,46 +168,46 @@ App.supa.loadHistory = function() {
             user_id: h.user_id,
             rowIndex: h.id
         }));
-    });
+    }), 'loadHistory');
 };
 
 App.supa.loadSettings = function() {
     if (!App.store.activeCarId) return Promise.resolve(null);
-    return App.supa.getCurrentUserId().then(function(userId) {
+    return withRetry(async () => {
+        const userId = await App.supa.getCurrentUserId();
         if (!userId) return null;
         ensureSupabase();
-        return Promise.all([
+        const [vs, us] = await Promise.all([
             App.supabase.from('vehicle_state').select('*').eq('car_id', App.store.activeCarId).maybeSingle(),
             App.supabase.from('user_settings').select('*').eq('user_id', userId).eq('car_id', App.store.activeCarId).maybeSingle()
-        ]).then(function([vs, us]) {
-            return {
-                currentMileage: vs.data ? parseFloat(vs.data.current_mileage) || 0 : 0,
-                currentMotohours: vs.data ? parseFloat(vs.data.current_motohours) || 0 : 0,
-                avgDailyMileage: vs.data ? parseFloat(vs.data.avg_daily_mileage) || 45 : 45,
-                avgDailyMotohours: vs.data ? parseFloat(vs.data.avg_daily_motohours) || 1.8 : 1.8,
-                telegramToken: us.data ? us.data.telegram_token || '' : '',
-                telegramChatId: us.data ? us.data.telegram_chat_id || '' : '',
-                notificationMethod: us.data ? us.data.notification_method || 'telegram' : 'telegram',
-                reminderDays: us.data ? us.data.reminder_days || '7,2' : '7,2',
-                carBrand: vs.data?.car_brand || '',
-                carModel: vs.data?.car_model || '',
-                carYear: vs.data?.car_year || null,
-                plateNumber: vs.data?.plate_number || '',
-                vin: vs.data?.vin || ''
-            };
-        });
-    });
+        ]);
+        return {
+            currentMileage: vs.data ? parseFloat(vs.data.current_mileage) || 0 : 0,
+            currentMotohours: vs.data ? parseFloat(vs.data.current_motohours) || 0 : 0,
+            avgDailyMileage: vs.data ? parseFloat(vs.data.avg_daily_mileage) || 45 : 45,
+            avgDailyMotohours: vs.data ? parseFloat(vs.data.avg_daily_motohours) || 1.8 : 1.8,
+            telegramToken: us.data ? us.data.telegram_token || '' : '',
+            telegramChatId: us.data ? us.data.telegram_chat_id || '' : '',
+            notificationMethod: us.data ? us.data.notification_method || 'telegram' : 'telegram',
+            reminderDays: us.data ? us.data.reminder_days || '7,2' : '7,2',
+            carBrand: vs.data?.car_brand || '',
+            carModel: vs.data?.car_model || '',
+            carYear: vs.data?.car_year || null,
+            plateNumber: vs.data?.plate_number || '',
+            vin: vs.data?.vin || ''
+        };
+    }, 'loadSettings');
 };
 
 App.supa.loadMileageHistory = function() {
-    return App.supa.fetchTable('mileage_log').then(({ data, error }) => {
+    return withRetry(() => App.supa.fetchTable('mileage_log').then(({ data, error }) => {
         if (error) throw error;
         return (data || []).map(m => ({
             date: m.date,
             mileage: parseFloat(m.mileage) || 0,
             motohours: parseFloat(m.motohours) || 0
         })).sort((a, b) => new Date(a.date) - new Date(b.date));
-    });
+    }), 'loadMileageHistory');
 };
 
 // ----- Сохранение данных -----
@@ -293,7 +322,6 @@ App.supa.saveHistoryRecord = async function(record) {
     }
 };
 
-// ========== Метод для пробега ==========
 App.supa.addMileageRecord = async function(date, mileage, motohours) {
     const userId = await App.supa.getCurrentUserId();
     const record = {
@@ -306,7 +334,6 @@ App.supa.addMileageRecord = async function(date, mileage, motohours) {
     return App.supa.insertRow('mileage_log', record);
 };
 
-// Прямые запросы (с upsert, специфичные фильтры)
 App.supa.saveVehicleState = async function(state) {
     ensureSupabase();
     const record = {
@@ -338,35 +365,23 @@ App.supa.saveUserSettings = async function(settingsObj) {
     return App.supabase.from('user_settings').upsert(record, { onConflict: 'user_id, car_id' }).select();
 };
 
-// ----- Загрузка фото в Supabase Storage -----
 App.supa.uploadPhoto = async function(file) {
     const userId = await App.supa.getCurrentUserId();
     if (!userId) throw new Error('Not authenticated');
     ensureSupabase();
-    
     const fileExt = file.name.split('.').pop();
     const fileName = `${Date.now()}_${Math.random().toString(36).substring(2)}.${fileExt}`;
     const filePath = `${userId}/${App.store.activeCarId || 'default'}/${fileName}`;
-    
     const { data, error } = await App.supabase.storage
         .from('vesta-photos')
-        .upload(filePath, file, {
-            cacheControl: '3600',
-            upsert: false
-        });
-    
+        .upload(filePath, file, { cacheControl: '3600', upsert: false });
     if (error) throw error;
-    
-    const { data: urlData } = App.supabase.storage
-        .from('vesta-photos')
-        .getPublicUrl(filePath);
-    
+    const { data: urlData } = App.supabase.storage.from('vesta-photos').getPublicUrl(filePath);
     return urlData.publicUrl;
 };
 
-// ---------- Документы автомобиля (DAL) ----------
 App.supa.loadCarDocuments = function() {
-    return App.supa.fetchTable('car_documents').then(({ data, error }) => {
+    return withRetry(() => App.supa.fetchTable('car_documents').then(({ data, error }) => {
         if (error) throw error;
         return (data || []).map(doc => ({
             id: doc.id,
@@ -376,7 +391,7 @@ App.supa.loadCarDocuments = function() {
             amount: doc.amount,
             notes: doc.notes || ''
         }));
-    });
+    }), 'loadCarDocuments');
 };
 
 App.supa.addCarDocument = async function(doc) {
@@ -412,7 +427,6 @@ App.supa.deleteCarDocument = async function(docId) {
     return true;
 };
 
-// ---------- Мульти-авто и совместный доступ ----------
 App.supa.loadCars = function() {
     ensureSupabase();
     return App.supabase.from('cars').select('*').then(({ data, error }) => {
@@ -445,7 +459,7 @@ App.supa.inviteUserToCar = function(carId, email) {
 
 App.supa.getPendingInvites = function() {
     return App.supa.getCurrentUserId().then(function(userId) {
-        if (!userId) return { data: [], error: null };
+        if (!userId) return [];
         return App.supabase.from('car_shares')
             .select('*, cars(name)')
             .eq('invited_user_id', userId)
@@ -490,15 +504,16 @@ App.supa.deleteCarShare = function(shareId) {
         .select();
 };
 
-// ========== Дополнительные методы для автомобиля ==========
 App.supa.getVehicleState = async function(carId) {
-    const { data, error } = await App.supabase
-        .from('vehicle_state')
-        .select('base_mileage, base_motohours, purchase_date, purchase_cost')
-        .eq('car_id', carId)
-        .maybeSingle();
-    if (error) throw error;
-    return data || null;
+    return withRetry(async () => {
+        const { data, error } = await App.supabase
+            .from('vehicle_state')
+            .select('base_mileage, base_motohours, purchase_date, purchase_cost')
+            .eq('car_id', carId)
+            .maybeSingle();
+        if (error) throw error;
+        return data || null;
+    }, 'getVehicleState');
 };
 
 App.supa.updateVehicleState = async function(carId, updates) {
@@ -516,7 +531,6 @@ App.supa.updateVehicleState = async function(carId, updates) {
     return true;
 };
 
-// ========== Календарь ==========
 App.supa.getCalendarToken = async function(carId) {
     const { data, error } = await App.supabase
         .from('calendar_tokens')
@@ -538,7 +552,6 @@ App.supa.createCalendarToken = async function(carId) {
     return data.token;
 };
 
-// ========== Приглашения (создание ссылки) ==========
 App.supa.createInviteLink = async function(carId) {
     const { data, error } = await App.supabase
         .from('car_shares')
@@ -549,3 +562,17 @@ App.supa.createInviteLink = async function(carId) {
     const inviteCode = data.invite_code;
     return window.location.origin + '/Car-K3eper/?invite=' + inviteCode;
 };
+
+// ===== СТРАХОВКА – заглушки для отсутствующих функций =====
+if (!App.supa.getVehicleState) {
+    App.supa.getVehicleState = async function(carId) {
+        console.warn('[Supabase] getVehicleState не определена, возвращаем null');
+        return null;
+    };
+}
+if (!App.supa.updateVehicleState) {
+    App.supa.updateVehicleState = async function(carId, updates) {
+        console.warn('[Supabase] updateVehicleState не определена, пропускаем');
+        return true;
+    };
+}
