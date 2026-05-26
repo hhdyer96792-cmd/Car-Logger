@@ -134,28 +134,37 @@ App.store = {
             })).sort((a, b) => new Date(a.date) - new Date(b.date));
 
             const settings = await App.db.getById('settings', 1);
-            if (settings) {
-                let decryptedSettings = settings;
-                const masterKey = App.db.encryption.getMasterKey();
-                if (masterKey && settings.telegramToken && typeof settings.telegramToken === 'object') {
-                    decryptedSettings = await App.db.encryption.decryptSettings(settings, masterKey);
-                }
-                this.settings = {
-                    currentMileage: decryptedSettings.currentMileage || 0,
-                    currentMotohours: decryptedSettings.currentMotohours || 0,
-                    avgDailyMileage: decryptedSettings.avgDailyMileage || 45,
-                    avgDailyMotohours: decryptedSettings.avgDailyMotohours || 1.8,
-                    telegramToken: decryptedSettings.telegramToken || '',
-                    telegramChatId: decryptedSettings.telegramChatId || '',
-                    notificationMethod: decryptedSettings.notificationMethod || 'telegram',
-                    reminderDays: decryptedSettings.reminderDays || '7,2',
-                    carBrand: decryptedSettings.carBrand || '',
-                    carModel: decryptedSettings.carModel || '',
-                    carYear: decryptedSettings.carYear || null,
-                    plateNumber: decryptedSettings.plateNumber || '',
-                    vin: decryptedSettings.vin || ''
-                };
+if (settings) {
+    let decryptedSettings = settings;
+    const masterKey = App.db.encryption.getMasterKey();
+    if (masterKey && settings.telegramToken && typeof settings.telegramToken === 'object') {
+        decryptedSettings = await App.db.encryption.decryptSettings(settings, masterKey);
+    } else if (!masterKey) {
+        // Нет мастер-ключа – заменяем зашифрованные поля на пустые строки
+        decryptedSettings = { ...settings };
+        const sensitiveFields = ['telegramToken', 'telegramChatId', 'vin', 'plateNumber'];
+        for (const field of sensitiveFields) {
+            if (decryptedSettings[field] && typeof decryptedSettings[field] === 'object') {
+                decryptedSettings[field] = '';
             }
+        }
+    }
+    this.settings = {
+        currentMileage: decryptedSettings.currentMileage || 0,
+        currentMotohours: decryptedSettings.currentMotohours || 0,
+        avgDailyMileage: decryptedSettings.avgDailyMileage || 45,
+        avgDailyMotohours: decryptedSettings.avgDailyMotohours || 1.8,
+        telegramToken: decryptedSettings.telegramToken || '',
+        telegramChatId: decryptedSettings.telegramChatId || '',
+        notificationMethod: decryptedSettings.notificationMethod || 'telegram',
+        reminderDays: decryptedSettings.reminderDays || '7,2',
+        carBrand: decryptedSettings.carBrand || '',
+        carModel: decryptedSettings.carModel || '',
+        carYear: decryptedSettings.carYear || null,
+        plateNumber: decryptedSettings.plateNumber || '',
+        vin: decryptedSettings.vin || ''
+    };
+}
 
             const cars = await App.db.getAll('cars');
             this.cars = cars;
