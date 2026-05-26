@@ -23,6 +23,7 @@ App.store = {
         telegramToken: '',
         telegramChatId: '',
         notificationMethod: 'telegram',
+        reminderDays: '7,2',
         carBrand: '',
         carModel: '',
         carYear: null,
@@ -134,37 +135,36 @@ App.store = {
             })).sort((a, b) => new Date(a.date) - new Date(b.date));
 
             const settings = await App.db.getById('settings', 1);
-if (settings) {
-    let decryptedSettings = settings;
-    const masterKey = App.db.encryption.getMasterKey();
-    if (masterKey && settings.telegramToken && typeof settings.telegramToken === 'object') {
-        decryptedSettings = await App.db.encryption.decryptSettings(settings, masterKey);
-    } else if (!masterKey) {
-        // Нет мастер-ключа – заменяем зашифрованные поля на пустые строки
-        decryptedSettings = { ...settings };
-        const sensitiveFields = ['telegramToken', 'telegramChatId', 'vin', 'plateNumber'];
-        for (const field of sensitiveFields) {
-            if (decryptedSettings[field] && typeof decryptedSettings[field] === 'object') {
-                decryptedSettings[field] = '';
+            if (settings) {
+                let decryptedSettings = settings;
+                const masterKey = App.db.encryption.getMasterKey();
+                if (masterKey && settings.telegramToken && typeof settings.telegramToken === 'object') {
+                    decryptedSettings = await App.db.encryption.decryptSettings(settings, masterKey);
+                } else if (!masterKey) {
+                    decryptedSettings = { ...settings };
+                    const sensitiveFields = ['telegramToken', 'telegramChatId', 'vin', 'plateNumber'];
+                    for (const field of sensitiveFields) {
+                        if (decryptedSettings[field] && typeof decryptedSettings[field] === 'object') {
+                            decryptedSettings[field] = '';
+                        }
+                    }
+                }
+                this.settings = {
+                    currentMileage: decryptedSettings.currentMileage || 0,
+                    currentMotohours: decryptedSettings.currentMotohours || 0,
+                    avgDailyMileage: decryptedSettings.avgDailyMileage || 45,
+                    avgDailyMotohours: decryptedSettings.avgDailyMotohours || 1.8,
+                    telegramToken: decryptedSettings.telegramToken || '',
+                    telegramChatId: decryptedSettings.telegramChatId || '',
+                    notificationMethod: decryptedSettings.notificationMethod || 'telegram',
+                    reminderDays: decryptedSettings.reminderDays || '7,2',
+                    carBrand: decryptedSettings.carBrand || '',
+                    carModel: decryptedSettings.carModel || '',
+                    carYear: decryptedSettings.carYear || null,
+                    plateNumber: decryptedSettings.plateNumber || '',
+                    vin: decryptedSettings.vin || ''
+                };
             }
-        }
-    }
-    this.settings = {
-        currentMileage: decryptedSettings.currentMileage || 0,
-        currentMotohours: decryptedSettings.currentMotohours || 0,
-        avgDailyMileage: decryptedSettings.avgDailyMileage || 45,
-        avgDailyMotohours: decryptedSettings.avgDailyMotohours || 1.8,
-        telegramToken: decryptedSettings.telegramToken || '',
-        telegramChatId: decryptedSettings.telegramChatId || '',
-        notificationMethod: decryptedSettings.notificationMethod || 'telegram',
-        reminderDays: decryptedSettings.reminderDays || '7,2',
-        carBrand: decryptedSettings.carBrand || '',
-        carModel: decryptedSettings.carModel || '',
-        carYear: decryptedSettings.carYear || null,
-        plateNumber: decryptedSettings.plateNumber || '',
-        vin: decryptedSettings.vin || ''
-    };
-}
 
             const cars = await App.db.getAll('cars');
             this.cars = cars;
@@ -173,7 +173,6 @@ if (settings) {
             const pending = await App.db.getAll('pending_actions');
             this.pendingActions = pending.sort((a, b) => a.timestamp - b.timestamp);
 
-            // Базовые параметры (будут загружены из vehicle_state при синхронизации)
             this.baseMileage = 0;
             this.baseMotohours = 0;
             this.purchaseDate = '';
@@ -304,21 +303,53 @@ if (settings) {
     setActiveCar: function(carId) {
         this.activeCarId = carId;
         localStorage.setItem('vesta_active_car_id', carId);
-        this.loadFromIndexedDB().catch(console.error);
+        // Обновляем UI, но НЕ перезагружаем все данные из IndexedDB
+        if (typeof App.ui.pages.renderCarSelector === 'function') App.ui.pages.renderCarSelector();
+        if (typeof App.ui.pages.renderCarTab === 'function') App.ui.pages.renderCarTab();
     },
-    loadCars: function() {
-        const self = this;
-        return App.supa.loadCars().then(cars => {
-            self.cars = cars;
-            if (cars.length) {
-                const exists = self.activeCarId && cars.some(c => c.id == self.activeCarId);
-                if (!exists) self.setActiveCar(cars[0].id);
-                else localStorage.setItem('vesta_active_car_id', self.activeCarId);
-            } else if (!self.activeCarId) {
-                self.activeCarId = null;
-                localStorage.removeItem('vesta_active_car_id');
+
+    // ========== НАДЁЖНАЯ ЗАГРУЗКА АВТОМОБИЛЕЙ ==========
+    loadCars: async function() {
+        try {
+            const { data: { user } } = await App.supabase.auth.getUser();
+            if (!user) return [];
+            // Прямой запрос к Supabase
+            const { data: cars, error } = await App.supabase
+                .from('cars')
+                .select('*')
+                .eq('user_id', user.id);
+            if (error) throw error;
+            if (cars && cars.length) {
+                // Сохраняем в IndexedDB
+                for (const car of cars) {
+                    await App.db.put('cars', car);
+                }
+                this.cars = cars;
+                if (!this.activeCarId || !cars.some(c => c.id == this.activeCarId)) {
+                    this.activeCarId = cars[0].id;
+                    localStorage.setItem('vesta_active_car_id', this.activeCarId);
+                }
+                console.log('[Store] Автомобили загружены:', cars);
+                return cars;
+            } else {
+                // Нет автомобилей – создаём
+                console.log('[Store] Автомобилей нет, создаём...');
+                const { data: newCar, error: createError } = await App.supabase
+                    .from('cars')
+                    .insert({ name: 'Мой автомобиль', user_id: user.id })
+                    .select()
+                    .single();
+                if (createError) throw createError;
+                await App.db.put('cars', newCar);
+                this.cars = [newCar];
+                this.activeCarId = newCar.id;
+                localStorage.setItem('vesta_active_car_id', newCar.id);
+                console.log('[Store] Автомобиль создан:', newCar);
+                return [newCar];
             }
-            return cars;
-        });
+        } catch (err) {
+            console.error('[Store] Ошибка loadCars:', err);
+            return [];
+        }
     }
 };
