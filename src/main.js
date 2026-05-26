@@ -41,12 +41,8 @@
         App.initIcons();
     }
 
-    function enterDemoMode() {
-        if (demoModeInitialized) return;
-        demoModeInitialized = true;
-        isDemoMode = true;
-
-        // Очищаем все хранилища
+    function clearDemoArtefacts() {
+        // Полная очистка всех хранилищ перед переходом в реальный режим
         App.store.operations = [];
         App.store.fuelLog = [];
         App.store.tireLog = [];
@@ -55,6 +51,25 @@
         App.store.mileageHistory = [];
         App.store.cars = [];
         App.store.activeCarId = null;
+        localStorage.removeItem('vesta_active_car_id');
+        localStorage.removeItem('vesta_username');
+        // Очищаем IndexedDB от демо-данных (вызываем отдельно)
+        if (App.db && App.db._db) {
+            const stores = ['operations', 'fuel_log', 'tires', 'parts', 'service_records', 'mileage_log', 'cars'];
+            stores.forEach(store => App.db.clear(store).catch(console.warn));
+        }
+        // Сбрасываем флаг демо
+        demoModeInitialized = false;
+        isDemoMode = false;
+    }
+
+    function enterDemoMode() {
+        if (demoModeInitialized) return;
+        demoModeInitialized = true;
+        isDemoMode = true;
+
+        // Очищаем от старых данных
+        clearDemoArtefacts();
 
         const demoCarId = crypto.randomUUID();
         App.store.cars = [{ id: demoCarId, name: 'Мой автомобиль', user_id: 'demo' }];
@@ -91,7 +106,6 @@
         }
 
         App.store.saveToLocalStorage();
-        // Сохраняем настройки в IndexedDB, но только если БД уже инициализирована
         if (App.db && App.db._db) {
             App.store.saveSettingsToDB().catch(console.warn);
         }
@@ -220,7 +234,7 @@
                         if (modal) modal.remove();
                         document.body.classList.remove('auth-modal-open');
                         if (data.user && typeof window.generateAndShowRecoveryCodes === 'function') {
-                            window.generateAndShowRecoveryCodes(data.user.id, username);
+                            await window.generateAndShowRecoveryCodes(data.user.id, username);
                         }
                     } else {
                         App.toast('Регистрация успешна! Подтвердите email, чтобы войти.', 'info');
@@ -281,27 +295,16 @@
         if (typeof App.initIcons === 'function') App.initIcons();
     }
 
-    function doLogout() {
+    async function doLogout() {
         if (typeof App.db.encryption !== 'undefined') App.db.encryption.clearMasterKey();
         if (typeof App.store === 'undefined') return;
 
         updateUsernameDisplay('');
 
-        App.store.operations = [];
-        App.store.fuelLog = [];
-        App.store.tireLog = [];
-        App.store.parts = [];
-        App.store.serviceRecords = [];
-        App.store.mileageHistory = [];
-        App.store.cars = [];
-        App.store.activeCarId = null;
-        localStorage.removeItem('vesta_active_car_id');
-        localStorage.removeItem('vesta_username');
-        localStorage.removeItem('vesta_master_password_set');
+        // Полная очистка перед выходом
+        clearDemoArtefacts();
 
-        if (typeof App.store.saveToLocalStorage === 'function') App.store.saveToLocalStorage();
-
-        App.supabase.auth.signOut().catch(e => console.warn('Signout error', e));
+        await App.supabase.auth.signOut().catch(e => console.warn('Signout error', e));
 
         isLoggedIn = false;
         setInstallButtonVisible(false);
@@ -310,8 +313,7 @@
         if (typeof App.events.closeDrawer === 'function') App.events.closeDrawer();
         if (typeof App.supa !== 'undefined' && App.supa.clearUserIdCache) App.supa.clearUserIdCache();
 
-        demoModeInitialized = false;
-        isDemoMode = false;
+        // Переходим в демо-режим с чистыми данными
         enterDemoMode();
 
         if (typeof App.ui.pages.renderCarSelector === 'function') App.ui.pages.renderCarSelector();
@@ -348,6 +350,10 @@
             authSubscribed = true;
             App.supabase.auth.onAuthStateChange(async (event, session) => {
                 if (session) {
+                    // Авторизован – выходим из демо-режима полностью
+                    if (isDemoMode) {
+                        clearDemoArtefacts();
+                    }
                     isLoggedIn = true;
                     setInstallButtonVisible(true);
                     isDemoMode = false;
@@ -362,6 +368,81 @@
                     const mobileRowOnline = document.getElementById('mobile-header-row2');
                     if (mobileRowOnline) mobileRowOnline.style.display = 'flex';
 
+                    // Блок мастер-пароля и PIN
+                    if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+                        let masterPassword = null;
+                        const hasPin = App.localAuth && await App.localAuth.isPinSet();
+                        if (hasPin) {
+                            const pin = await App.ui.promptModalAsync('Быстрый доступ', 'Введите PIN-код (4+ цифр)');
+                            if (pin) {
+                                masterPassword = await App.localAuth.verifyPin(pin);
+                                if (masterPassword) {
+                                    const salt = App.db.encryption.getStoredSalt();
+                                    const { key } = await App.db.encryption.initMasterKey(masterPassword, salt);
+                                    App.db.encryption.setMasterKey(key, salt);
+                                    await App.store.loadFromIndexedDB();
+                                    if (typeof App.renderAll === 'function') App.renderAll();
+                                    App.toast('Расшифровка по PIN успешна', 'success');
+                                } else {
+                                    App.toast('Неверный PIN-код. Попробуйте мастер-пароль.', 'error');
+                                }
+                            }
+                        }
+                        if (!masterPassword) {
+                            const hasMasterPassword = localStorage.getItem('vesta_master_password_set') === 'true';
+                            const message = hasMasterPassword ? 'Введите мастер-пароль' : 'Установите мастер-пароль для шифрования данных (запомните его!)';
+                            const password = await App.ui.promptModalAsync('Мастер-пароль', message);
+                            if (password) {
+                                const salt = App.db.encryption.getStoredSalt();
+                                let isValid = false;
+                                if (hasMasterPassword) {
+                                    isValid = await App.db.encryption.verifyMasterKey(password, salt);
+                                } else {
+                                    isValid = true;
+                                    localStorage.setItem('vesta_master_password_set', 'true');
+                                }
+                                if (isValid) {
+                                    const { key } = await App.db.encryption.initMasterKey(password, salt);
+                                    App.db.encryption.setMasterKey(key, salt);
+                                    if (!hasMasterPassword) await App.db.encryption.saveVerificationString(key);
+                                    await App.store.loadFromIndexedDB();
+                                    if (typeof App.renderAll === 'function') App.renderAll();
+                                    App.toast(hasMasterPassword ? 'Расшифровка успешна' : 'Мастер-пароль сохранён', 'success');
+                                    masterPassword = password;
+                                } else {
+                                    App.toast('Неверный мастер-пароль', 'error');
+                                }
+                            } else {
+                                App.toast('Без мастер-пароля чувствительные данные будут недоступны', 'warning');
+                            }
+                        }
+                        if (masterPassword && !hasPin && App.localAuth && App.localAuth.isPinSupported()) {
+                            const wantPin = await App.ui.confirmModalAsync('Настроить быстрый вход по PIN-коду?');
+                            if (wantPin) {
+                                let pinSet = false;
+                                while (!pinSet) {
+                                    const pin = await App.ui.promptModalAsync('PIN-код (4+ цифры)', '');
+                                    if (pin && pin.length >= 4 && /^\d+$/.test(pin)) {
+                                        const confirmPin = await App.ui.promptModalAsync('Подтвердите PIN', '');
+                                        if (confirmPin === pin) {
+                                            try {
+                                                await App.localAuth.setPin(pin, masterPassword);
+                                                App.toast('PIN сохранён', 'success');
+                                                pinSet = true;
+                                            } catch (err) {
+                                                App.toast('Ошибка: ' + err.message, 'error');
+                                            }
+                                        } else {
+                                            App.toast('PIN не совпадают', 'error');
+                                        }
+                                    } else {
+                                        App.toast('PIN должен быть 4+ цифры', 'error');
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     // Получение имени пользователя
                     const { data: { user } } = await App.supabase.auth.getUser();
                     const username = user?.user_metadata?.username || '';
@@ -372,7 +453,6 @@
                         App.ui.pages.checkPushSubscriptionStatus();
                     }
 
-                    // Восстановление пароля
                     if (event === 'PASSWORD_RECOVERY') {
                         const newPassword = await App.ui.promptModalAsync('Новый пароль', 'Введите новый пароль (минимум 6 символов)');
                         if (newPassword && newPassword.length >= 6) {
@@ -386,7 +466,7 @@
                         }
                     }
 
-                    // Загрузка автомобилей и данных
+                    // Загрузка автомобилей
                     if (typeof App.store !== 'undefined' && typeof App.store.loadCars === 'function') {
                         await App.store.loadCars();
                         if (App.store.cars.length === 0) {
@@ -395,23 +475,36 @@
                                 if (newCar && newCar.data) {
                                     App.store.cars.push(newCar.data);
                                     App.store.setActiveCar(newCar.data.id);
+                                } else {
+                                    // fallback: создаём через прямой запрос
+                                    const { data: newCarData, error: carError } = await App.supabase
+                                        .from('cars')
+                                        .insert({ name: 'Мой автомобиль', user_id: (await App.supabase.auth.getUser()).data.user.id })
+                                        .select()
+                                        .single();
+                                    if (carError) throw carError;
+                                    App.store.cars.push(newCarData);
+                                    App.store.setActiveCar(newCarData.id);
                                 }
                             } catch (e) { console.warn('Не удалось создать автомобиль:', e); }
                         } else if (!App.store.activeCarId) {
                             App.store.setActiveCar(App.store.cars[0].id);
                         }
+                        // Принудительный рендер селектора
                         if (typeof App.ui.pages.renderCarSelector === 'function') App.ui.pages.renderCarSelector();
                         if (typeof App.ui.pages.renderCarTab === 'function') App.ui.pages.renderCarTab();
-                        if (typeof App.ui.pages.checkPendingInvites === 'function') App.ui.pages.checkPendingInvites();
-                        if (!isDemoMode && App.store.activeCarId && App.realtime && typeof App.realtime.subscribeToCar === 'function') {
-                            App.realtime.subscribeToCar(App.store.activeCarId);
-                        }
-                        if (!isDemoMode && typeof App.storage !== 'undefined' && typeof App.storage.loadAllData === 'function') {
-                            await App.storage.loadAllData();
-                            if (typeof App.ui.pages.checkAndShowInitialParamsModal === 'function') App.ui.pages.checkAndShowInitialParamsModal();
-                        }
-                        if (typeof App.renderAll === 'function') App.renderAll();
                     }
+
+                    // Загрузка остальных данных
+                    if (typeof App.ui.pages.checkPendingInvites === 'function') App.ui.pages.checkPendingInvites();
+                    if (App.store.activeCarId && App.realtime && typeof App.realtime.subscribeToCar === 'function') {
+                        App.realtime.subscribeToCar(App.store.activeCarId);
+                    }
+                    if (typeof App.storage !== 'undefined' && typeof App.storage.loadAllData === 'function') {
+                        await App.storage.loadAllData();
+                        if (typeof App.ui.pages.checkAndShowInitialParamsModal === 'function') App.ui.pages.checkAndShowInitialParamsModal();
+                    }
+                    if (typeof App.renderAll === 'function') App.renderAll();
                 } else {
                     // Выход
                     isLoggedIn = false;
@@ -429,16 +522,11 @@
                     if (carContainerEl) carContainerEl.innerHTML = '';
                     updateUsernameDisplay('');
                     if (App.realtime && typeof App.realtime.unsubscribeAll === 'function') App.realtime.unsubscribeAll();
-                    if (typeof App.store !== 'undefined') {
-                        App.store.operations = [];
-                        App.store.fuelLog = [];
-                        App.store.tireLog = [];
-                        App.store.parts = [];
-                        App.store.serviceRecords = [];
-                        App.store.mileageHistory = [];
-                        if (typeof App.store.saveToLocalStorage === 'function') App.store.saveToLocalStorage();
-                    }
+                    // Очищаем все данные перед демо
+                    clearDemoArtefacts();
                     if (typeof App.renderAll === 'function') App.renderAll();
+                    // Переходим в демо
+                    enterDemoMode();
                 }
             });
         }
@@ -507,11 +595,18 @@
             navigator.storage.persist().then(isPersisted => console.log('Persistent storage:', isPersisted ? 'granted' : 'denied'));
         }
 
-        // Инициализация БД и только потом демо-режим или вход
+        // Инициализация БД и затем запуск демо или сессии
         initDatabase().then(() => {
             const savedSession = localStorage.getItem('supabase.auth.token');
             if (!savedSession) {
                 enterDemoMode();
+            } else {
+                // Если есть сессия, но пользователь не вышел – проверим актуальность
+                App.supabase.auth.getSession().then(({ data: { session } }) => {
+                    if (!session) {
+                        enterDemoMode();
+                    }
+                });
             }
         });
 
@@ -570,7 +665,7 @@
 
         window.addEventListener('load', () => setTimeout(() => { if (typeof App.initIcons === 'function') App.initIcons(); }, 200));
 
-        // FAB-меню (оставлено без изменений)
+        // FAB-меню
         (function() {
             const fab = document.createElement('div');
             fab.id = 'fab-menu';
