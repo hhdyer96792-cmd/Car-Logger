@@ -364,6 +364,39 @@ if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
     if (typeof App.renderAll === 'function') App.renderAll();
 }
 
+// После блока мастер-пароля (или вместо него)
+try {
+    const { data: { user } } = await App.supabase.auth.getUser();
+    const { data: cars, error } = await App.supabase
+        .from('cars')
+        .select('*')
+        .eq('user_id', user.id);
+    if (!error && cars && cars.length) {
+        App.store.cars = cars;
+        App.store.activeCarId = cars[0].id;
+        localStorage.setItem('vesta_active_car_id', cars[0].id);
+        for (const car of cars) await App.db.put('cars', car);
+        if (typeof App.ui.pages.renderCarSelector === 'function') App.ui.pages.renderCarSelector();
+        if (typeof App.ui.pages.renderCarTab === 'function') App.ui.pages.renderCarTab();
+        console.log('Автомобили принудительно загружены:', cars);
+    } else if (cars.length === 0) {
+        // Создать автомобиль
+        const { data: newCar } = await App.supabase
+            .from('cars')
+            .insert({ name: 'Мой автомобиль', user_id: user.id })
+            .select()
+            .single();
+        if (newCar) {
+            App.store.cars = [newCar];
+            App.store.activeCarId = newCar.id;
+            await App.db.put('cars', newCar);
+            if (typeof App.ui.pages.renderCarSelector === 'function') App.ui.pages.renderCarSelector();
+        }
+    }
+} catch (err) {
+    console.error('Ошибка принудительной загрузки авто:', err);
+}
+
                     // ========== БЛОК АВТОМОБИЛЯ (ИСПРАВЛЕННЫЙ) ==========
                     if (typeof App.store !== 'undefined' && typeof App.store.loadCars === 'function') {
                         try {
