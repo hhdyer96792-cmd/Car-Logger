@@ -59,7 +59,7 @@ App.ui.pages.checkPushSubscriptionStatus = async function() {
         if (isSubscribed) localStorage.setItem('push_subscribed', 'true');
         else localStorage.removeItem('push_subscribed');
         if (document.getElementById('tab-settings')?.classList.contains('active')) {
-            App.ui.pages.populateSettingsFields();
+            await App.ui.pages.populateSettingsFields();
         }
         return isSubscribed;
     } catch (err) {
@@ -78,12 +78,12 @@ App.ui.pages.savePushSubscription = async function(playerId) {
             .upsert({ user_id: user.id, player_id: playerId, updated_at: new Date().toISOString() }, { onConflict: 'user_id' });
         if (error) throw error;
         localStorage.setItem('push_subscribed', 'true');
-        App.ui.pages.populateSettingsFields();
+        await App.ui.pages.populateSettingsFields();
         return true;
     } catch (err) {
         console.error('Ошибка сохранения push-подписки:', err);
         localStorage.setItem('push_subscribed', 'true');
-        App.ui.pages.populateSettingsFields();
+        await App.ui.pages.populateSettingsFields();
         return false;
     }
 };
@@ -107,12 +107,12 @@ App.ui.pages.removePushSubscription = async function() {
                 }
             } catch(e) { console.warn('Token delete failed:', e); }
         }
-        App.ui.pages.populateSettingsFields();
+        await App.ui.pages.populateSettingsFields();
         return true;
     } catch (err) {
         console.error('Ошибка удаления push-подписки:', err);
         localStorage.removeItem('push_subscribed');
-        App.ui.pages.populateSettingsFields();
+        await App.ui.pages.populateSettingsFields();
         return false;
     }
 };
@@ -131,7 +131,7 @@ App.ui.pages.renderRecoveryCodesBlock = function(container) {
         </div>
     `;
     App.initIcons();
-    // Инициализируем обработчики резервных кодов (уникальные, без дублей)
+    // Инициализация обработчиков (уникальная, без дублей)
     if (typeof App.ui.pages.initRecoveryCodesUI === 'function') {
         App.ui.pages.initRecoveryCodesUI();
     }
@@ -161,11 +161,15 @@ App.ui.pages.renderEncryptionPasswordBlock = function(container) {
                     setTimeout(() => statusDiv.innerHTML = '', 3000);
                     return;
                 }
-                await App.db.encryption.changeMasterPassword(oldPwd, newPwd);
-                statusDiv.innerHTML = '<span style="color: var(--success);"><i data-lucide="check-circle"></i> Пароль шифрования успешно изменён</span>';
-                setTimeout(() => statusDiv.innerHTML = '', 3000);
+                if (typeof App.db.encryption.changeMasterPassword === 'function') {
+                    await App.db.encryption.changeMasterPassword(oldPwd, newPwd);
+                    statusDiv.innerHTML = '<span style="color: var(--success);"><i data-lucide="check-circle"></i> Пароль шифрования успешно изменён</span>';
+                } else {
+                    throw new Error('Функция смены пароля шифрования не доступна');
+                }
             } catch (err) {
                 statusDiv.innerHTML = `<span style="color: var(--danger);"><i data-lucide="x-circle"></i> ${err.message}</span>`;
+            } finally {
                 setTimeout(() => statusDiv.innerHTML = '', 3000);
             }
             App.initIcons();
@@ -190,19 +194,6 @@ App.ui.pages.renderAccountPasswordBlock = function(container) {
         changeAccountBtn.addEventListener('click', async () => {
             const statusDiv = document.getElementById('account-password-status');
             try {
-                const currentPwd = await App.ui.promptModalAsync('Смена пароля входа', 'Введите текущий пароль:');
-                if (!currentPwd) return;
-                let isValid = false;
-                try {
-                    const { error } = await App.supabase.auth.reauthenticate();
-                    if (!error) isValid = true;
-                } catch(e) { /* fallback */ }
-                if (!isValid) {
-                    const { data: { user } } = await App.supabase.auth.getUser();
-                    const email = user.email;
-                    const { error } = await App.supabase.auth.signInWithPassword({ email, password: currentPwd });
-                    if (error) throw new Error('Неверный текущий пароль');
-                }
                 const newPwd = await App.ui.promptModalAsync('Смена пароля входа', 'Введите новый пароль (мин. 6 символов):');
                 if (!newPwd || newPwd.length < 6) {
                     statusDiv.innerHTML = '<span style="color: var(--danger);"><i data-lucide="alert-triangle"></i> Пароль должен быть не менее 6 символов</span>';
@@ -212,10 +203,10 @@ App.ui.pages.renderAccountPasswordBlock = function(container) {
                 const { error } = await App.supabase.auth.updateUser({ password: newPwd });
                 if (error) throw new Error(error.message);
                 statusDiv.innerHTML = '<span style="color: var(--success);"><i data-lucide="check-circle"></i> Пароль входа успешно изменён. Используйте новый пароль при следующем входе.</span>';
-                setTimeout(() => statusDiv.innerHTML = '', 5000);
             } catch (err) {
                 statusDiv.innerHTML = `<span style="color: var(--danger);"><i data-lucide="x-circle"></i> ${err.message}</span>`;
-                setTimeout(() => statusDiv.innerHTML = '', 3000);
+            } finally {
+                setTimeout(() => statusDiv.innerHTML = '', 5000);
             }
             App.initIcons();
         });
@@ -238,21 +229,14 @@ App.ui.pages.renderDeleteAccountBlock = function(container) {
         deleteBtn.addEventListener('click', async () => {
             const confirmed = await App.ui.confirmModalAsync('Вы уверены? Все ваши данные будут удалены навсегда. Это действие невозможно отменить.');
             if (!confirmed) return;
-
             const { data: { user } } = await App.supabase.auth.getUser();
             if (!user) {
                 App.toast('Пользователь не найден', 'error');
                 return;
             }
-
             try {
-                // Вызываем единую Edge Function для удаления аккаунта (user_id берётся из JWT)
-                const { error: fnError } = await App.supabase.functions.invoke('delete-account', {
-                    body: {} // user_id не передаём, он берётся из JWT
-                });
+                const { error: fnError } = await App.supabase.functions.invoke('delete-account', { body: {} });
                 if (fnError) throw new Error(fnError.message);
-
-                // Выходим из системы и очищаем локальное хранилище
                 await App.supabase.auth.signOut();
                 localStorage.clear();
                 sessionStorage.clear();
@@ -296,7 +280,10 @@ App.ui.pages.renderPremiumBlock = function() {
         const keyInput = document.getElementById('premium-key-input');
         const statusDiv = document.getElementById('premium-status-message');
         if (activateBtn) {
-            activateBtn.onclick = async () => {
+            // Убираем старые обработчики
+            const newActivateBtn = activateBtn.cloneNode(true);
+            activateBtn.parentNode.replaceChild(newActivateBtn, activateBtn);
+            newActivateBtn.onclick = async () => {
                 const key = keyInput.value.trim();
                 if (!key) {
                     statusDiv.innerHTML = '<span style="color: var(--danger);"><i data-lucide="alert-triangle"></i> Введите ключ</span>';
@@ -345,7 +332,9 @@ App.ui.pages.renderPremiumBlock = function() {
         }
         const deactivateBtn = document.getElementById('premium-deactivate-device-btn');
         if (deactivateBtn) {
-            deactivateBtn.onclick = async () => {
+            const newDeactivateBtn = deactivateBtn.cloneNode(true);
+            deactivateBtn.parentNode.replaceChild(newDeactivateBtn, deactivateBtn);
+            newDeactivateBtn.onclick = async () => {
                 await App.premium.deactivateDevice();
                 window.location.reload();
             };
@@ -356,7 +345,6 @@ App.ui.pages.renderPremiumBlock = function() {
 
 // ==================== ОСНОВНАЯ ФУНКЦИЯ ЗАПОЛНЕНИЯ НАСТРОЕК ====================
 App.ui.pages.populateSettingsFields = async function() {
-    // Контейнеры
     const premiumContainer = document.getElementById('premium-settings-container');
     const notificationsContainer = document.getElementById('notifications-card-container');
     const pinContainer = document.getElementById('pin-settings-container');
@@ -367,12 +355,12 @@ App.ui.pages.populateSettingsFields = async function() {
         return;
     }
 
-    // 0. Premium карточка (отдельно, сверху)
+    // 0. Premium карточка
     if (typeof App.ui.pages.renderPremiumBlock === 'function') {
         App.ui.pages.renderPremiumBlock();
     }
 
-    // 1. Карточка уведомлений (без Premium внутри)
+    // 1. Карточка уведомлений
     notificationsContainer.innerHTML = `
         <div class="card">
             <h3><i data-lucide="bell"></i> Уведомления</h3>
@@ -418,15 +406,10 @@ App.ui.pages.populateSettingsFields = async function() {
     // Заполнение текущих значений уведомлений
     const notificationMethodSelect = document.getElementById('notification-method');
     if (notificationMethodSelect) notificationMethodSelect.value = App.store.settings.notificationMethod || 'telegram';
-
     const reminderInput = document.getElementById('reminder-days-input');
-    if (reminderInput && App.store.settings.reminderDays) {
-        reminderInput.value = App.store.settings.reminderDays;
-    }
+    if (reminderInput && App.store.settings.reminderDays) reminderInput.value = App.store.settings.reminderDays;
     const telegramToggle = document.getElementById('telegram-toggle');
-    if (telegramToggle) {
-        telegramToggle.checked = App.store.settings.telegramEnabled !== false;
-    }
+    if (telegramToggle) telegramToggle.checked = App.store.settings.telegramEnabled !== false;
 
     // Push-статус
     const pushStatus = document.getElementById('push-status');
@@ -467,7 +450,11 @@ App.ui.pages.populateSettingsFields = async function() {
                 </div>
             `;
             const upgradeBtn = document.getElementById('upgrade-to-premium-telegram');
-            if (upgradeBtn) upgradeBtn.onclick = () => App.modules.showUpgradeModal();
+            if (upgradeBtn) {
+                const newUpgradeBtn = upgradeBtn.cloneNode(true);
+                upgradeBtn.parentNode.replaceChild(newUpgradeBtn, upgradeBtn);
+                newUpgradeBtn.onclick = () => App.modules.showUpgradeModal();
+            }
         }
         App.initIcons();
     }
@@ -475,38 +462,44 @@ App.ui.pages.populateSettingsFields = async function() {
     // Обработчики уведомлений (только один раз)
     if (!settingsListenersAttached) {
         const saveBtn = document.getElementById('save-settings-btn');
-        if (saveBtn) saveBtn.addEventListener('click', App.ui.pages.saveSettings);
-
+        if (saveBtn) {
+            const newSaveBtn = saveBtn.cloneNode(true);
+            saveBtn.parentNode.replaceChild(newSaveBtn, saveBtn);
+            newSaveBtn.addEventListener('click', App.ui.pages.saveSettings);
+        }
         const subPushBtn = document.getElementById('subscribe-push-btn');
         if (subPushBtn) {
-            subPushBtn.addEventListener('click', async function() {
+            const newSubPushBtn = subPushBtn.cloneNode(true);
+            subPushBtn.parentNode.replaceChild(newSubPushBtn, subPushBtn);
+            newSubPushBtn.addEventListener('click', async function() {
                 if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-                    App.ui.alertModal('Push-уведомления не поддерживаются вашим браузером.');
+                    await App.ui.alertModal('Push-уведомления не поддерживаются вашим браузером.');
                     return;
                 }
-                Notification.requestPermission().then(async function(perm) {
-                    if (perm === 'granted') {
-                        let token = '';
-                        if (typeof firebase !== 'undefined' && firebase.apps && firebase.apps.length > 0) {
-                            try {
-                                const messaging = firebase.messaging();
-                                if (messaging && typeof messaging.getToken === 'function') {
-                                    const fbToken = await messaging.getToken();
-                                    if (fbToken) token = fbToken;
-                                }
-                            } catch(err) { console.warn(err); }
-                        }
-                        await App.ui.pages.savePushSubscription(token);
-                        App.toast('Подписка на push оформлена', 'success');
-                    } else {
-                        App.toast('Нет разрешения на уведомления', 'warning');
+                const perm = await Notification.requestPermission();
+                if (perm === 'granted') {
+                    let token = '';
+                    if (typeof firebase !== 'undefined' && firebase.apps && firebase.apps.length > 0) {
+                        try {
+                            const messaging = firebase.messaging();
+                            if (messaging && typeof messaging.getToken === 'function') {
+                                const fbToken = await messaging.getToken();
+                                if (fbToken) token = fbToken;
+                            }
+                        } catch(err) { console.warn(err); }
                     }
-                });
+                    await App.ui.pages.savePushSubscription(token);
+                    App.toast('Подписка на push оформлена', 'success');
+                } else {
+                    App.toast('Нет разрешения на уведомления', 'warning');
+                }
             });
         }
         const unsubPushBtn = document.getElementById('unsubscribe-push-btn');
         if (unsubPushBtn) {
-            unsubPushBtn.addEventListener('click', async function() {
+            const newUnsubPushBtn = unsubPushBtn.cloneNode(true);
+            unsubPushBtn.parentNode.replaceChild(newUnsubPushBtn, unsubPushBtn);
+            newUnsubPushBtn.addEventListener('click', async function() {
                 await App.ui.pages.removePushSubscription();
                 App.toast('Подписка на push отключена', 'success');
             });
@@ -559,7 +552,6 @@ App.ui.pages.populateSettingsFields = async function() {
     if (accountBody) await App.ui.pages.renderAccountPasswordBlock(accountBody);
     if (deleteBody) await App.ui.pages.renderDeleteAccountBlock(deleteBody);
 
-    // Инициализация аккордеона
     document.querySelectorAll('.settings-accordion .accordion-header').forEach(header => {
         header.addEventListener('click', function() {
             const body = this.nextElementSibling;
@@ -576,11 +568,11 @@ App.ui.pages.populateSettingsFields = async function() {
 
 // ==================== РЕЗЕРВНЫЕ КОДЫ (инициализация) ====================
 App.ui.pages.initRecoveryCodesUI = function() {
-    var showBtn = document.getElementById('show-recovery-btn');
-    var genBtn = document.getElementById('gen-new-codes-btn');
+    let showBtn = document.getElementById('show-recovery-btn');
+    let genBtn = document.getElementById('gen-new-codes-btn');
     if (!showBtn || !genBtn) return;
 
-    // Удаляем старые обработчики, клонируя кнопки
+    // Клонируем, чтобы убрать старые обработчики
     const newShowBtn = showBtn.cloneNode(true);
     const newGenBtn = genBtn.cloneNode(true);
     showBtn.parentNode.replaceChild(newShowBtn, showBtn);
@@ -589,49 +581,45 @@ App.ui.pages.initRecoveryCodesUI = function() {
     genBtn = newGenBtn;
 
     showBtn.addEventListener('click', async function() {
-        var { data: { user } } = await App.supabase.auth.getUser();
+        const { data: { user } } = await App.supabase.auth.getUser();
         if (!user) return;
-        var { data: codes } = await App.supabase.from('recovery_codes')
+        const { data: codes } = await App.supabase.from('recovery_codes')
             .select('code_hash, used')
             .eq('user_id', user.id)
             .order('created_at', { ascending: false });
-
-        var unused = codes.filter(c => !c.used);
-        var listEl = document.getElementById('recovery-codes-list');
+        const unused = codes.filter(c => !c.used);
+        const listEl = document.getElementById('recovery-codes-list');
         if (!listEl) return;
         if (unused.length === 0) {
             listEl.innerHTML = '<p class="hint">Все коды использованы. Сгенерируйте новые.</p>';
             return;
         }
-        listEl.innerHTML = '<p>Неиспользованные коды:</p><ul>' +
-            unused.map(c => '<li>' + c.code_hash + '</li>').join('') + '</ul>';
+        listEl.innerHTML = '<p>Неиспользованные коды:</p><ul>' + unused.map(c => '<li>' + c.code_hash + '</li>').join('') + '</ul>';
     });
 
     genBtn.addEventListener('click', async function() {
-        var { data: { user } } = await App.supabase.auth.getUser();
+        const { data: { user } } = await App.supabase.auth.getUser();
         if (!user) return;
         const confirmed = await App.ui.confirmModalAsync('Старые коды будут удалены. Продолжить?');
         if (!confirmed) return;
-        await App.supabase.from('recovery_codes').delete().eq('user_id', user.id);
-        var codes = [];
-        for (var i = 0; i < 8; i++) {
-            var code = Array.from({length: 8}, () => Math.floor(Math.random() * 10)).join('');
-            codes.push(code);
-            await App.supabase.from('recovery_codes').insert({ user_id: user.id, code_hash: code });
+        const { data: codes, error } = await App.supabase.rpc('generate_recovery_codes', { p_user_id: user.id });
+        if (error || !codes || codes.length === 0) {
+            App.toast('Не удалось сгенерировать новые коды', 'error');
+            return;
         }
-        App.ui.alertModal('Новые коды:\n\n' + codes.join('\n'));
+        await App.ui.alertModal('Новые резервные коды (сохраните их!):\n\n' + codes.join('\n'));
         // Обновляем список
-        showBtn.click();
+        const listEl = document.getElementById('recovery-codes-list');
+        if (listEl) listEl.innerHTML = '<p class="hint">Новые коды сгенерированы. Нажмите "Показать", чтобы увидеть их.</p>';
     });
 };
 
-// ==================== PIN-код (быстрый вход) ====================
+// ==================== PIN-код ====================
 App.ui.pages.renderPinSettings = async function() {
     const container = document.getElementById('pin-settings-container');
     if (!container) return;
 
     if (!App.db || !App.db._db) {
-        console.log('[PIN] Database not ready, retrying in 500ms');
         setTimeout(() => App.ui.pages.renderPinSettings(), 500);
         return;
     }
@@ -653,13 +641,18 @@ App.ui.pages.renderPinSettings = async function() {
                 <button id="pin-reset-btn" class="secondary-btn">Сбросить PIN</button>
             </div>
         `;
-        document.getElementById('pin-reset-btn')?.addEventListener('click', async () => {
-            if (await App.ui.confirmModalAsync('Сбросить PIN? Придётся заново вводить мастер-пароль.')) {
-                await App.localAuth.resetPin();
-                App.ui.pages.renderPinSettings();
-                App.toast('PIN сброшен', 'success');
-            }
-        });
+        const resetBtn = document.getElementById('pin-reset-btn');
+        if (resetBtn) {
+            const newResetBtn = resetBtn.cloneNode(true);
+            resetBtn.parentNode.replaceChild(newResetBtn, resetBtn);
+            newResetBtn.addEventListener('click', async () => {
+                if (await App.ui.confirmModalAsync('Сбросить PIN? Придётся заново вводить мастер-пароль.')) {
+                    await App.localAuth.resetPin();
+                    await App.ui.pages.renderPinSettings();
+                    App.toast('PIN сброшен', 'success');
+                }
+            });
+        }
     } else {
         container.innerHTML = `
             <div class="card">
@@ -668,254 +661,51 @@ App.ui.pages.renderPinSettings = async function() {
                 <button id="pin-setup-btn" class="primary-btn">Установить PIN</button>
             </div>
         `;
-        document.getElementById('pin-setup-btn')?.addEventListener('click', async () => {
-            const masterKey = App.db.encryption.getMasterKey();
-            if (!masterKey) {
-                App.toast('Мастер-пароль не активен. Выйдите и войдите снова.', 'error');
-                return;
-            }
-            const masterPassword = await App.ui.promptModalAsync('Подтвердите мастер-пароль', '');
-            if (!masterPassword) return;
-            const salt = App.db.encryption.getStoredSalt();
-            const isValid = await App.db.encryption.verifyMasterKey(masterPassword, salt);
-            if (!isValid) {
-                App.toast('Неверный мастер-пароль', 'error');
-                return;
-            }
-            let pinSet = false;
-            while (!pinSet) {
-                const pin = await App.ui.promptModalAsync('Установите PIN-код (минимум 4 цифры)', '');
-                if (pin && pin.length >= 4 && /^\d+$/.test(pin)) {
-                    const confirmPin = await App.ui.promptModalAsync('Подтвердите PIN-код', '');
-                    if (confirmPin === pin) {
-                        try {
-                            await App.localAuth.setPin(pin, masterPassword);
-                            App.toast('PIN-код сохранён', 'success');
-                            App.ui.pages.renderPinSettings();
-                            pinSet = true;
-                        } catch (err) {
-                            App.toast('Ошибка: ' + err.message, 'error');
+        const setupBtn = document.getElementById('pin-setup-btn');
+        if (setupBtn) {
+            const newSetupBtn = setupBtn.cloneNode(true);
+            setupBtn.parentNode.replaceChild(newSetupBtn, setupBtn);
+            newSetupBtn.addEventListener('click', async () => {
+                const masterKey = App.db.encryption.getMasterKey();
+                if (!masterKey) {
+                    App.toast('Мастер-пароль не активен. Выйдите и войдите снова.', 'error');
+                    return;
+                }
+                const masterPassword = await App.ui.promptModalAsync('Подтвердите мастер-пароль', '');
+                if (!masterPassword) return;
+                const salt = App.db.encryption.getStoredSalt();
+                const isValid = await App.db.encryption.verifyMasterKey(masterPassword, salt);
+                if (!isValid) {
+                    App.toast('Неверный мастер-пароль', 'error');
+                    return;
+                }
+                let pinSet = false;
+                while (!pinSet) {
+                    const pin = await App.ui.promptModalAsync('Установите PIN-код (минимум 4 цифры)', '');
+                    if (pin && pin.length >= 4 && /^\d+$/.test(pin)) {
+                        const confirmPin = await App.ui.promptModalAsync('Подтвердите PIN-код', '');
+                        if (confirmPin === pin) {
+                            try {
+                                await App.localAuth.setPin(pin, masterPassword);
+                                App.toast('PIN-код сохранён', 'success');
+                                await App.ui.pages.renderPinSettings();
+                                pinSet = true;
+                            } catch (err) {
+                                App.toast('Ошибка: ' + err.message, 'error');
+                            }
+                        } else {
+                            App.toast('PIN-коды не совпадают', 'error');
                         }
                     } else {
-                        App.toast('PIN-коды не совпадают', 'error');
+                        App.toast('PIN должен содержать минимум 4 цифры', 'error');
                     }
-                } else {
-                    App.toast('PIN должен содержать минимум 4 цифры', 'error');
                 }
-            }
-        });
+            });
+        }
     }
     App.initIcons();
 };
 
-// ==================== ЭКСПОРТ, СТАТИСТИКА И ПРОЧЕЕ ====================
-App.ui.pages.subscribeToPush = function() {};
-
-App.ui.pages.openPhotoFolder = function() {
-    App.toast('Фотографии теперь хранятся в Supabase Storage', 'info');
-};
-
-App.ui.pages.shareTable = function() {
-    window.open('https://docs.google.com/spreadsheets/d/' + App.store.spreadsheetId + '/edit', '_blank');
-};
-
-App.ui.pages.handleExport = function() {
-    var type = document.getElementById('export-type-select')?.value || 'to';
-    var format = document.getElementById('export-format-select')?.value || 'csv';
-
-    if (format === 'csv') {
-        var exportData = App.ui.pages.getExportData(type);
-        if (exportData && exportData.data) {
-            App.ui.pages.exportToCSV(exportData.data, exportData.filename, exportData.headers);
-        }
-    } else if (format === 'xlsx') {
-        if (type === 'all') {
-            App.ui.pages.exportToExcelAll();
-        } else {
-            App.ui.pages.exportToExcelForType(type);
-        }
-    }
-};
-
-App.ui.pages.getExportData = function(type) {
-    switch (type) {
-        case 'to':
-            return {
-                data: App.store.operations.map(function(op) {
-                    return [op.category, op.name, op.lastDate || '', op.lastMileage || '', op.lastMotohours || '', op.intervalKm, op.intervalMonths, op.intervalMotohours ?? ''];
-                }),
-                headers: ['Категория', 'Операция', 'Последняя дата', 'Последний пробег', 'Последние моточасы', 'Интервал км', 'Интервал мес', 'Интервал м/ч'],
-                filename: 'vesta_operations'
-            };
-        case 'fuel':
-            return {
-                data: App.store.fuelLog.map(function(f) {
-                    return [f.date, f.mileage, f.liters, f.pricePerLiter, (f.fullTank === 'TRUE' || f.fullTank === true) ? 'Да' : 'Нет', f.fuelType, f.notes || ''];
-                }),
-                headers: ['Дата', 'Пробег', 'Литры', 'Цена/л', 'Полный бак', 'Тип топлива', 'Примечание'],
-                filename: 'vesta_fuel'
-            };
-        case 'tires':
-            return {
-                data: App.store.tireLog.map(function(t) {
-                    return [t.date, t.type, t.mileage, t.model || '', t.size || '', t.wear || '', t.notes || '', t.purchaseCost || '', t.mountCost || '', t.isDIY ? 'Да' : 'Нет'];
-                }),
-                headers: ['Дата', 'Тип', 'Пробег', 'Модель', 'Размер', 'Износ', 'Примечание', 'Стоимость покупки', 'Стоимость монтажа', 'DIY'],
-                filename: 'vesta_tires'
-            };
-        case 'parts':
-            return {
-                data: App.store.parts.map(function(p) {
-                    return [p.operation, p.oem, p.analog, p.price, p.supplier, p.link, p.comment, p.inStock || 0, p.location || ''];
-                }),
-                headers: ['Операция', 'OEM', 'Аналог', 'Цена', 'Поставщик', 'Ссылка', 'Комментарий', 'В наличии (шт.)', 'Место хранения'],
-                filename: 'vesta_parts'
-            };
-        case 'history':
-            var filtered = App.ui.pages.getFilteredHistory();
-            return {
-                data: filtered.map(function(record) {
-                    var op = App.store.operations.find(function(o) { return o.id == record.operation_id; });
-                    return [record.date || '', op ? op.name : 'Неизвестно', record.mileage || '', record.motohours || '', record.parts_cost || '', record.work_cost || '', record.notes || '', (record.is_diy === 'TRUE' || record.is_diy === true) ? 'Да' : 'Нет'];
-                }),
-                headers: ['Дата', 'Операция', 'Пробег', 'Моточасы', 'Запчасти (₽)', 'Работа (₽)', 'Примечание', 'DIY'],
-                filename: 'vesta_history'
-            };
-        case 'all':
-            App.toast('Функция "Все данные" скачает несколько файлов по очереди.', 'info');
-            var types = ['to', 'fuel', 'tires', 'parts', 'history'];
-            types.forEach(function(t) {
-                var d = App.ui.pages.getExportData(t);
-                if (d && d.data.length) App.ui.pages.exportToCSV(d.data, d.filename, d.headers);
-            });
-            return null;
-        default:
-            return null;
-    }
-};
-
-App.ui.pages.exportToCSV = function(data, filename, headers) {
-    if (!data || data.length === 0) {
-        App.toast('Нет данных для экспорта', 'warning');
-        return;
-    }
-    var csvRows = [];
-    if (headers) csvRows.push(headers.join(';'));
-    for (var i = 0; i < data.length; i++) {
-        var row = data[i];
-        var values = row.map(function(cell) {
-            var cellStr = String(cell ?? '').replace(/"/g, '""');
-            if (cellStr.indexOf(';') !== -1 || cellStr.indexOf('\n') !== -1 || cellStr.indexOf('"') !== -1) {
-                return '"' + cellStr + '"';
-            }
-            return cellStr;
-        });
-        csvRows.push(values.join(';'));
-    }
-    var blob = new Blob(['\uFEFF' + csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' });
-    var link = document.createElement('a');
-    var url = URL.createObjectURL(blob);
-    link.href = url;
-    link.download = filename + '_' + new Date().toISOString().slice(0, 19).replace(/:/g, '-') + '.csv';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-    App.toast('Экспорт CSV выполнен', 'success');
-};
-
-App.ui.pages.exportToExcelForType = function(type) {
-    var wsData, sheetName;
-    switch (type) {
-        case 'to':
-            wsData = XLSX.utils.json_to_sheet(App.store.operations.map(function(op) {
-                return { 'Категория': op.category, 'Операция': op.name, 'Последняя дата': op.lastDate || '', 'Последний пробег': op.lastMileage || '', 'Последние моточасы': op.lastMotohours || '', 'Интервал км': op.intervalKm || '', 'Интервал мес': op.intervalMonths || '', 'Интервал м/ч': op.intervalMotohours || '' };
-            }));
-            sheetName = 'Журнал ТО';
-            break;
-        case 'fuel':
-            wsData = XLSX.utils.json_to_sheet(App.store.fuelLog.map(function(f) {
-                return { 'Дата': f.date, 'Пробег': f.mileage, 'Литры': f.liters, 'Цена/л': f.pricePerLiter, 'Полный бак': (f.fullTank === 'TRUE' || f.fullTank === true) ? 'Да' : 'Нет', 'Тип топлива': f.fuelType || 'Бензин', 'Примечание': f.notes || '' };
-            }));
-            sheetName = 'Топливо';
-            break;
-        case 'tires':
-            wsData = XLSX.utils.json_to_sheet(App.store.tireLog.map(function(t) {
-                return { 'Дата': t.date, 'Тип': t.type, 'Пробег': t.mileage, 'Модель': t.model || '', 'Размер': t.size || '', 'Износ': t.wear || '', 'Примечание': t.notes || '', 'Стоимость покупки': t.purchaseCost || '', 'Стоимость монтажа': t.mountCost || '', 'DIY': t.isDIY ? 'Да' : 'Нет' };
-            }));
-            sheetName = 'Шины';
-            break;
-        case 'parts':
-            wsData = XLSX.utils.json_to_sheet(App.store.parts.map(function(p) {
-                return { 'Операция': p.operation, 'OEM': p.oem, 'Аналог': p.analog, 'Цена': p.price, 'Поставщик': p.supplier, 'Ссылка': p.link, 'Комментарий': p.comment, 'В наличии (шт.)': p.inStock || 0, 'Место хранения': p.location || '' };
-            }));
-            sheetName = 'Запчасти';
-            break;
-        case 'history':
-            wsData = XLSX.utils.json_to_sheet(App.ui.pages.getFilteredHistory().map(function(record) {
-                var op = App.store.operations.find(function(o) { return o.id == record.operation_id; });
-                return { 'Дата': record.date || '', 'Операция': op ? op.name : 'Неизвестно', 'Пробег': record.mileage || '', 'Моточасы': record.motohours || '', 'Запчасти (₽)': record.parts_cost || '', 'Работа (₽)': record.work_cost || '', 'DIY': (record.is_diy === 'TRUE' || record.is_diy === true) ? 'Да' : 'Нет', 'Примечание': record.notes || '' };
-            }));
-            sheetName = 'История ТО';
-            break;
-        default:
-            return false;
-    }
-    var wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, wsData, sheetName);
-    var fileName = 'vesta_' + sheetName + '_' + new Date().toISOString().slice(0, 19).replace(/:/g, '-') + '.xlsx';
-    XLSX.writeFile(wb, fileName);
-    return true;
-};
-
-App.ui.pages.exportToExcelAll = function() {
-    var wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(App.store.operations.map(function(op) { return { 'Категория': op.category, 'Операция': op.name, 'Последняя дата': op.lastDate || '', 'Последний пробег': op.lastMileage || '', 'Последние моточасы': op.lastMotohours || '', 'Интервал км': op.intervalKm || '', 'Интервал мес': op.intervalMonths || '', 'Интервал м/ч': op.intervalMotohours || '' }; })), 'Журнал ТО');
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(App.store.parts.map(function(p) { return { 'Операция': p.operation, 'OEM': p.oem, 'Аналог': p.analog, 'Цена': p.price, 'Поставщик': p.supplier, 'Ссылка': p.link, 'Комментарий': p.comment, 'В наличии (шт.)': p.inStock || 0, 'Место хранения': p.location || '' }; })), 'Запчасти');
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(App.store.fuelLog.map(function(f) { return { 'Дата': f.date, 'Пробег': f.mileage, 'Литры': f.liters, 'Цена/л': f.pricePerLiter, 'Полный бак': (f.fullTank === 'TRUE' || f.fullTank === true) ? 'Да' : 'Нет', 'Тип топлива': f.fuelType || 'Бензин', 'Примечание': f.notes || '' }; })), 'Топливо');
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(App.store.tireLog.map(function(t) { return { 'Дата': t.date, 'Тип': t.type, 'Пробег': t.mileage, 'Модель': t.model || '', 'Размер': t.size || '', 'Износ': t.wear || '', 'Примечание': t.notes || '', 'Стоимость покупки': t.purchaseCost || '', 'Стоимость монтажа': t.mountCost || '', 'DIY': t.isDIY ? 'Да' : 'Нет' }; })), 'Шины');
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(App.ui.pages.getFilteredHistory().map(function(rec) { var op = App.store.operations.find(function(o) { return o.id == rec.operation_id; }); return { 'Дата': rec.date || '', 'Операция': op ? op.name : 'Неизвестно', 'Пробег': rec.mileage || '', 'Моточасы': rec.motohours || '', 'Запчасти (₽)': rec.parts_cost || '', 'Работа (₽)': rec.work_cost || '', 'DIY': (rec.is_diy === 'TRUE' || rec.is_diy === true) ? 'Да' : 'Нет', 'Примечание': rec.notes || '' }; })), 'История');
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(App.store.mileageHistory.map(function(m) { return { 'Дата': m.date, 'Пробег': m.mileage, 'Моточасы': m.motohours || '' }; })), 'Пробег');
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet([{ 'Пробег': App.store.settings.currentMileage, 'Моточасы': App.store.settings.currentMotohours, 'Ср. пробег/день': App.store.settings.avgDailyMileage, 'Ср. моточасы/день': App.store.settings.avgDailyMotohours, 'Способ уведомлений': App.store.settings.notificationMethod || 'telegram', 'Базовый пробег': App.store.baseMileage, 'Базовые моточасы': App.store.baseMotohours, 'Дата покупки': App.store.purchaseDate }]), 'Настройки');
-    var fileName = 'vesta_backup_' + new Date().toISOString().slice(0, 19).replace(/:/g, '-') + '.xlsx';
-    XLSX.writeFile(wb, fileName);
-    App.toast('Экспорт в Excel выполнен', 'success');
-};
-
-App.ui.pages.generateServiceReport = function() {
-    if (typeof html2pdf === 'undefined') {
-        App.toast('Библиотека html2pdf не загружена', 'error');
-        return;
-    }
-    var totalMaintenance = App.store.serviceRecords.reduce(function(s, r) { return s + (Number(r.parts_cost) || 0) + (Number(r.work_cost) || 0); }, 0);
-    var totalFuel = App.store.fuelLog.reduce(function(s, f) { return s + (f.liters * f.pricePerLiter); }, 0);
-    var totalCost = totalMaintenance + totalFuel;
-    var avgCostPerKm = App.store.settings.currentMileage ? totalCost / App.store.settings.currentMileage : 0;
-    var reportHtml = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Сервисная история</title><style>body{font-family:sans-serif;margin:20px}h1{color:#3498db}h2{border-bottom:1px solid #ccc}table{width:100%;border-collapse:collapse;margin-bottom:20px}td,th{border:1px solid #ddd;padding:8px}th{background:#f2f2f2}.stat-card{display:inline-block;background:#f9f9f9;padding:10px;margin:5px;border-radius:8px}</style></head><body><h1>Сервисная история</h1><p><strong>Дата:</strong>' + new Date().toLocaleDateString('ru-RU') + '</p><p><strong>Пробег:</strong>' + App.store.settings.currentMileage.toLocaleString() + ' км</p><h2>Расходы</h2><div>' +
-        '<div class="stat-card">ТО: ' + totalMaintenance.toFixed(2) + ' ₽</div><div class="stat-card">Топливо: ' + totalFuel.toFixed(2) + ' ₽</div><div class="stat-card">Всего: ' + totalCost.toFixed(2) + ' ₽</div><div class="stat-card">1 км: ' + avgCostPerKm.toFixed(2) + ' ₽</div></div><h2>Операции</h2><table><thead><tr><th>Категория</th><th>Операция</th><th>Интервал км</th><th>Интервал мес</th><th>Последнее ТО</th><th>Последний пробег</th></tr></thead><tbody>';
-    App.store.operations.forEach(function(op) { reportHtml += '<tr><td>' + App.utils.escapeHtml(op.category) + '</td><td>' + App.utils.escapeHtml(op.name) + '</td><td>' + (op.intervalKm || '—') + '</td><td>' + (op.intervalMonths || '—') + '</td><td>' + (op.lastDate || '—') + '</td><td>' + (op.lastMileage || '—') + '</td></tr>'; });
-    reportHtml += '</tbody><tr><h2>История ТО</h2><table><thead><tr><th>Дата</th><th>Операция</th><th>Пробег</th><th>Запчасти</th><th>Работа</th><th>DIY</th><th>Прим.</th></tr></thead><tbody>';
-    App.store.serviceRecords.sort(function(a,b){return new Date(b.date)-new Date(a.date);}).forEach(function(rec){ var op=App.store.operations.find(function(o){return o.id==rec.operation_id;}); reportHtml+='<tr><td>'+ (rec.date||'')+'</td><td>'+ App.utils.escapeHtml(op?op.name:'Неизвестно')+'</td><td>'+ (rec.mileage||'')+'</td><td>'+ (rec.parts_cost||'0')+'</td><td>'+ (rec.work_cost||'0')+'</td><td>'+ (rec.is_diy===true?'Да':'Нет')+'</td><td>'+ (rec.notes||'')+'</td></tr>'; });
-    reportHtml += '</tbody></tr></body></html>';
-    var element = document.createElement('div');
-    element.innerHTML = reportHtml;
-    document.body.appendChild(element);
-    html2pdf().from(element).set({
-        margin: [0.5, 0.5, 0.5, 0.5],
-        filename: 'servisnaya_istoriya_' + new Date().toISOString().slice(0, 19).replace(/:/g, '-') + '.pdf',
-        image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: { scale: 2, letterRendering: true },
-        jsPDF: { unit: 'in', format: 'a4', orientation: 'portrait' }
-    }).save().finally(function() {
-        document.body.removeChild(element);
-    });
-};
-
-App.ui.pages.forceSync = function() {
-    App.toast('Данные уже синхронизированы с Supabase', 'info');
-};
-
-// Инициализация при загрузке вкладки
 if (document.getElementById('tab-settings')) {
     App.ui.pages.populateSettingsFields();
 }
