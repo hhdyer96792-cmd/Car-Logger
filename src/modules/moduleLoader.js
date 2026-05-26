@@ -32,7 +32,11 @@ App.modules.load = async function(moduleName, requiredPremium = false) {
 
 // Показать модальное окно предложения купить Premium
 App.modules.showUpgradeModal = function() {
-    if (App.modules._upgradeModalShown) return;
+    // Сбрасываем флаг, если модалка уже была показана ранее
+    if (App.modules._upgradeModalShown) {
+        // Не блокируем повторный показ, а просто сбрасываем флаг
+        App.modules._upgradeModalShown = false;
+    }
     App.modules._upgradeModalShown = true;
     
     const content = `
@@ -79,6 +83,20 @@ App.modules.showUpgradeModal = function() {
         };
     }
     
-    modal.querySelector('.cancel-btn').onclick = () => modal.remove();
+    // Сбрасываем флаг при закрытии модалки
+    const cancelBtn = modal.querySelector('.cancel-btn');
+    if (cancelBtn) {
+        cancelBtn.onclick = () => {
+            modal.remove();
+            App.modules._upgradeModalShown = false;
+        };
+    }
+    // Также сбрасываем при клике на оверлей
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+            modal.remove();
+            App.modules._upgradeModalShown = false;
+        }
+    });
     App.initIcons();
 };
