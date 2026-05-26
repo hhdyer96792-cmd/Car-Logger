@@ -1,6 +1,4 @@
-// src/main.js (полностью исправленный с принудительной загрузкой автомобилей)
-// Замените этим файлом ваш текущий src/main.js
-
+// src/main.js
 // ===== Полифил crypto.randomUUID для старых браузеров =====
 (function() {
     if (typeof crypto === 'undefined' || typeof crypto.randomUUID !== 'function') {
@@ -55,7 +53,7 @@
         localStorage.removeItem('vesta_active_car_id');
         localStorage.removeItem('vesta_username');
         if (App.db && App.db._db) {
-            const stores = ['operations', 'fuel_log', 'tires', 'parts', 'service_records', 'mileage_log', 'cars'];
+            const stores = ['operations', 'fuel_log', 'tires', 'parts', 'service_records', 'mileage_log', 'cars', 'settings'];
             stores.forEach(store => App.db.clear(store).catch(console.warn));
         }
         demoModeInitialized = false;
@@ -385,21 +383,25 @@
                             if (password) {
                                 const salt = App.db.encryption.getStoredSalt();
                                 let isValid = false;
+                                let key, finalSalt;
                                 if (hasMasterPassword) {
                                     isValid = await App.db.encryption.verifyMasterKey(password, salt);
+                                    if (isValid) {
+                                        const res = await App.db.encryption.initMasterKey(password, salt);
+                                        key = res.key;
+                                        finalSalt = res.salt;
+                                        App.db.encryption.setMasterKey(key, finalSalt);
+                                    }
                                 } else {
-                                    const { key, salt: newSalt } = await App.db.encryption.initMasterKey(password, null);
-                                    App.db.encryption.setMasterKey(key, newSalt);
+                                    const res = await App.db.encryption.initMasterKey(password, null);
+                                    key = res.key;
+                                    finalSalt = res.salt;
+                                    App.db.encryption.setMasterKey(key, finalSalt);
                                     await App.db.encryption.saveVerificationString(key);
                                     localStorage.setItem('vesta_master_password_set', 'true');
                                     isValid = true;
-                                    console.log('[Main] Мастер-пароль сохранён, соль создана');
                                 }
                                 if (isValid) {
-                                    if (hasMasterPassword) {
-                                        const { key } = await App.db.encryption.initMasterKey(password, salt);
-                                        App.db.encryption.setMasterKey(key, salt);
-                                    }
                                     await App.store.loadFromIndexedDB();
                                     if (typeof App.renderAll === 'function') App.renderAll();
                                     App.toast(hasMasterPassword ? 'Расшифровка успешна' : 'Мастер-пароль сохранён', 'success');
@@ -440,7 +442,7 @@
 
                     // Имя пользователя
                     const { data: { user } } = await App.supabase.auth.getUser();
-                    const username = user?.user_metadata?.username || '';
+                    const username = user?.user_metadata?.username || user?.email?.split('@')[0] || '';
                     if (username) localStorage.setItem('vesta_username', username);
                     updateUsernameDisplay(username);
 
@@ -466,7 +468,7 @@
                         await App.storage.loadAllData();
                     }
 
-                    // ========== ПРИНУДИТЕЛЬНАЯ ЗАГРУЗКА АВТОМОБИЛЕЙ (прямой запрос) ==========
+                    // ========== ПРИНУДИТЕЛЬНАЯ ЗАГРУЗКА АВТОМОБИЛЕЙ ==========
                     try {
                         const { data: { user } } = await App.supabase.auth.getUser();
                         if (user) {
@@ -482,9 +484,7 @@
                                     localStorage.setItem('vesta_active_car_id', cars[0].id);
                                 }
                                 for (const car of cars) await App.db.put('cars', car);
-                                console.log('[Main] Автомобили загружены:', cars.length);
                             } else {
-                                console.log('[Main] Автомобилей нет, создаём...');
                                 const { data: newCar, error: createError } = await App.supabase
                                     .from('cars')
                                     .insert({ name: 'Мой автомобиль', user_id: user.id })
@@ -495,32 +495,12 @@
                                 App.store.activeCarId = newCar.id;
                                 localStorage.setItem('vesta_active_car_id', newCar.id);
                                 await App.db.put('cars', newCar);
-                                console.log('[Main] Автомобиль создан:', newCar);
                             }
-                            // Обновляем селектор автомобилей
                             if (typeof App.ui.pages.updateCarSelectorOnCarTab === 'function') {
-    App.ui.pages.updateCarSelectorOnCarTab();
-} else if (typeof App.ui.pages.renderCarSelector === 'function') {
-    App.ui.pages.renderCarSelector(); // fallback
-    }
+                                App.ui.pages.updateCarSelectorOnCarTab();
                             } else {
-                                // Резервный рендер
-                                const container = document.getElementById('car-selector-container');
-                                if (container) {
-                                    let html = '<select id="car-select">';
-                                    App.store.cars.forEach(car => {
-                                        html += `<option value="${car.id}"${car.id === App.store.activeCarId ? ' selected' : ''}>${car.name}</option>`;
-                                    });
-                                    html += '</select>';
-                                    container.innerHTML = html;
-                                    document.getElementById('car-select')?.addEventListener('change', (e) => {
-                                        App.store.setActiveCar(e.target.value);
-                                        if (typeof App.storage.loadAllData === 'function') App.storage.loadAllData();
-                                    });
-                                    App.initIcons();
-                                } else {
-                                    console.error('[Main] Контейнер car-selector-container не найден в DOM');
-                                }
+                                App.ui.pages.renderCarSelector();
+                                App.ui.pages.renderCarTab();
                             }
                         }
                     } catch (err) {
@@ -762,7 +742,7 @@
         })();
     }
 
-    // Глобальные функции восстановления (заглушки)
+    // Глобальные функции восстановления
     window.recoverViaTelegram = async function() {
         console.log('recoverViaTelegram placeholder');
         await App.ui.alertModal('Восстановление через Telegram временно недоступно. Пожалуйста, свяжитесь с администратором.');
