@@ -1,4 +1,4 @@
-// src/main.js (финальная исправленная версия)
+// src/main.js (с расширенным логированием)
 // ===== Полифил crypto.randomUUID для старых браузеров =====
 (function() {
     if (typeof crypto === 'undefined' || typeof crypto.randomUUID !== 'function') {
@@ -43,6 +43,7 @@
     }
 
     function clearDemoArtefacts() {
+        console.log('[DEBUG] clearDemoArtefacts: очистка демо-данных');
         App.store.operations = [];
         App.store.fuelLog = [];
         App.store.tireLog = [];
@@ -55,13 +56,14 @@
         localStorage.removeItem('vesta_username');
         if (App.db && App.db._db) {
             const stores = ['operations', 'fuel_log', 'tires', 'parts', 'service_records', 'mileage_log', 'cars', 'settings'];
-            stores.forEach(store => App.db.clear(store).catch(console.warn));
+            stores.forEach(store => App.db.clear(store).catch(e => console.warn(`[DEBUG] Ошибка очистки ${store}:`, e)));
         }
         demoModeInitialized = false;
         isDemoMode = false;
     }
 
     function enterDemoMode() {
+        console.log('[DEBUG] enterDemoMode вызван');
         if (demoModeInitialized) return;
         demoModeInitialized = true;
         isDemoMode = true;
@@ -119,6 +121,7 @@
     }
 
     function initAuthFormEvents(container) {
+        // ... (без изменений, оставляем как в предыдущей версии)
         const tabLogin = container.querySelector('#tab-login');
         const tabSocial = container.querySelector('#tab-social');
         const authLoginDiv = container.querySelector('#auth-login');
@@ -291,13 +294,17 @@
     }
 
     async function doLogout() {
+        console.log('[DEBUG] doLogout вызвана');
         if (typeof App.db.encryption !== 'undefined') App.db.encryption.clearMasterKey();
         if (typeof App.store === 'undefined') return;
 
         updateUsernameDisplay('');
         clearDemoArtefacts();
 
-        await App.supabase.auth.signOut().catch(e => console.warn('Signout error', e));
+        console.log('[DEBUG] doLogout: вызываем signOut()');
+        const { error } = await App.supabase.auth.signOut();
+        if (error) console.error('[DEBUG] Ошибка signOut:', error);
+        else console.log('[DEBUG] signOut() выполнен успешно');
 
         isLoggedIn = false;
         setInstallButtonVisible(false);
@@ -309,24 +316,38 @@
         localStorage.removeItem('vesta_master_password_set');
         localStorage.removeItem('vesta_encryption_salt');
 
+        console.log('[DEBUG] doLogout: вызываем enterDemoMode()');
         enterDemoMode();
 
         if (typeof App.ui.pages.renderCarSelector === 'function') App.ui.pages.renderCarSelector();
         if (typeof App.ui.pages.renderCarTab === 'function') App.ui.pages.renderCarTab();
         if (typeof App.ui.pages.populateSettingsFields === 'function') App.ui.pages.populateSettingsFields();
         if (typeof App.renderAll === 'function') App.renderAll();
+
+        // Принудительная перезагрузка для гарантии сброса состояния
+        setTimeout(() => {
+            console.log('[DEBUG] doLogout: перезагрузка страницы');
+            window.location.reload();
+        }, 500);
     }
 
     function setupAuthSubscription() {
         if (authSubscribed) return;
         authSubscribed = true;
+        console.log('[DEBUG] setupAuthSubscription: подписка на onAuthStateChange');
         App.supabase.auth.onAuthStateChange(async (event, session) => {
-            while (!dbInitialized) {
-                console.log('[Auth] Waiting for DB init...');
+            console.log('[DEBUG] onAuthStateChange: event =', event, 'session =', !!session);
+            
+            let attempts = 0;
+            while (!dbInitialized && attempts < 50) {
                 await new Promise(r => setTimeout(r, 100));
+                attempts++;
             }
+            if (!dbInitialized) console.warn('[DEBUG] DB не инициализирована после 5 секунд');
+            else console.log('[DEBUG] DB инициализирована, продолжаем');
 
             if (session) {
+                console.log('[DEBUG] Пользователь вошёл, начинаем загрузку данных');
                 if (isDemoMode) clearDemoArtefacts();
                 isLoggedIn = true;
                 setInstallButtonVisible(true);
@@ -345,10 +366,12 @@
                 // ========== БЛОК МАСТЕР-ПАРОЛЯ И PIN ==========
                 let masterPassword = null;
                 const hasPin = App.localAuth && await App.localAuth.isPinSet();
+                console.log('[DEBUG] hasPin =', hasPin);
                 if (hasPin) {
                     const pin = await App.ui.promptModalAsync('Быстрый доступ', 'Введите PIN-код (4+ цифр)');
                     if (pin) {
                         masterPassword = await App.localAuth.verifyPin(pin);
+                        console.log('[DEBUG] verifyPin вернул', !!masterPassword);
                         if (masterPassword) {
                             const salt = App.db.encryption.getStoredSalt();
                             const { key } = await App.db.encryption.initMasterKey(masterPassword, salt);
@@ -363,6 +386,7 @@
                 }
                 if (!masterPassword) {
                     const hasMasterPassword = localStorage.getItem('vesta_master_password_set') === 'true';
+                    console.log('[DEBUG] hasMasterPassword =', hasMasterPassword);
                     const message = hasMasterPassword ? 'Введите мастер-пароль' : 'Установите мастер-пароль для шифрования данных (запомните его!)';
                     const password = await App.ui.promptModalAsync('Мастер-пароль', message);
                     if (password) {
@@ -371,6 +395,7 @@
                         let key, finalSalt;
                         if (hasMasterPassword) {
                             isValid = await App.db.encryption.verifyMasterKey(password, salt);
+                            console.log('[DEBUG] verifyMasterKey =', isValid);
                             if (isValid) {
                                 const res = await App.db.encryption.initMasterKey(password, salt);
                                 key = res.key;
@@ -378,6 +403,7 @@
                                 App.db.encryption.setMasterKey(key, finalSalt);
                             }
                         } else {
+                            console.log('[DEBUG] Первая установка мастер-пароля');
                             const res = await App.db.encryption.initMasterKey(password, null);
                             key = res.key;
                             finalSalt = res.salt;
@@ -448,14 +474,19 @@
                 }
 
                 // ========== ЗАГРУЗКА ВСЕХ ДАННЫХ ==========
+                console.log('[DEBUG] Вызов App.storage.loadAllData()');
                 if (typeof App.storage !== 'undefined' && typeof App.storage.loadAllData === 'function') {
                     await App.storage.loadAllData();
+                    console.log('[DEBUG] App.storage.loadAllData() завершён');
+                } else {
+                    console.warn('[DEBUG] App.storage.loadAllData не определён');
                 }
 
                 // ========== ПРИНУДИТЕЛЬНАЯ ЗАГРУЗКА АВТОМОБИЛЕЙ ==========
                 try {
                     const { data: { user } } = await App.supabase.auth.getUser();
                     if (user) {
+                        console.log('[DEBUG] Загрузка автомобилей для user', user.id);
                         if (App.db && App.db._db) {
                             await App.db.clear('cars').catch(console.warn);
                         }
@@ -464,6 +495,7 @@
                             .select('*')
                             .eq('user_id', user.id);
                         if (error) throw error;
+                        console.log('[DEBUG] Загружено автомобилей:', cars?.length);
                         if (cars && cars.length > 0) {
                             App.store.cars = cars;
                             if (!App.store.activeCarId || !cars.some(c => c.id === App.store.activeCarId)) {
@@ -472,6 +504,7 @@
                             }
                             for (const car of cars) await App.db.put('cars', car);
                         } else {
+                            console.log('[DEBUG] Автомобилей нет, создаём новый');
                             const { data: newCar, error: createError } = await App.supabase
                                 .from('cars')
                                 .insert({ name: 'Мой автомобиль', user_id: user.id })
@@ -491,7 +524,7 @@
                         }
                     }
                 } catch (err) {
-                    console.error('[Main] Ошибка загрузки автомобилей:', err);
+                    console.error('[DEBUG] Ошибка загрузки автомобилей:', err);
                 }
 
                 if (typeof App.ui.pages.checkPendingInvites === 'function') App.ui.pages.checkPendingInvites();
@@ -502,7 +535,9 @@
                     App.ui.pages.checkAndShowInitialParamsModal();
                 }
                 if (typeof App.renderAll === 'function') App.renderAll();
+                console.log('[DEBUG] Обработка входа завершена');
             } else {
+                console.log('[DEBUG] Пользователь вышел (событие выхода)');
                 isLoggedIn = false;
                 setInstallButtonVisible(false);
                 if (typeof App.supa !== 'undefined' && App.supa.clearUserIdCache) App.supa.clearUserIdCache();
@@ -526,8 +561,10 @@
     }
 
     async function initDatabase() {
+        console.log('[DEBUG] initDatabase: начало инициализации IndexedDB');
         try {
             await App.db.init();
+            console.log('[DEBUG] App.db.init() завершён');
             const migrated = localStorage.getItem('vesta_migrated_to_indexeddb');
             const { data: { session } } = await App.supabase.auth.getSession();
             if (!migrated && session) {
@@ -538,6 +575,7 @@
                 }
             }
             await App.store.loadFromIndexedDB();
+            console.log('[DEBUG] App.store.loadFromIndexedDB() завершён, operations:', App.store.operations.length);
             if (session) {
                 const isKilled = await App.db.killSwitch.check();
                 if (isKilled) {
@@ -549,9 +587,9 @@
             if (navigator.onLine && App.db.sync && typeof App.db.sync.processSyncQueue === 'function') {
                 await App.db.sync.processSyncQueue();
             } else if (navigator.onLine && !App.db.sync) {
-                console.warn('[Main] Sync module not loaded yet, skipping sync');
+                console.warn('[DEBUG] Sync module not loaded yet, skipping sync');
             } else {
-                console.log('[Main] Офлайн-режим, синхронизация отложена');
+                console.log('[DEBUG] Офлайн-режим, синхронизация отложена');
             }
             setInterval(() => {
                 if (navigator.onLine && App.db.sync && !App.db.sync._isRunning) {
@@ -559,8 +597,9 @@
                 }
             }, 60000);
             dbInitialized = true;
+            console.log('[DEBUG] dbInitialized = true');
         } catch (err) {
-            console.error('Ошибка инициализации IndexedDB:', err);
+            console.error('[DEBUG] Ошибка инициализации IndexedDB:', err);
             if (typeof App.toast === 'function') {
                 App.toast('Не удалось открыть базу данных.', 'error');
             }
@@ -599,6 +638,7 @@
     }
 
     function onReady() {
+        console.log('[DEBUG] onReady: начало');
         document.body.classList.add('no-transition');
         const savedTheme = localStorage.getItem(App.config.THEME_KEY);
         if (savedTheme) App.events.applyTheme(savedTheme);
@@ -627,12 +667,19 @@
         }
 
         initDatabase().then(() => {
+            console.log('[DEBUG] initDatabase завершён, проверяем сессию');
             const savedSession = localStorage.getItem('supabase.auth.token');
             if (!savedSession) {
+                console.log('[DEBUG] Нет сохранённой сессии, запускаем демо-режим');
                 enterDemoMode();
             } else {
                 App.supabase.auth.getSession().then(({ data: { session } }) => {
-                    if (!session) enterDemoMode();
+                    if (!session) {
+                        console.log('[DEBUG] Сессия не активна, запускаем демо-режим');
+                        enterDemoMode();
+                    } else {
+                        console.log('[DEBUG] Сессия активна, не запускаем демо');
+                    }
                 });
             }
             handleOnlineSession();
@@ -691,7 +738,7 @@
 
         window.addEventListener('load', () => setTimeout(() => { if (typeof App.initIcons === 'function') App.initIcons(); }, 200));
 
-        // FAB-меню
+        // FAB-меню (оставлено без изменений)
         (function() {
             const fab = document.createElement('div');
             fab.id = 'fab-menu';
