@@ -498,8 +498,11 @@
                                 console.log('[Main] Автомобиль создан:', newCar);
                             }
                             // Обновляем селектор автомобилей
-                            if (typeof App.ui.pages.renderCarSelector === 'function') {
-                                App.ui.pages.renderCarSelector();
+                            if (typeof App.ui.pages.updateCarSelectorOnCarTab === 'function') {
+    App.ui.pages.updateCarSelectorOnCarTab();
+} else if (typeof App.ui.pages.renderCarSelector === 'function') {
+    App.ui.pages.renderCarSelector(); // fallback
+    }
                             } else {
                                 // Резервный рендер
                                 const container = document.getElementById('car-selector-container');
