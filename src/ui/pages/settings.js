@@ -5,7 +5,7 @@ App.ui.pages = App.ui.pages || {};
 
 let settingsListenersAttached = false;
 
-// ==================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ (сохранение, push, шифрование и т.д.) ====================
+// ==================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ====================
 App.ui.pages.saveSettings = function() {
     var notificationMethodSelect = document.getElementById('notification-method');
     var reminderDaysInput = document.getElementById('reminder-days-input');
@@ -193,6 +193,15 @@ App.ui.pages.renderAccountPasswordBlock = function(container) {
         changeAccountBtn.addEventListener('click', async () => {
             const statusDiv = document.getElementById('account-password-status');
             try {
+                // Проверяем текущий пароль
+                const currentPwd = await App.ui.promptModalAsync('Смена пароля входа', 'Введите текущий пароль:');
+                if (!currentPwd) return;
+                const { data: { user } } = await App.supabase.auth.getUser();
+                if (!user) throw new Error('Пользователь не найден');
+                const email = user.email;
+                const { error: signInError } = await App.supabase.auth.signInWithPassword({ email, password: currentPwd });
+                if (signInError) throw new Error('Неверный текущий пароль');
+                
                 const newPwd = await App.ui.promptModalAsync('Смена пароля входа', 'Введите новый пароль (мин. 6 символов):');
                 if (!newPwd || newPwd.length < 6) {
                     statusDiv.innerHTML = '<span style="color: var(--danger);"><i data-lucide="alert-triangle"></i> Пароль должен быть не менее 6 символов</span>';
@@ -249,7 +258,7 @@ App.ui.pages.renderDeleteAccountBlock = function(container) {
     }
 };
 
-// ==================== PREMIUM БЛОК (отдельная карточка) ====================
+// ==================== PREMIUM БЛОК ====================
 App.ui.pages.renderPremiumBlock = function() {
     const container = document.getElementById('premium-settings-container');
     if (!container) return;
@@ -358,7 +367,7 @@ App.ui.pages.populateSettingsFields = async function() {
         App.ui.pages.renderPremiumBlock();
     }
 
-    // 1. Карточка уведомлений
+    // 1. Карточка уведомлений (push-уведомления временно отключены)
     notificationsContainer.innerHTML = `
         <div class="card">
             <h3><i data-lucide="bell"></i> Уведомления</h3>
@@ -386,10 +395,9 @@ App.ui.pages.populateSettingsFields = async function() {
                 <p class="hint">Отключите, если не хотите получать напоминания о ТО в Telegram</p>
             </div>
 
-            <div id="push-settings">
-                <p id="push-status">Push-уведомления не настроены.</p>
-                <button id="subscribe-push-btn" class="secondary-btn"><i data-lucide="bell"></i> Подписаться на уведомления</button>
-                <button id="unsubscribe-push-btn" class="secondary-btn" style="display:none;"><i data-lucide="bell-off"></i> Отписаться от уведомлений</button>
+            <!-- Push-уведомления временно отключены -->
+            <div style="margin-top: 12px; padding: 8px; background: var(--bg); border-radius: var(--radius-sm);">
+                <p class="hint"><i data-lucide="info"></i> Push-уведомления находятся в разработке и будут доступны в одном из следующих обновлений.</p>
             </div>
 
             <div style="display:flex; gap:8px; align-items:center; margin-top:12px;">
@@ -408,18 +416,6 @@ App.ui.pages.populateSettingsFields = async function() {
     if (reminderInput && App.store.settings.reminderDays) reminderInput.value = App.store.settings.reminderDays;
     const telegramToggle = document.getElementById('telegram-toggle');
     if (telegramToggle) telegramToggle.checked = App.store.settings.telegramEnabled !== false;
-
-    // Push-статус
-    const pushStatus = document.getElementById('push-status');
-    const subscribeBtn = document.getElementById('subscribe-push-btn');
-    const unsubscribeBtn = document.getElementById('unsubscribe-push-btn');
-    if (pushStatus && subscribeBtn && unsubscribeBtn) {
-        const isSubscribed = localStorage.getItem('push_subscribed') === 'true';
-        pushStatus.innerHTML = isSubscribed ? '<i data-lucide="check-circle" style="color: var(--success);"></i> Push активны' : '<i data-lucide="bell-off"></i> Push-уведомления не настроены';
-        subscribeBtn.style.display = isSubscribed ? 'none' : 'inline-block';
-        unsubscribeBtn.style.display = isSubscribed ? 'inline-block' : 'none';
-        if (isSubscribed) App.initIcons();
-    }
 
     // Привязка Telegram
     const telegramBindArea = document.getElementById('telegram-bind-area');
@@ -465,41 +461,10 @@ App.ui.pages.populateSettingsFields = async function() {
             saveBtn.parentNode.replaceChild(newSaveBtn, saveBtn);
             newSaveBtn.addEventListener('click', App.ui.pages.saveSettings);
         }
-        const subPushBtn = document.getElementById('subscribe-push-btn');
-        if (subPushBtn) {
-            const newSubPushBtn = subPushBtn.cloneNode(true);
-            subPushBtn.parentNode.replaceChild(newSubPushBtn, subPushBtn);
-            newSubPushBtn.addEventListener('click', async function() {
-                if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-                    await App.ui.alertModal('Push-уведомления не поддерживаются вашим браузером.');
-                    return;
-                }
-                const perm = await Notification.requestPermission();
-                if (perm === 'granted') {
-                    let token = '';
-                    if (typeof firebase !== 'undefined' && firebase.apps && firebase.apps.length > 0) {
-                        try {
-                            const messaging = firebase.messaging();
-                            if (messaging && typeof messaging.getToken === 'function') {
-                                const fbToken = await messaging.getToken();
-                                if (fbToken) token = fbToken;
-                            }
-                        } catch(err) { console.warn(err); }
-                    }
-                    await App.ui.pages.savePushSubscription(token);
-                    App.toast('Подписка на push оформлена', 'success');
-                } else {
-                    App.toast('Нет разрешения на уведомления', 'warning');
-                }
-            });
-        }
-        const unsubPushBtn = document.getElementById('unsubscribe-push-btn');
-        if (unsubPushBtn) {
-            const newUnsubPushBtn = unsubPushBtn.cloneNode(true);
-            unsubPushBtn.parentNode.replaceChild(newUnsubPushBtn, unsubPushBtn);
-            newUnsubPushBtn.addEventListener('click', async function() {
-                await App.ui.pages.removePushSubscription();
-                App.toast('Подписка на push отключена', 'success');
+        const infoBtn = document.getElementById('telegram-info-btn');
+        if (infoBtn) {
+            infoBtn.addEventListener('click', () => {
+                App.ui.alertModal('Для привязки Telegram перейдите в раздел Premium (доступно после активации подписки).');
             });
         }
         settingsListenersAttached = true;
@@ -564,7 +529,7 @@ App.ui.pages.populateSettingsFields = async function() {
     App.initIcons();
 };
 
-// ==================== РЕЗЕРВНЫЕ КОДЫ (инициализация) ====================
+// ==================== РЕЗЕРВНЫЕ КОДЫ ====================
 App.ui.pages.initRecoveryCodesUI = function() {
     let showBtn = document.getElementById('show-recovery-btn');
     let genBtn = document.getElementById('gen-new-codes-btn');
