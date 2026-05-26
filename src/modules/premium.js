@@ -1,4 +1,4 @@
-here// src/modules/premium.js
+// src/modules/premium.js
 window.App = window.App || {};
 App.premium = App.premium || {};
 
