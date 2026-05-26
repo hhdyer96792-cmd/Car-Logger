@@ -1,4 +1,4 @@
-// src/main.js (полная версия, с сохранением всей логики входа, регистрации, модальных окон)
+// src/main.js
 // ===== Полифил crypto.randomUUID для старых браузеров =====
 (function() {
     if (typeof crypto === 'undefined' || typeof crypto.randomUUID !== 'function') {
@@ -356,7 +356,7 @@
                     const mobileRowOnline = document.getElementById('mobile-header-row2');
                     if (mobileRowOnline) mobileRowOnline.style.display = 'flex';
 
-                    // ========== БЛОК МАСТЕР-ПАРОЛЯ (ИСПРАВЛЕННЫЙ) ==========
+                    // ========== БЛОК МАСТЕР-ПАРОЛЯ И PIN ==========
                     if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
                         let masterPassword = null;
                         const hasPin = App.localAuth && await App.localAuth.isPinSet();
@@ -386,6 +386,7 @@
                                 if (hasMasterPassword) {
                                     isValid = await App.db.encryption.verifyMasterKey(password, salt);
                                 } else {
+                                    // Первая установка – создаём соль и ключ
                                     const { key, salt: newSalt } = await App.db.encryption.initMasterKey(password, null);
                                     App.db.encryption.setMasterKey(key, newSalt);
                                     await App.db.encryption.saveVerificationString(key);
@@ -436,7 +437,7 @@
                         }
                     }
 
-                    // Получение имени пользователя
+                    // Имя пользователя
                     const { data: { user } } = await App.supabase.auth.getUser();
                     const username = user?.user_metadata?.username || '';
                     if (username) localStorage.setItem('vesta_username', username);
@@ -459,38 +460,15 @@
                         }
                     }
 
-                    // ========== БЛОК АВТОМОБИЛЯ (ИСПРАВЛЕННЫЙ) ==========
+                    // ========== ЗАГРУЗКА АВТОМОБИЛЕЙ (через исправленный loadCars) ==========
                     if (typeof App.store !== 'undefined' && typeof App.store.loadCars === 'function') {
-                        try {
-                            await App.store.loadCars();
-                            console.log('[Main] Cars after load:', App.store.cars);
-                            if (!App.store.cars || App.store.cars.length === 0) {
-                                const { data: { user } } = await App.supabase.auth.getUser();
-                                if (!user) throw new Error('Пользователь не найден');
-                                const { data: newCar, error: createError } = await App.supabase
-                                    .from('cars')
-                                    .insert({ name: 'Мой автомобиль', user_id: user.id })
-                                    .select()
-                                    .single();
-                                if (createError) {
-                                    console.error('[Main] Ошибка создания автомобиля:', createError);
-                                    throw createError;
-                                }
-                                App.store.cars = [newCar];
-                                App.store.activeCarId = newCar.id;
-                                localStorage.setItem('vesta_active_car_id', newCar.id);
-                                await App.db.put('cars', newCar);
-                                console.log('[Main] Автомобиль создан:', newCar);
-                            } else if (!App.store.activeCarId) {
-                                App.store.setActiveCar(App.store.cars[0].id);
-                            }
-                            if (typeof App.ui.pages.renderCarSelector === 'function') App.ui.pages.renderCarSelector();
-                            if (typeof App.ui.pages.renderCarTab === 'function') App.ui.pages.renderCarTab();
-                        } catch (err) {
-                            console.error('[Main] Ошибка загрузки/создания автомобиля:', err);
-                        }
+                        await App.store.loadCars();
+                        // Принудительно обновляем UI
+                        if (typeof App.ui.pages.renderCarSelector === 'function') App.ui.pages.renderCarSelector();
+                        if (typeof App.ui.pages.renderCarTab === 'function') App.ui.pages.renderCarTab();
                     }
 
+                    // Загрузка остальных данных
                     if (typeof App.ui.pages.checkPendingInvites === 'function') App.ui.pages.checkPendingInvites();
                     if (App.store.activeCarId && App.realtime && typeof App.realtime.subscribeToCar === 'function') {
                         App.realtime.subscribeToCar(App.store.activeCarId);
@@ -501,6 +479,7 @@
                     }
                     if (typeof App.renderAll === 'function') App.renderAll();
                 } else {
+                    // Выход
                     isLoggedIn = false;
                     setInstallButtonVisible(false);
                     if (typeof App.supa !== 'undefined' && App.supa.clearUserIdCache) App.supa.clearUserIdCache();
@@ -660,7 +639,7 @@
 
         window.addEventListener('load', () => setTimeout(() => { if (typeof App.initIcons === 'function') App.initIcons(); }, 200));
 
-        // FAB-меню (оставлено как в оригинале)
+        // FAB-меню
         (function() {
             const fab = document.createElement('div');
             fab.id = 'fab-menu';
@@ -725,10 +704,29 @@
         })();
     }
 
-    // Глобальные функции восстановления (без изменений)
-    window.recoverViaTelegram = async function() { /* ... (оставлено как в оригинале) */ };
-    window.recoverViaRecoveryCode = async function() { /* ... */ };
-    window.generateAndShowRecoveryCodes = async function(userId, username) { /* ... */ };
+    // Глобальные функции восстановления
+    window.recoverViaTelegram = async function() {
+        // ... (оставить без изменений, как в исходном коде)
+        console.log('recoverViaTelegram placeholder');
+    };
+    window.recoverViaRecoveryCode = async function() {
+        console.log('recoverViaRecoveryCode placeholder');
+    };
+    window.generateAndShowRecoveryCodes = async function(userId, username) {
+        try {
+            const { data: codes, error } = await App.supabase.rpc('generate_recovery_codes', { p_user_id: userId });
+            if (error || !codes || codes.length === 0) {
+                console.error('Ошибка генерации кодов:', error);
+                await App.ui.alertModal('Не удалось сгенерировать коды. Попробуйте позже.');
+                return;
+            }
+            const msg = 'Ваши резервные коды для восстановления доступа (сохраните их!):\n\n' + codes.join('\n');
+            await App.ui.alertModal(msg);
+        } catch (err) {
+            console.error(err);
+            await App.ui.alertModal('Не удалось сгенерировать коды. Попробуйте позже.');
+        }
+    };
 
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', onReady);
     else onReady();
