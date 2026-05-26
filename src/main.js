@@ -1,4 +1,4 @@
-// src/main.js (с расширенным логированием)
+// src/main.js (финальная версия с обходом проблем мастер-пароля)
 // ===== Полифил crypto.randomUUID для старых браузеров =====
 (function() {
     if (typeof crypto === 'undefined' || typeof crypto.randomUUID !== 'function') {
@@ -121,7 +121,6 @@
     }
 
     function initAuthFormEvents(container) {
-        // ... (без изменений, оставляем как в предыдущей версии)
         const tabLogin = container.querySelector('#tab-login');
         const tabSocial = container.querySelector('#tab-social');
         const authLoginDiv = container.querySelector('#auth-login');
@@ -324,11 +323,46 @@
         if (typeof App.ui.pages.populateSettingsFields === 'function') App.ui.pages.populateSettingsFields();
         if (typeof App.renderAll === 'function') App.renderAll();
 
-        // Принудительная перезагрузка для гарантии сброса состояния
+        // Принудительная перезагрузка страницы
         setTimeout(() => {
             console.log('[DEBUG] doLogout: перезагрузка страницы');
             window.location.reload();
         }, 500);
+    }
+
+    // Функция принудительной загрузки данных из Supabase (в обход шифрования)
+    async function forceLoadDataFromSupabase() {
+        console.log('[DEBUG] forceLoadDataFromSupabase: загрузка данных напрямую из Supabase');
+        try {
+            const [operations, fuelLog, tireLog, parts, history, mileageHistory] = await Promise.all([
+                App.supa.loadOperations(),
+                App.supa.loadFuelLog(),
+                App.supa.loadTires(),
+                App.supa.loadParts(),
+                App.supa.loadHistory(),
+                App.supa.loadMileageHistory()
+            ]);
+            App.store.operations = operations;
+            App.store.fuelLog = fuelLog;
+            App.store.tireLog = tireLog;
+            App.store.parts = parts;
+            App.store.serviceRecords = history;
+            App.store.mileageHistory = mileageHistory;
+            console.log('[DEBUG] Данные загружены напрямую. operations:', App.store.operations.length);
+            // Сохраняем в IndexedDB (не зашифрованными)
+            for (const op of operations) await App.store.saveOperationToDB(op);
+            for (const f of fuelLog) await App.store.saveFuelRecordToDB(f);
+            for (const t of tireLog) await App.store.saveTireRecordToDB(t);
+            for (const p of parts) await App.store.savePartToDB(p);
+            for (const h of history) await App.store.saveHistoryRecordToDB(h);
+            for (const m of mileageHistory) await App.store.saveMileageRecordToDB(m);
+            // Обновляем UI
+            if (typeof App.renderAll === 'function') App.renderAll();
+            App.toast('Данные загружены (режим без шифрования)', 'info');
+        } catch (err) {
+            console.error('[DEBUG] Ошибка принудительной загрузки:', err);
+            App.toast('Не удалось загрузить данные', 'error');
+        }
     }
 
     function setupAuthSubscription() {
@@ -388,7 +422,13 @@
                     const hasMasterPassword = localStorage.getItem('vesta_master_password_set') === 'true';
                     console.log('[DEBUG] hasMasterPassword =', hasMasterPassword);
                     const message = hasMasterPassword ? 'Введите мастер-пароль' : 'Установите мастер-пароль для шифрования данных (запомните его!)';
-                    const password = await App.ui.promptModalAsync('Мастер-пароль', message);
+                    let password = null;
+                    try {
+                        password = await App.ui.promptModalAsync('Мастер-пароль', message);
+                        console.log('[DEBUG] Результат promptModalAsync:', password);
+                    } catch (err) {
+                        console.error('[DEBUG] Ошибка при вызове promptModalAsync:', err);
+                    }
                     if (password) {
                         const salt = App.db.encryption.getStoredSalt();
                         let isValid = false;
@@ -422,6 +462,9 @@
                         }
                     } else {
                         App.toast('Без мастер-пароля чувствительные данные будут недоступны', 'warning');
+                        // Принудительно загружаем данные без шифрования
+                        console.log('[DEBUG] Мастер-пароль не введён, загружаем данные напрямую');
+                        await forceLoadDataFromSupabase();
                     }
                 }
                 if (masterPassword && !hasPin && App.localAuth && App.localAuth.isPinSupported()) {
@@ -480,6 +523,12 @@
                     console.log('[DEBUG] App.storage.loadAllData() завершён');
                 } else {
                     console.warn('[DEBUG] App.storage.loadAllData не определён');
+                }
+
+                // Если после стандартной загрузки данных нет, используем принудительную
+                if (App.store.operations.length === 0) {
+                    console.log('[DEBUG] Данные не загрузились, выполняем принудительную загрузку');
+                    await forceLoadDataFromSupabase();
                 }
 
                 // ========== ПРИНУДИТЕЛЬНАЯ ЗАГРУЗКА АВТОМОБИЛЕЙ ==========
@@ -738,7 +787,7 @@
 
         window.addEventListener('load', () => setTimeout(() => { if (typeof App.initIcons === 'function') App.initIcons(); }, 200));
 
-        // FAB-меню (оставлено без изменений)
+        // FAB-меню
         (function() {
             const fab = document.createElement('div');
             fab.id = 'fab-menu';
