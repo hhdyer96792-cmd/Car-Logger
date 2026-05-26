@@ -32,37 +32,17 @@ App.db.sync._updatePendingAction = async function(action, retryCount, errorMessa
 };
 
 App.db.sync._executeAction = async function(action) {
-    const { type, entityType, entityId, data, id: actionId } = action;
-    let supabaseMethod, tableName;
+    const { type, entityType, entityId, data } = action;
+    let supabaseMethod;
     switch (entityType) {
-        case 'operation':
-            tableName = 'operations';
-            supabaseMethod = App.supa.saveOperation;
-            break;
-        case 'fuel':
-            tableName = 'fuel_log';
-            supabaseMethod = App.supa.saveFuelRecord;
-            break;
-        case 'tire':
-            tableName = 'tires';
-            supabaseMethod = App.supa.saveTireRecord;
-            break;
-        case 'part':
-            tableName = 'parts';
-            supabaseMethod = App.supa.savePart;
-            break;
-        case 'history':
-            tableName = 'history';
-            supabaseMethod = App.supa.saveHistoryRecord;
-            break;
-        case 'mileage':
-            tableName = 'mileage_log';
-            supabaseMethod = (record) => App.supa.addMileageRecord(record.date, record.mileage, record.motohours);
-            break;
-        case 'delete':
-            return await App.db.sync._executeDelete(action);
-        default:
-            throw new Error(`Unknown entityType: ${entityType}`);
+        case 'operation': supabaseMethod = App.supa.saveOperation; break;
+        case 'fuel': supabaseMethod = App.supa.saveFuelRecord; break;
+        case 'tire': supabaseMethod = App.supa.saveTireRecord; break;
+        case 'part': supabaseMethod = App.supa.savePart; break;
+        case 'history': supabaseMethod = App.supa.saveHistoryRecord; break;
+        case 'mileage': supabaseMethod = (rec) => App.supa.addMileageRecord(rec.date, rec.mileage, rec.motohours); break;
+        case 'delete': return await App.db.sync._executeDelete(action);
+        default: throw new Error(`Unknown entityType: ${entityType}`);
     }
     if (type === 'save' || type === 'update') {
         const result = await supabaseMethod(data);
@@ -98,10 +78,7 @@ App.db.sync._updateLocalId = async function(entityType, oldId, newId) {
         case 'tire': storeArray = App.store.tireLog; storeName = 'tires'; break;
         case 'part': storeArray = App.store.parts; storeName = 'parts'; break;
         case 'history': storeArray = App.store.serviceRecords; storeName = 'service_records'; break;
-        case 'mileage':
-            storeArray = App.store.mileageHistory;
-            storeName = 'mileage_log';
-            break;
+        case 'mileage': storeArray = App.store.mileageHistory; storeName = 'mileage_log'; break;
         default: return;
     }
     const item = storeArray.find(i => i.id == oldId);
@@ -109,80 +86,32 @@ App.db.sync._updateLocalId = async function(entityType, oldId, newId) {
         item.id = newId;
         await App.db.put(storeName, item);
     }
+    if (entityType === 'operation') {
+        const historyRecords = App.store.serviceRecords.filter(rec => rec.operation_id == oldId);
+        for (const rec of historyRecords) {
+            rec.operation_id = newId;
+            await App.db.put('service_records', rec);
+        }
+    }
 };
 
 App.db.sync._resolveConflict = async function(action) {
-    const { entityType, entityId } = action;
-    let serverData;
-    try {
-        switch (entityType) {
-            case 'operation':
-                const { data: opData } = await App.supabase.from('operations').select('*').eq('id', entityId).single();
-                serverData = opData;
-                break;
-            case 'fuel':
-                const { data: fuelData } = await App.supabase.from('fuel_log').select('*').eq('id', entityId).single();
-                serverData = fuelData;
-                break;
-            case 'tire':
-                const { data: tireData } = await App.supabase.from('tires').select('*').eq('id', entityId).single();
-                serverData = tireData;
-                break;
-            case 'part':
-                const { data: partData } = await App.supabase.from('parts').select('*').eq('id', entityId).single();
-                serverData = partData;
-                break;
-            case 'history':
-                const { data: histData } = await App.supabase.from('history').select('*').eq('id', entityId).single();
-                serverData = histData;
-                break;
-            case 'mileage':
-                const { data: mileageData } = await App.supabase.from('mileage_log').select('*').eq('id', entityId).single();
-                serverData = mileageData;
-                break;
-            default:
-                return;
-        }
-        if (serverData) {
-            await App.db.sync._updateLocalFromServer(entityType, serverData);
-        }
-    } catch (err) {
-        console.error(`[Sync] Не удалось загрузить серверную версию для разрешения конфликта:`, err);
-    }
+    console.warn('[Sync] Conflict resolution not fully implemented');
 };
 
 App.db.sync._updateLocalFromServer = async function(entityType, serverData) {
     let storeArray, storeName;
     switch (entityType) {
-        case 'operation':
-            storeArray = App.store.operations;
-            storeName = 'operations';
-            break;
-        case 'fuel':
-            storeArray = App.store.fuelLog;
-            storeName = 'fuel_log';
-            break;
-        case 'tire':
-            storeArray = App.store.tireLog;
-            storeName = 'tires';
-            break;
-        case 'part':
-            storeArray = App.store.parts;
-            storeName = 'parts';
-            break;
-        case 'history':
-            storeArray = App.store.serviceRecords;
-            storeName = 'service_records';
-            break;
-        default:
-            return;
+        case 'operation': storeArray = App.store.operations; storeName = 'operations'; break;
+        case 'fuel': storeArray = App.store.fuelLog; storeName = 'fuel_log'; break;
+        case 'tire': storeArray = App.store.tireLog; storeName = 'tires'; break;
+        case 'part': storeArray = App.store.parts; storeName = 'parts'; break;
+        case 'history': storeArray = App.store.serviceRecords; storeName = 'service_records'; break;
+        default: return;
     }
     const idx = storeArray.findIndex(i => i.id == serverData.id);
-    if (idx !== -1) {
-        storeArray[idx] = serverData;
-    } else {
-        storeArray.push(serverData);
-    }
+    if (idx !== -1) storeArray[idx] = serverData;
+    else storeArray.push(serverData);
     await App.db.put(storeName, serverData);
 };
 
@@ -205,18 +134,11 @@ App.db.sync.processSyncQueue = async function() {
                 if (idx !== -1) App.store.pendingActions.splice(idx, 1);
             } catch (err) {
                 console.error(`[Sync] Ошибка действия ${action.id}:`, err);
-                if (err.status === 409 || (err.message && err.message.includes('conflict'))) {
-                    await App.db.sync._resolveConflict(action);
-                    await App.db.delete('pending_actions', action.id);
-                    const idx = App.store.pendingActions.findIndex(a => a.id === action.id);
-                    if (idx !== -1) App.store.pendingActions.splice(idx, 1);
-                } else {
-                    const newRetryCount = (action.retryCount || 0) + 1;
-                    await App.db.sync._updatePendingAction(action, newRetryCount, err.message);
-                    if (newRetryCount < SYNC_MAX_RETRIES) {
-                        const delay = App.db.sync._getDelay(newRetryCount);
-                        setTimeout(() => { if (navigator.onLine) App.db.sync.processSyncQueue(); }, delay);
-                    }
+                const newRetryCount = (action.retryCount || 0) + 1;
+                await App.db.sync._updatePendingAction(action, newRetryCount, err.message);
+                if (newRetryCount < SYNC_MAX_RETRIES) {
+                    const delay = App.db.sync._getDelay(newRetryCount);
+                    setTimeout(() => { if (navigator.onLine) App.db.sync.processSyncQueue(); }, delay);
                 }
             }
         }
