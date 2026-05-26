@@ -32,6 +32,23 @@
         }
     }
 
+    // ===== ОБНОВЛЕНИЕ ИМЕНИ ПОЛЬЗОВАТЕЛЯ В ШАПКЕ =====
+    async function updateUsernameDisplay() {
+        const { data: { user } } = await App.supabase.auth.getUser();
+        const displayEl = document.getElementById('username-display');
+        const sidebarEl = document.getElementById('sidebar-username');
+        if (user && user.user_metadata && user.user_metadata.username) {
+            const nameHtml = '<i data-lucide="user"></i> ' + App.utils.escapeHtml(user.user_metadata.username);
+            if (displayEl) displayEl.innerHTML = nameHtml;
+            if (sidebarEl) sidebarEl.innerHTML = nameHtml;
+            localStorage.setItem('vesta_username', user.user_metadata.username);
+        } else {
+            if (displayEl) displayEl.innerHTML = '';
+            if (sidebarEl) sidebarEl.innerHTML = '';
+        }
+        App.initIcons();
+    }
+
     function onReady() {
         document.body.classList.add('no-transition');
 
@@ -67,51 +84,94 @@
         }
 
         // ===== ИНИЦИАЛИЗАЦИЯ INDEXEDDB, МИГРАЦИЯ, ЗАГРУЗКА ДАННЫХ, KILL SWITCH =====
-(async function initDatabase() {
-    try {
-        await App.db.init();
-        const migrated = localStorage.getItem('vesta_migrated_to_indexeddb');
-        // Получаем текущую сессию (если пользователь не вошёл – сессии нет)
-        const { data: { session } } = await App.supabase.auth.getSession();
+        (async function initDatabase() {
+            try {
+                await App.db.init();
+                const migrated = localStorage.getItem('vesta_migrated_to_indexeddb');
+                const { data: { session } } = await App.supabase.auth.getSession();
 
-        // Миграция предлагается только если пользователь авторизован и миграция ещё не выполнялась
-        if (!migrated && session) {
-            const confirmMigration = await App.ui.confirmModalAsync('Перенести существующие данные в новую базу? (рекомендуется)');
-            if (confirmMigration) {
-                await App.db.migrateFromLocalStorage();
-                localStorage.setItem('vesta_migrated_to_indexeddb', 'true');
+                // Миграция только если пользователь авторизован и миграция ещё не выполнялась
+                if (!migrated && session) {
+                    const confirmMigration = await App.ui.confirmModalAsync('Перенести существующие данные в новую базу? (рекомендуется)');
+                    if (confirmMigration) {
+                        await App.db.migrateFromLocalStorage();
+                        localStorage.setItem('vesta_migrated_to_indexeddb', 'true');
+                    }
+                }
+                await App.store.loadFromIndexedDB();
+
+                if (session) {
+                    const isKilled = await App.db.killSwitch.check();
+                    if (isKilled) {
+                        await App.db.killSwitch.destroyLocalDB();
+                        return;
+                    }
+                    if (typeof App.db.killSwitch.startPeriodicCheck === 'function') {
+                        App.db.killSwitch.startPeriodicCheck();
+                    }
+
+                    // ===== ВОССТАНОВЛЕНИЕ МАСТЕР-КЛЮЧА (PIN или мастер-пароль) =====
+                    if (!App.db.encryption.getMasterKey()) {
+                        let unlocked = false;
+                        // Сначала пробуем через PIN
+                        if (App.localAuth && await App.localAuth.isPinSet()) {
+                            const pin = await App.ui.promptModalAsync('Быстрый вход', 'Введите PIN-код');
+                            if (pin) {
+                                const masterPassword = await App.localAuth.verifyPin(pin);
+                                if (masterPassword) {
+                                    const salt = App.db.encryption.getStoredSalt();
+                                    const { key } = await App.db.encryption.initMasterKey(masterPassword, salt);
+                                    App.db.encryption.setMasterKey(key, salt);
+                                    unlocked = true;
+                                    App.toast('Расшифровка по PIN успешна', 'success');
+                                } else {
+                                    App.toast('Неверный PIN', 'error');
+                                }
+                            }
+                        }
+                        // Если PIN не помог – запрашиваем мастер-пароль
+                        if (!unlocked) {
+                            const masterPassword = await App.ui.promptModalAsync('Введите мастер-пароль', '');
+                            if (masterPassword) {
+                                const salt = App.db.encryption.getStoredSalt();
+                                const isValid = await App.db.encryption.verifyMasterKey(masterPassword, salt);
+                                if (isValid) {
+                                    const { key } = await App.db.encryption.initMasterKey(masterPassword, salt);
+                                    App.db.encryption.setMasterKey(key, salt);
+                                    App.toast('Данные расшифрованы', 'success');
+                                } else {
+                                    App.toast('Неверный мастер-пароль', 'error');
+                                }
+                            } else {
+                                App.toast('Без пароля чувствительные данные будут недоступны', 'warning');
+                            }
+                        }
+                        // После успешной расшифровки перезагружаем данные
+                        if (App.db.encryption.getMasterKey()) {
+                            await App.store.loadFromIndexedDB();
+                            if (typeof App.renderAll === 'function') App.renderAll();
+                        }
+                    }
+                }
+
+                if (navigator.onLine) {
+                    await App.db.sync.processSyncQueue();
+                } else {
+                    console.log('[Main] Офлайн-режим, синхронизация отложена');
+                }
+                setInterval(() => {
+                    if (navigator.onLine && App.db.sync && !App.db.sync._isRunning) {
+                        App.db.sync.processSyncQueue().catch(console.error);
+                    }
+                }, 60000);
+            } catch (err) {
+                console.error('Ошибка инициализации IndexedDB:', err);
+                if (typeof App.toast === 'function') {
+                    App.toast('Не удалось открыть базу данных. Некоторые функции будут недоступны.', 'error');
+                }
+                App.store.initFromLocalStorage();
             }
-        }
-        await App.store.loadFromIndexedDB();
-        
-        if (session) {
-            const isKilled = await App.db.killSwitch.check();
-            if (isKilled) {
-                await App.db.killSwitch.destroyLocalDB();
-                return;
-            }
-            if (typeof App.db.killSwitch.startPeriodicCheck === 'function') {
-                App.db.killSwitch.startPeriodicCheck();
-            }
-        }
-        if (navigator.onLine) {
-            await App.db.sync.processSyncQueue();
-        } else {
-            console.log('[Main] Офлайн-режим, синхронизация отложена');
-        }
-        setInterval(() => {
-            if (navigator.onLine && App.db.sync && !App.db.sync._isRunning) {
-                App.db.sync.processSyncQueue().catch(console.error);
-            }
-        }, 60000);
-    } catch (err) {
-        console.error('Ошибка инициализации IndexedDB:', err);
-        if (typeof App.toast === 'function') {
-            App.toast('Не удалось открыть базу данных. Некоторые функции будут недоступны.', 'error');
-        }
-        App.store.initFromLocalStorage();
-    }
-})();
+        })();
 
         App.renderAll = function() {
             var activeTab = document.querySelector('.tab-content.active');
@@ -248,6 +308,7 @@
                                     modal.remove();
                                     document.body.classList.remove('auth-modal-open');
                                 }
+                                updateUsernameDisplay();
                             }
                         });
                 });
@@ -301,6 +362,7 @@
                                     if (res.data.user && typeof window.generateAndShowRecoveryCodes === 'function') {
                                         window.generateAndShowRecoveryCodes(res.data.user.id, username);
                                     }
+                                    updateUsernameDisplay();
                                 } else {
                                     App.toast('Регистрация успешна! Подтвердите email, чтобы войти.', 'info');
                                 }
@@ -467,12 +529,12 @@
                 var cachedUsername = localStorage.getItem('vesta_username') || '';
                 var displayElOffline = document.getElementById('username-display');
                 if (displayElOffline && cachedUsername) {
-                    displayElOffline.innerHTML = '<i data-lucide="user"></i> ' + cachedUsername;
+                    displayElOffline.innerHTML = '<i data-lucide="user"></i> ' + App.utils.escapeHtml(cachedUsername);
                     App.initIcons();
                 }
                 var sidebarUsernameOffline = document.getElementById('sidebar-username');
                 if (sidebarUsernameOffline && cachedUsername) {
-                    sidebarUsernameOffline.innerHTML = '<i data-lucide="user"></i> ' + cachedUsername;
+                    sidebarUsernameOffline.innerHTML = '<i data-lucide="user"></i> ' + App.utils.escapeHtml(cachedUsername);
                     App.initIcons();
                 }
 
@@ -506,122 +568,15 @@
                         var mobileRowOnline = document.getElementById('mobile-header-row2');
                         if (mobileRowOnline) mobileRowOnline.style.display = 'flex';
 
-                        // ===== ЗАПРОС ПАРОЛЯ ДЛЯ ШИФРОВАНИЯ (с поддержкой PIN) =====
-if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-    let masterKey = null;
-    let masterPassword = null;
-
-    // 1. Проверяем, есть ли установленный PIN
-    const hasPin = App.localAuth && await App.localAuth.isPinSet();
-
-    if (hasPin) {
-        // Запрашиваем PIN
-        const pin = await App.ui.promptModalAsync('Быстрый доступ', 'Введите PIN-код (4+ цифр)');
-        if (pin) {
-            masterPassword = await App.localAuth.verifyPin(pin);
-            if (masterPassword) {
-                // PIN верен, расшифровываем мастер-пароль
-                const salt = App.db.encryption.getStoredSalt();
-                const { key } = await App.db.encryption.initMasterKey(masterPassword, salt);
-                App.db.encryption.setMasterKey(key, salt);
-                await App.store.loadFromIndexedDB();
-                if (typeof App.renderAll === 'function') App.renderAll();
-                App.toast('Расшифровка по PIN успешна', 'success');
-            } else {
-                App.toast('Неверный PIN-код. Попробуйте ещё раз или используйте мастер-пароль.', 'error');
-            }
-        }
-    }
-
-    // 2. Если PIN не помог или не установлен – запрашиваем мастер-пароль
-    if (!masterPassword) {
-        if (typeof App.ui.promptModalAsync === 'function') {
-            const password = await App.ui.promptModalAsync('Введите мастер-пароль', '');
-            if (password) {
-                const salt = App.db.encryption.getStoredSalt();
-                const isValid = await App.db.encryption.verifyMasterKey(password, salt);
-                if (isValid) {
-                    const { key } = await App.db.encryption.initMasterKey(password, salt);
-                    App.db.encryption.setMasterKey(key, salt);
-                    await App.store.loadFromIndexedDB();
-                    if (typeof App.renderAll === 'function') App.renderAll();
-                    App.toast('Расшифровка успешна', 'success');
-                    masterPassword = password;
-                } else {
-                    App.toast('Неверный мастер-пароль.', 'error');
-                }
-            } else {
-                App.toast('Без пароля чувствительные данные будут недоступны', 'warning');
-            }
-        } else {
-            // fallback для старых браузеров
-            var pwd = await App.ui.promptModalAsync('Введите мастер-пароль', '');
-            if (pwd) {
-                const salt = App.db.encryption.getStoredSalt();
-                const isValid = await App.db.encryption.verifyMasterKey(pwd, salt);
-                if (isValid) {
-                    const { key } = await App.db.encryption.initMasterKey(pwd, salt);
-                    App.db.encryption.setMasterKey(key, salt);
-                    await App.store.loadFromIndexedDB();
-                    if (typeof App.renderAll === 'function') App.renderAll();
-                    App.toast('Расшифровка успешна', 'success');
-                    masterPassword = pwd;
-                } else {
-                    App.toast('Неверный мастер-пароль.', 'error');
-                }
-            } else {
-                App.toast('Без пароля чувствительные данные будут недоступны', 'warning');
-            }
-        }
-    }
-
-    // 3. Если мастер-пароль получен и PIN не был установлен – предложить настроить PIN
-    if (masterPassword && !hasPin && App.localAuth && App.localAuth.isPinSupported()) {
-        const wantPin = await App.ui.confirmModalAsync('Настроить быстрый вход по PIN-коду? При следующем запуске достаточно будет ввести PIN.');
-        if (wantPin) {
-            let pinSet = false;
-            while (!pinSet) {
-                const pin = await App.ui.promptModalAsync('Установите PIN-код (минимум 4 цифры)', '');
-                if (pin && pin.length >= 4 && /^\d+$/.test(pin)) {
-                    const confirmPin = await App.ui.promptModalAsync('Подтвердите PIN-код', 'Введите PIN ещё раз');
-                    if (confirmPin === pin) {
-                        try {
-                            await App.localAuth.setPin(pin, masterPassword);
-                            App.toast('PIN-код сохранён', 'success');
-                            pinSet = true;
-                        } catch (err) {
-                            App.toast('Ошибка сохранения PIN: ' + err.message, 'error');
-                        }
-                    } else {
-                        App.toast('PIN-коды не совпадают', 'error');
-                    }
-                } else {
-                    App.toast('PIN должен содержать минимум 4 цифры', 'error');
-                }
-            }
-        }
-    }
-}
-                        // ===== КОНЕЦ БЛОКА ШИФРОВАНИЯ =====
+                        // ===== ЗАПРОС ПАРОЛЯ ДЛЯ ШИФРОВАНИЯ (уже обрабатывается в initDatabase) =====
+                        // Дополнительно обновляем имя в шапке
+                        updateUsernameDisplay();
 
                         // ===== ИНИЦИАЛИЗАЦИЯ ПРЕМИУМ-ФУНКЦИЙ =====
                         if (App.premium && typeof App.premium.init === 'function') {
                             await App.premium.init();
                         }
                         // ===== КОНЕЦ БЛОКА PREMIUM =====
-
-                        App.supabase.auth.getUser().then(function(userRes) {
-                            var displayEl = document.getElementById('username-display');
-                            if (displayEl && userRes.data.user && userRes.data.user.user_metadata && userRes.data.user.user_metadata.username) {
-                                displayEl.innerHTML = '<i data-lucide="user"></i> ' + userRes.data.user.user_metadata.username;
-                                localStorage.setItem('vesta_username', userRes.data.user.user_metadata.username);
-                            }
-                            var sidebarUsernameEl = document.getElementById('sidebar-username');
-                            if (sidebarUsernameEl && userRes.data.user && userRes.data.user.user_metadata && userRes.data.user.user_metadata.username) {
-                                sidebarUsernameEl.innerHTML = '<i data-lucide="user"></i> ' + userRes.data.user.user_metadata.username;
-                            }
-                            App.initIcons();
-                        });
 
                         if (typeof App.ui.pages.checkPushSubscriptionStatus === 'function') {
                             App.ui.pages.checkPushSubscriptionStatus();
