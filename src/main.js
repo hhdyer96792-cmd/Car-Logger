@@ -364,37 +364,54 @@ if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
     if (typeof App.renderAll === 'function') App.renderAll();
 }
 
-// После блока мастер-пароля (или вместо него)
-try {
-    const { data: { user } } = await App.supabase.auth.getUser();
-    const { data: cars, error } = await App.supabase
-        .from('cars')
-        .select('*')
-        .eq('user_id', user.id);
-    if (!error && cars && cars.length) {
-        App.store.cars = cars;
-        App.store.activeCarId = cars[0].id;
-        localStorage.setItem('vesta_active_car_id', cars[0].id);
-        for (const car of cars) await App.db.put('cars', car);
+// ========== ПРЯМАЯ ЗАГРУЗКА АВТОМОБИЛЕЙ (минуя loadCars) ==========
+if (typeof App.store !== 'undefined') {
+    try {
+        // Получаем текущего пользователя
+        const { data: { user } } = await App.supabase.auth.getUser();
+        if (!user) throw new Error('Пользователь не найден');
+        
+        // Загружаем автомобили из Supabase
+        const { data: cars, error } = await App.supabase
+            .from('cars')
+            .select('*')
+            .eq('user_id', user.id);
+        
+        if (error) throw error;
+        
+        if (cars && cars.length > 0) {
+            // Сохраняем в IndexedDB
+            for (const car of cars) {
+                await App.db.put('cars', car);
+            }
+            // Обновляем глобальное состояние
+            App.store.cars = cars;
+            if (!App.store.activeCarId || !cars.some(c => c.id == App.store.activeCarId)) {
+                App.store.setActiveCar(cars[0].id);
+            }
+            localStorage.setItem('vesta_active_car_id', App.store.activeCarId);
+            console.log('[Main] Автомобили загружены:', cars);
+        } else {
+            // Создаём автомобиль, если нет ни одного
+            console.log('[Main] Автомобилей нет, создаём...');
+            const { data: newCar, error: createError } = await App.supabase
+                .from('cars')
+                .insert({ name: 'Мой автомобиль', user_id: user.id })
+                .select()
+                .single();
+            if (createError) throw createError;
+            await App.db.put('cars', newCar);
+            App.store.cars = [newCar];
+            App.store.setActiveCar(newCar.id);
+            localStorage.setItem('vesta_active_car_id', newCar.id);
+            console.log('[Main] Автомобиль создан:', newCar);
+        }
+        // Обновляем UI
         if (typeof App.ui.pages.renderCarSelector === 'function') App.ui.pages.renderCarSelector();
         if (typeof App.ui.pages.renderCarTab === 'function') App.ui.pages.renderCarTab();
-        console.log('Автомобили принудительно загружены:', cars);
-    } else if (cars.length === 0) {
-        // Создать автомобиль
-        const { data: newCar } = await App.supabase
-            .from('cars')
-            .insert({ name: 'Мой автомобиль', user_id: user.id })
-            .select()
-            .single();
-        if (newCar) {
-            App.store.cars = [newCar];
-            App.store.activeCarId = newCar.id;
-            await App.db.put('cars', newCar);
-            if (typeof App.ui.pages.renderCarSelector === 'function') App.ui.pages.renderCarSelector();
-        }
+    } catch (err) {
+        console.error('[Main] Ошибка загрузки/создания автомобилей:', err);
     }
-} catch (err) {
-    console.error('Ошибка принудительной загрузки авто:', err);
 }
 
                     // ========== БЛОК АВТОМОБИЛЯ (ИСПРАВЛЕННЫЙ) ==========
