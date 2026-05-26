@@ -1,4 +1,6 @@
-// src/main.js
+// src/main.js (полностью исправленный с принудительной загрузкой автомобилей)
+// Замените этим файлом ваш текущий src/main.js
+
 // ===== Полифил crypto.randomUUID для старых браузеров =====
 (function() {
     if (typeof crypto === 'undefined' || typeof crypto.randomUUID !== 'function') {
@@ -386,7 +388,6 @@
                                 if (hasMasterPassword) {
                                     isValid = await App.db.encryption.verifyMasterKey(password, salt);
                                 } else {
-                                    // Первая установка – создаём соль и ключ
                                     const { key, salt: newSalt } = await App.db.encryption.initMasterKey(password, null);
                                     App.db.encryption.setMasterKey(key, newSalt);
                                     await App.db.encryption.saveVerificationString(key);
@@ -460,22 +461,76 @@
                         }
                     }
 
-                    // ========== ЗАГРУЗКА АВТОМОБИЛЕЙ (через исправленный loadCars) ==========
-                    if (typeof App.store !== 'undefined' && typeof App.store.loadCars === 'function') {
-                        await App.store.loadCars();
-                        // Принудительно обновляем UI
-                        if (typeof App.ui.pages.renderCarSelector === 'function') App.ui.pages.renderCarSelector();
-                        if (typeof App.ui.pages.renderCarTab === 'function') App.ui.pages.renderCarTab();
+                    // ========== ЗАГРУЗКА ВСЕХ ДАННЫХ ==========
+                    if (typeof App.storage !== 'undefined' && typeof App.storage.loadAllData === 'function') {
+                        await App.storage.loadAllData();
                     }
 
-                    // Загрузка остальных данных
+                    // ========== ПРИНУДИТЕЛЬНАЯ ЗАГРУЗКА АВТОМОБИЛЕЙ (прямой запрос) ==========
+                    try {
+                        const { data: { user } } = await App.supabase.auth.getUser();
+                        if (user) {
+                            const { data: cars, error } = await App.supabase
+                                .from('cars')
+                                .select('*')
+                                .eq('user_id', user.id);
+                            if (error) throw error;
+                            if (cars && cars.length > 0) {
+                                App.store.cars = cars;
+                                if (!App.store.activeCarId || !cars.some(c => c.id === App.store.activeCarId)) {
+                                    App.store.activeCarId = cars[0].id;
+                                    localStorage.setItem('vesta_active_car_id', cars[0].id);
+                                }
+                                for (const car of cars) await App.db.put('cars', car);
+                                console.log('[Main] Автомобили загружены:', cars.length);
+                            } else {
+                                console.log('[Main] Автомобилей нет, создаём...');
+                                const { data: newCar, error: createError } = await App.supabase
+                                    .from('cars')
+                                    .insert({ name: 'Мой автомобиль', user_id: user.id })
+                                    .select()
+                                    .single();
+                                if (createError) throw createError;
+                                App.store.cars = [newCar];
+                                App.store.activeCarId = newCar.id;
+                                localStorage.setItem('vesta_active_car_id', newCar.id);
+                                await App.db.put('cars', newCar);
+                                console.log('[Main] Автомобиль создан:', newCar);
+                            }
+                            // Обновляем селектор автомобилей
+                            if (typeof App.ui.pages.renderCarSelector === 'function') {
+                                App.ui.pages.renderCarSelector();
+                            } else {
+                                // Резервный рендер
+                                const container = document.getElementById('car-selector-container');
+                                if (container) {
+                                    let html = '<select id="car-select">';
+                                    App.store.cars.forEach(car => {
+                                        html += `<option value="${car.id}"${car.id === App.store.activeCarId ? ' selected' : ''}>${car.name}</option>`;
+                                    });
+                                    html += '</select>';
+                                    container.innerHTML = html;
+                                    document.getElementById('car-select')?.addEventListener('change', (e) => {
+                                        App.store.setActiveCar(e.target.value);
+                                        if (typeof App.storage.loadAllData === 'function') App.storage.loadAllData();
+                                    });
+                                    App.initIcons();
+                                } else {
+                                    console.error('[Main] Контейнер car-selector-container не найден в DOM');
+                                }
+                            }
+                        }
+                    } catch (err) {
+                        console.error('[Main] Ошибка загрузки автомобилей:', err);
+                    }
+
+                    // Проверка приглашений и подписки на realtime
                     if (typeof App.ui.pages.checkPendingInvites === 'function') App.ui.pages.checkPendingInvites();
                     if (App.store.activeCarId && App.realtime && typeof App.realtime.subscribeToCar === 'function') {
                         App.realtime.subscribeToCar(App.store.activeCarId);
                     }
-                    if (typeof App.storage !== 'undefined' && typeof App.storage.loadAllData === 'function') {
-                        await App.storage.loadAllData();
-                        if (typeof App.ui.pages.checkAndShowInitialParamsModal === 'function') App.ui.pages.checkAndShowInitialParamsModal();
+                    if (typeof App.ui.pages.checkAndShowInitialParamsModal === 'function') {
+                        App.ui.pages.checkAndShowInitialParamsModal();
                     }
                     if (typeof App.renderAll === 'function') App.renderAll();
                 } else {
@@ -704,13 +759,14 @@
         })();
     }
 
-    // Глобальные функции восстановления
+    // Глобальные функции восстановления (заглушки)
     window.recoverViaTelegram = async function() {
-        // ... (оставить без изменений, как в исходном коде)
         console.log('recoverViaTelegram placeholder');
+        await App.ui.alertModal('Восстановление через Telegram временно недоступно. Пожалуйста, свяжитесь с администратором.');
     };
     window.recoverViaRecoveryCode = async function() {
         console.log('recoverViaRecoveryCode placeholder');
+        await App.ui.alertModal('Восстановление по резервному коду временно недоступно.');
     };
     window.generateAndShowRecoveryCodes = async function(userId, username) {
         try {
