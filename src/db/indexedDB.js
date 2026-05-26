@@ -200,4 +200,19 @@ App.db.transaction = async function(storeNames, mode, callback) {
         throw e;
     }
     return result;
+    App.db.clearAllStores = async function() {
+    if (!App.db._db) {
+        console.warn('[DB] База не инициализирована, очистка невозможна');
+        return;
+    }
+    const storeNames = Object.keys(STORES);
+    for (const storeName of storeNames) {
+        try {
+            await App.db.clear(storeName);
+            console.log(`[DB] Очищено хранилище: ${storeName}`);
+        } catch (e) {
+            console.error(`[DB] Ошибка очистки хранилища ${storeName}:`, e);
+        }
+    }
+};
 };
