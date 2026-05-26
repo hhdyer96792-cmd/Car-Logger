@@ -1,4 +1,4 @@
-// src/main.js
+// src/main.js (полностью исправленный)
 // ===== Полифил crypto.randomUUID для старых браузеров =====
 (function() {
     if (typeof crypto === 'undefined' || typeof crypto.randomUUID !== 'function') {
@@ -18,7 +18,7 @@
     let authSubscribed = false;
     let isDemoMode = false;
     let demoModeInitialized = false;
-    let dbInitialized = false; // Флаг готовности БД
+    let dbInitialized = false;
 
     const sidebarLoginBtn = document.getElementById('sidebar-login');
     const drawerLoginBtn = document.getElementById('drawer-login');
@@ -297,6 +297,7 @@
         updateUsernameDisplay('');
         clearDemoArtefacts();
 
+        // Дожидаемся полного выхода из Supabase
         await App.supabase.auth.signOut().catch(e => console.warn('Signout error', e));
 
         isLoggedIn = false;
@@ -306,8 +307,10 @@
         if (typeof App.events.closeDrawer === 'function') App.events.closeDrawer();
         if (typeof App.supa !== 'undefined' && App.supa.clearUserIdCache) App.supa.clearUserIdCache();
 
+        // Переключаемся в демо-режим
         enterDemoMode();
 
+        // Принудительно обновляем UI
         if (typeof App.ui.pages.renderCarSelector === 'function') App.ui.pages.renderCarSelector();
         if (typeof App.ui.pages.renderCarTab === 'function') App.ui.pages.renderCarTab();
         if (typeof App.ui.pages.populateSettingsFields === 'function') App.ui.pages.populateSettingsFields();
@@ -319,6 +322,19 @@
         if (authSubscribed) return;
         authSubscribed = true;
         App.supabase.auth.onAuthStateChange(async (event, session) => {
+            // Дожидаемся инициализации БД, если ещё не готова
+            if (!dbInitialized) {
+                console.log('[Auth] Database not ready yet, waiting...');
+                await new Promise(resolve => {
+                    const checkInterval = setInterval(() => {
+                        if (dbInitialized) {
+                            clearInterval(checkInterval);
+                            resolve();
+                        }
+                    }, 100);
+                });
+            }
+
             if (session) {
                 if (isDemoMode) clearDemoArtefacts();
                 isLoggedIn = true;
@@ -338,11 +354,6 @@
                 // ========== БЛОК МАСТЕР-ПАРОЛЯ И PIN ==========
                 if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
                     let masterPassword = null;
-                    // Убедимся, что БД инициализирована
-                    if (!dbInitialized) {
-                        console.warn('[Auth] DB not ready yet, delaying master password check');
-                        return;
-                    }
                     const hasPin = App.localAuth && await App.localAuth.isPinSet();
                     if (hasPin) {
                         const pin = await App.ui.promptModalAsync('Быстрый доступ', 'Введите PIN-код (4+ цифр)');
@@ -377,6 +388,7 @@
                                     App.db.encryption.setMasterKey(key, finalSalt);
                                 }
                             } else {
+                                // Первая установка – генерируем новую соль
                                 const res = await App.db.encryption.initMasterKey(password, null);
                                 key = res.key;
                                 finalSalt = res.salt;
@@ -397,6 +409,7 @@
                             App.toast('Без мастер-пароля чувствительные данные будут недоступны', 'warning');
                         }
                     }
+                    // Предложение установить PIN (если мастер-пароль получен и PIN не установлен)
                     if (masterPassword && !hasPin && App.localAuth && App.localAuth.isPinSupported()) {
                         const wantPin = await App.ui.confirmModalAsync('Настроить быстрый вход по PIN-коду?');
                         if (wantPin) {
@@ -456,6 +469,10 @@
                 try {
                     const { data: { user } } = await App.supabase.auth.getUser();
                     if (user) {
+                        // Удаляем демо-машины из IndexedDB, если они там остались
+                        if (App.db && App.db._db) {
+                            await App.db.clear('cars').catch(console.warn);
+                        }
                         const { data: cars, error } = await App.supabase
                             .from('cars')
                             .select('*')
@@ -557,18 +574,17 @@
                     App.db.sync.processSyncQueue().catch(console.error);
                 }
             }, 60000);
-            dbInitialized = true; // Помечаем БД как готовую
+            dbInitialized = true;
         } catch (err) {
             console.error('Ошибка инициализации IndexedDB:', err);
             if (typeof App.toast === 'function') {
                 App.toast('Не удалось открыть базу данных.', 'error');
             }
             App.store.initFromLocalStorage();
-            dbInitialized = true; // всё равно помечаем, чтобы не блокировать
+            dbInitialized = true;
         }
     }
 
-    // Обработчик онлайн-сессии – теперь вызывается только после инициализации БД
     async function handleOnlineSession() {
         if (!navigator.onLine) {
             isLoggedIn = true;
@@ -593,7 +609,6 @@
             return;
         }
 
-        // Онлайн – подписываемся на auth (ещё не подписаны)
         if (!authSubscribed) {
             setupAuthSubscription();
         }
@@ -627,7 +642,6 @@
             navigator.storage.persist().then(isPersisted => console.log('Persistent storage:', isPersisted ? 'granted' : 'denied'));
         }
 
-        // Сначала инициализируем БД, затем обрабатываем сессию и онлайн-состояние
         initDatabase().then(() => {
             const savedSession = localStorage.getItem('supabase.auth.token');
             if (!savedSession) {
@@ -637,7 +651,6 @@
                     if (!session) enterDemoMode();
                 });
             }
-            // Запускаем обработку онлайн/офлайн после инициализации БД
             handleOnlineSession();
         });
 
@@ -694,7 +707,7 @@
 
         window.addEventListener('load', () => setTimeout(() => { if (typeof App.initIcons === 'function') App.initIcons(); }, 200));
 
-        // FAB-меню (оставлено без изменений)
+        // FAB-меню
         (function() {
             const fab = document.createElement('div');
             fab.id = 'fab-menu';
