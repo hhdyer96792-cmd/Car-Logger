@@ -36,12 +36,8 @@
         const displayEl = document.getElementById('username-display');
         const sidebarUsernameEl = document.getElementById('sidebar-username');
         const name = username || '';
-        if (displayEl) {
-            displayEl.innerHTML = name ? `<i data-lucide="user"></i> ${name}` : '';
-        }
-        if (sidebarUsernameEl) {
-            sidebarUsernameEl.innerHTML = name ? `<i data-lucide="user"></i> ${name}` : '';
-        }
+        if (displayEl) displayEl.innerHTML = name ? `<i data-lucide="user"></i> ${name}` : '';
+        if (sidebarUsernameEl) sidebarUsernameEl.innerHTML = name ? `<i data-lucide="user"></i> ${name}` : '';
         App.initIcons();
     }
 
@@ -60,19 +56,16 @@
         App.store.cars = [];
         App.store.activeCarId = null;
 
-        // Демо-автомобиль
         const demoCarId = crypto.randomUUID();
         App.store.cars = [{ id: demoCarId, name: 'Мой автомобиль', user_id: 'demo' }];
         App.store.activeCarId = demoCarId;
         localStorage.setItem('vesta_active_car_id', demoCarId);
 
-        // Демо-операции
         App.store.operations = [
             { id: 'demo1', category: 'ДВС', name: 'Масло', intervalKm: 10000, intervalMonths: 12, lastMileage: 0, lastDate: null },
             { id: 'demo2', category: 'Тормозная система', name: 'Тормозные колодки', intervalKm: 30000, lastMileage: 0 }
         ];
 
-        // Демо-заправка
         App.store.fuelLog = [
             { date: new Date().toISOString().split('T')[0], mileage: 1000, liters: 45, pricePerLiter: 50, fuelType: 'Бензин' }
         ];
@@ -98,7 +91,10 @@
         }
 
         App.store.saveToLocalStorage();
-        App.store.saveSettingsToDB().catch(console.warn);
+        // Сохраняем настройки в IndexedDB, но только если БД уже инициализирована
+        if (App.db && App.db._db) {
+            App.store.saveSettingsToDB().catch(console.warn);
+        }
 
         const dataPanel = document.getElementById('data-panel');
         if (dataPanel) dataPanel.style.display = 'block';
@@ -112,9 +108,152 @@
     }
 
     function initAuthFormEvents(container) {
-        // ... (без изменений, код уже есть в вашем файле)
-        // В целях экономии места оставляем как есть, но в реальном файле он должен быть
-        console.log('initAuthFormEvents placeholder');
+        const tabLogin = container.querySelector('#tab-login');
+        const tabSocial = container.querySelector('#tab-social');
+        const authLoginDiv = container.querySelector('#auth-login');
+        const authSocialDiv = container.querySelector('#auth-social');
+        if (tabLogin) {
+            tabLogin.addEventListener('click', () => {
+                tabLogin.classList.add('active');
+                tabSocial.classList.remove('active');
+                authLoginDiv.style.display = 'block';
+                authSocialDiv.style.display = 'none';
+            });
+        }
+        if (tabSocial) {
+            tabSocial.addEventListener('click', () => {
+                tabSocial.classList.add('active');
+                tabLogin.classList.remove('active');
+                authSocialDiv.style.display = 'block';
+                authLoginDiv.style.display = 'none';
+            });
+        }
+
+        const googleBtn = container.querySelector('#supabase-auth-btn');
+        if (googleBtn) {
+            googleBtn.addEventListener('click', () => {
+                const redirectUrl = window.location.origin + window.location.pathname;
+                App.supabase.auth.signInWithOAuth({
+                    provider: 'google',
+                    options: { redirectTo: redirectUrl }
+                }).catch(err => App.toast('Ошибка входа через Google', 'error'));
+            });
+        }
+
+        const loginForm = container.querySelector('#login-form');
+        const loginMessage = container.querySelector('#login-message');
+        const passwordConfirmLabel = container.querySelector('#password-confirm-label');
+        const passwordConfirmInput = container.querySelector('#password-confirm-input');
+
+        if (loginForm) {
+            // Вход
+            loginForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const formData = new FormData(loginForm);
+                const username = (formData.get('username') || '').toString().trim();
+                const password = formData.get('password') || '';
+                if (!username || !password) {
+                    App.toast('Введите логин и пароль', 'error');
+                    return;
+                }
+                const email = username + '@vesta.internal';
+                const { error } = await App.supabase.auth.signInWithPassword({ email, password });
+                if (error) {
+                    if (loginMessage) loginMessage.textContent = 'Неверный логин или пароль.';
+                    App.toast('Ошибка входа', 'error');
+                } else {
+                    const modal = container.closest('.modal');
+                    if (modal) {
+                        modal.remove();
+                        document.body.classList.remove('auth-modal-open');
+                    }
+                }
+            });
+
+            // Регистрация
+            const signUpBtn = container.querySelector('#login-sign-up-btn');
+            if (signUpBtn) {
+                signUpBtn.addEventListener('click', async () => {
+                    if (passwordConfirmLabel) passwordConfirmLabel.style.display = 'block';
+                    if (passwordConfirmInput) {
+                        passwordConfirmInput.style.display = 'block';
+                        passwordConfirmInput.required = true;
+                    }
+
+                    const formData = new FormData(loginForm);
+                    const username = (formData.get('username') || '').toString().trim();
+                    const password = formData.get('password') || '';
+                    const passwordConfirm = formData.get('password_confirm') || '';
+                    if (!username || !password || !passwordConfirm) {
+                        App.toast('Все поля обязательны', 'error');
+                        return;
+                    }
+                    if (password !== passwordConfirm) {
+                        App.toast('Пароли не совпадают', 'error');
+                        return;
+                    }
+                    if (password.length < 6) {
+                        App.toast('Пароль должен содержать минимум 6 символов', 'error');
+                        return;
+                    }
+
+                    const email = username + '@vesta.internal';
+                    const { data, error } = await App.supabase.auth.signUp({
+                        email,
+                        password,
+                        options: { data: { username } }
+                    });
+                    if (error) {
+                        App.toast('Ошибка регистрации: ' + error.message, 'error');
+                        return;
+                    }
+                    if (data.session) {
+                        App.toast('Регистрация успешна!', 'success');
+                        if (passwordConfirmLabel) passwordConfirmLabel.style.display = 'none';
+                        if (passwordConfirmInput) {
+                            passwordConfirmInput.style.display = 'none';
+                            passwordConfirmInput.required = false;
+                        }
+                        loginForm.reset();
+                        if (loginMessage) loginMessage.textContent = '';
+                        const modal = container.closest('.modal');
+                        if (modal) modal.remove();
+                        document.body.classList.remove('auth-modal-open');
+                        if (data.user && typeof window.generateAndShowRecoveryCodes === 'function') {
+                            window.generateAndShowRecoveryCodes(data.user.id, username);
+                        }
+                    } else {
+                        App.toast('Регистрация успешна! Подтвердите email, чтобы войти.', 'info');
+                    }
+                });
+            }
+        }
+
+        const forgotLink = container.querySelector('#forgot-access-link');
+        const recoveryBlock = container.querySelector('#recovery-options');
+        if (forgotLink) {
+            forgotLink.addEventListener('click', (e) => {
+                e.preventDefault();
+                if (recoveryBlock) recoveryBlock.style.display = 'block';
+            });
+        }
+
+        const btnTelegram = container.querySelector('#recover-telegram');
+        if (btnTelegram) btnTelegram.addEventListener('click', () => window.recoverViaTelegram());
+
+        const btnCode = container.querySelector('#recover-code');
+        if (btnCode) btnCode.addEventListener('click', () => window.recoverViaRecoveryCode());
+
+        const btnRecoverGoogle = container.querySelector('#recover-google');
+        if (btnRecoverGoogle) {
+            btnRecoverGoogle.addEventListener('click', () => {
+                const redirectUrl = window.location.origin + window.location.pathname;
+                App.supabase.auth.signInWithOAuth({
+                    provider: 'google',
+                    options: { redirectTo: redirectUrl }
+                });
+            });
+        }
     }
 
     function openAuthModal() {
@@ -146,10 +285,8 @@
         if (typeof App.db.encryption !== 'undefined') App.db.encryption.clearMasterKey();
         if (typeof App.store === 'undefined') return;
 
-        // Очистка отображения имени
         updateUsernameDisplay('');
 
-        // Сброс хранилища
         App.store.operations = [];
         App.store.fuelLog = [];
         App.store.tireLog = [];
@@ -225,82 +362,7 @@
                     const mobileRowOnline = document.getElementById('mobile-header-row2');
                     if (mobileRowOnline) mobileRowOnline.style.display = 'flex';
 
-                    // Запрос мастер-пароля или PIN
-                    if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-                        let masterPassword = null;
-                        const hasPin = App.localAuth && await App.localAuth.isPinSet();
-                        if (hasPin) {
-                            const pin = await App.ui.promptModalAsync('Быстрый доступ', 'Введите PIN-код (4+ цифр)');
-                            if (pin) {
-                                masterPassword = await App.localAuth.verifyPin(pin);
-                                if (masterPassword) {
-                                    const salt = App.db.encryption.getStoredSalt();
-                                    const { key } = await App.db.encryption.initMasterKey(masterPassword, salt);
-                                    App.db.encryption.setMasterKey(key, salt);
-                                    await App.store.loadFromIndexedDB();
-                                    if (typeof App.renderAll === 'function') App.renderAll();
-                                    App.toast('Расшифровка по PIN успешна', 'success');
-                                } else {
-                                    App.toast('Неверный PIN-код. Попробуйте мастер-пароль.', 'error');
-                                }
-                            }
-                        }
-                        if (!masterPassword) {
-                            const hasMasterPassword = localStorage.getItem('vesta_master_password_set') === 'true';
-                            const message = hasMasterPassword ? 'Введите мастер-пароль' : 'Установите мастер-пароль для шифрования данных (запомните его!)';
-                            const password = await App.ui.promptModalAsync('Мастер-пароль', message);
-                            if (password) {
-                                const salt = App.db.encryption.getStoredSalt();
-                                let isValid = false;
-                                if (hasMasterPassword) {
-                                    isValid = await App.db.encryption.verifyMasterKey(password, salt);
-                                } else {
-                                    isValid = true;
-                                    localStorage.setItem('vesta_master_password_set', 'true');
-                                }
-                                if (isValid) {
-                                    const { key } = await App.db.encryption.initMasterKey(password, salt);
-                                    App.db.encryption.setMasterKey(key, salt);
-                                    if (!hasMasterPassword) await App.db.encryption.saveVerificationString(key);
-                                    await App.store.loadFromIndexedDB();
-                                    if (typeof App.renderAll === 'function') App.renderAll();
-                                    App.toast(hasMasterPassword ? 'Расшифровка успешна' : 'Мастер-пароль сохранён', 'success');
-                                    masterPassword = password;
-                                } else {
-                                    App.toast('Неверный мастер-пароль', 'error');
-                                }
-                            } else {
-                                App.toast('Без мастер-пароля чувствительные данные будут недоступны', 'warning');
-                            }
-                        }
-                        if (masterPassword && !hasPin && App.localAuth && App.localAuth.isPinSupported()) {
-                            const wantPin = await App.ui.confirmModalAsync('Настроить быстрый вход по PIN-коду?');
-                            if (wantPin) {
-                                let pinSet = false;
-                                while (!pinSet) {
-                                    const pin = await App.ui.promptModalAsync('PIN-код (4+ цифры)', '');
-                                    if (pin && pin.length >= 4 && /^\d+$/.test(pin)) {
-                                        const confirmPin = await App.ui.promptModalAsync('Подтвердите PIN', '');
-                                        if (confirmPin === pin) {
-                                            try {
-                                                await App.localAuth.setPin(pin, masterPassword);
-                                                App.toast('PIN сохранён', 'success');
-                                                pinSet = true;
-                                            } catch (err) {
-                                                App.toast('Ошибка: ' + err.message, 'error');
-                                            }
-                                        } else {
-                                            App.toast('PIN не совпадают', 'error');
-                                        }
-                                    } else {
-                                        App.toast('PIN должен быть 4+ цифры', 'error');
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // Получение данных пользователя для отображения имени
+                    // Получение имени пользователя
                     const { data: { user } } = await App.supabase.auth.getUser();
                     const username = user?.user_metadata?.username || '';
                     if (username) localStorage.setItem('vesta_username', username);
@@ -310,7 +372,7 @@
                         App.ui.pages.checkPushSubscriptionStatus();
                     }
 
-                    // Сброс пароля (если нужно)
+                    // Восстановление пароля
                     if (event === 'PASSWORD_RECOVERY') {
                         const newPassword = await App.ui.promptModalAsync('Новый пароль', 'Введите новый пароль (минимум 6 символов)');
                         if (newPassword && newPassword.length >= 6) {
@@ -382,6 +444,41 @@
         }
     }
 
+    async function initDatabase() {
+        try {
+            await App.db.init();
+            const migrated = localStorage.getItem('vesta_migrated_to_indexeddb');
+            const { data: { session } } = await App.supabase.auth.getSession();
+            if (!migrated && session) {
+                const confirmMigration = await App.ui.confirmModalAsync('Перенести существующие данные в новую базу? (рекомендуется)');
+                if (confirmMigration) {
+                    await App.db.migrateFromLocalStorage();
+                    localStorage.setItem('vesta_migrated_to_indexeddb', 'true');
+                }
+            }
+            await App.store.loadFromIndexedDB();
+            if (session) {
+                const isKilled = await App.db.killSwitch.check();
+                if (isKilled) {
+                    await App.db.killSwitch.destroyLocalDB();
+                    return;
+                }
+                if (typeof App.db.killSwitch.startPeriodicCheck === 'function') App.db.killSwitch.startPeriodicCheck();
+            }
+            if (navigator.onLine) await App.db.sync.processSyncQueue();
+            else console.log('[Main] Офлайн-режим');
+            setInterval(() => {
+                if (navigator.onLine && App.db.sync && !App.db.sync._isRunning) {
+                    App.db.sync.processSyncQueue().catch(console.error);
+                }
+            }, 60000);
+        } catch (err) {
+            console.error('Ошибка инициализации IndexedDB:', err);
+            if (typeof App.toast === 'function') App.toast('Не удалось открыть базу данных.', 'error');
+            App.store.initFromLocalStorage();
+        }
+    }
+
     function onReady() {
         document.body.classList.add('no-transition');
         const savedTheme = localStorage.getItem(App.config.THEME_KEY);
@@ -392,7 +489,6 @@
             if (!localStorage.getItem(App.config.THEME_KEY)) App.events.applyTheme(e.matches ? 'dark' : 'light');
         });
 
-        // Создаём клиент Supabase с увеличенным таймаутом блокировки
         App.supabase = supabase.createClient(
             'https://qbjlccdqaudyvedpysil.supabase.co',
             'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFiamxjY2RxYXVkeXZlZHB5c2lsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzczNjQ5MDEsImV4cCI6MjA5Mjk0MDkwMX0.dpdlcOQLtc6adA-l2z_ksJ3b6b6pLTQviLrKtxuF-kU',
@@ -411,56 +507,13 @@
             navigator.storage.persist().then(isPersisted => console.log('Persistent storage:', isPersisted ? 'granted' : 'denied'));
         }
 
-        // Инициализация IndexedDB
-        (async function initDatabase() {
-            try {
-                await App.db.init();
-                const migrated = localStorage.getItem('vesta_migrated_to_indexeddb');
-                const { data: { session } } = await App.supabase.auth.getSession();
-                if (!migrated && session) {
-                    const confirmMigration = await App.ui.confirmModalAsync('Перенести существующие данные в новую базу? (рекомендуется)');
-                    if (confirmMigration) {
-                        await App.db.migrateFromLocalStorage();
-                        localStorage.setItem('vesta_migrated_to_indexeddb', 'true');
-                    }
-                }
-                await App.store.loadFromIndexedDB();
-                if (session) {
-                    const isKilled = await App.db.killSwitch.check();
-                    if (isKilled) {
-                        await App.db.killSwitch.destroyLocalDB();
-                        return;
-                    }
-                    if (typeof App.db.killSwitch.startPeriodicCheck === 'function') App.db.killSwitch.startPeriodicCheck();
-                }
-                if (navigator.onLine) await App.db.sync.processSyncQueue();
-                else console.log('[Main] Офлайн-режим');
-                setInterval(() => {
-                    if (navigator.onLine && App.db.sync && !App.db.sync._isRunning) {
-                        App.db.sync.processSyncQueue().catch(console.error);
-                    }
-                }, 60000);
-            } catch (err) {
-                console.error('Ошибка инициализации IndexedDB:', err);
-                if (typeof App.toast === 'function') App.toast('Не удалось открыть базу данных.', 'error');
-                App.store.initFromLocalStorage();
+        // Инициализация БД и только потом демо-режим или вход
+        initDatabase().then(() => {
+            const savedSession = localStorage.getItem('supabase.auth.token');
+            if (!savedSession) {
+                enterDemoMode();
             }
-        })();
-
-        App.renderAll = function() {
-            const activeTab = document.querySelector('.tab-content.active');
-            if (!activeTab) {
-                const savedTab = localStorage.getItem('vesta_active_tab');
-                if (savedTab) App.events.switchToTab(savedTab);
-                return;
-            }
-            const tabId = activeTab.id.replace('tab-', '');
-            if (typeof App.events.switchToTab === 'function') App.events.switchToTab(tabId);
-            else if (tabId === 'dashboard' && typeof App.ui.pages.renderDashboard === 'function') App.ui.pages.renderDashboard();
-        };
-
-        const savedSession = localStorage.getItem('supabase.auth.token');
-        if (!savedSession) enterDemoMode();
+        });
 
         if (sidebarLoginBtn) sidebarLoginBtn.addEventListener('click', openAuthModal);
         if (drawerLoginBtn) drawerLoginBtn.addEventListener('click', openAuthModal);
@@ -517,7 +570,7 @@
 
         window.addEventListener('load', () => setTimeout(() => { if (typeof App.initIcons === 'function') App.initIcons(); }, 200));
 
-        // FAB-меню
+        // FAB-меню (оставлено без изменений)
         (function() {
             const fab = document.createElement('div');
             fab.id = 'fab-menu';
@@ -545,10 +598,10 @@
                     if (typeof lucide !== 'undefined') lucide.createIcons({ elements: [mainBtn] });
                 }
             }
-            function openActions() { actionsOpen = true; if (overlay) overlay.style.display = 'block'; if (actions) actions.classList.add('open'); setFabIcon('x'); }
-            function closeActions() { actionsOpen = false; if (overlay) overlay.style.display = 'none'; if (actions) actions.classList.remove('open'); setFabIcon('plus'); }
-            if (mainBtn) mainBtn.addEventListener('click', () => actionsOpen ? closeActions() : openActions());
-            if (overlay) overlay.addEventListener('click', closeActions);
+            function openActions() { actionsOpen = true; overlay.style.display = 'block'; actions.classList.add('open'); setFabIcon('x'); }
+            function closeActions() { actionsOpen = false; overlay.style.display = 'none'; actions.classList.remove('open'); setFabIcon('plus'); }
+            mainBtn.addEventListener('click', () => actionsOpen ? closeActions() : openActions());
+            overlay.addEventListener('click', closeActions);
 
             document.getElementById('fab-mileage')?.addEventListener('click', () => {
                 closeActions();
