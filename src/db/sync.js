@@ -3,12 +3,12 @@ window.App = window.App || {};
 App.db = App.db || {};
 App.db.sync = App.db.sync || {};
 
-const MAX_RETRIES = 5;
-const BASE_DELAY = 1000;
-const MAX_DELAY = 300000;
+const SYNC_MAX_RETRIES = 5;
+const SYNC_BASE_DELAY = 1000;
+const SYNC_MAX_DELAY = 300000;
 
 App.db.sync._getDelay = function(retryCount) {
-    const delay = Math.min(BASE_DELAY * Math.pow(2, retryCount), MAX_DELAY);
+    const delay = Math.min(SYNC_BASE_DELAY * Math.pow(2, retryCount), SYNC_MAX_DELAY);
     const jitter = delay * 0.1 * (Math.random() - 0.5);
     return Math.max(0, delay + jitter);
 };
@@ -17,7 +17,7 @@ App.db.sync._updatePendingAction = async function(action, retryCount, errorMessa
     action.retryCount = retryCount;
     action.lastError = errorMessage;
     action.lastAttempt = Date.now();
-    if (retryCount >= MAX_RETRIES) {
+    if (retryCount >= SYNC_MAX_RETRIES) {
         await App.db.put('error_log', {
             id: crypto.randomUUID(),
             type: 'sync_failed',
@@ -57,7 +57,6 @@ App.db.sync._executeAction = async function(action) {
             break;
         case 'mileage':
             tableName = 'mileage_log';
-            // Используем добавленный метод App.supa.addMileageRecord
             supabaseMethod = (record) => App.supa.addMileageRecord(record.date, record.mileage, record.motohours);
             break;
         case 'delete':
@@ -110,18 +109,8 @@ App.db.sync._updateLocalId = async function(entityType, oldId, newId) {
         item.id = newId;
         await App.db.put(storeName, item);
     }
-
-    // ДОПОЛНИТЕЛЬНО: для операции обновляем operation_id в связанных записях истории
-    if (entityType === 'operation') {
-        const historyRecords = App.store.serviceRecords.filter(rec => rec.operation_id == oldId);
-        for (const rec of historyRecords) {
-            rec.operation_id = newId;
-            await App.db.put('service_records', rec);
-        }
-    }
 };
 
-// ========== РАСШИРЕННЫЙ _resolveConflict ==========
 App.db.sync._resolveConflict = async function(action) {
     const { entityType, entityId } = action;
     let serverData;
@@ -147,14 +136,10 @@ App.db.sync._resolveConflict = async function(action) {
                 const { data: histData } = await App.supabase.from('history').select('*').eq('id', entityId).single();
                 serverData = histData;
                 break;
-                case 'mileage':
-        const { data: mileageData } = await App.supabase
-            .from('mileage_log')
-            .select('*')
-            .eq('id', entityId)
-            .single();
-        serverData = mileageData;
-        break;
+            case 'mileage':
+                const { data: mileageData } = await App.supabase.from('mileage_log').select('*').eq('id', entityId).single();
+                serverData = mileageData;
+                break;
             default:
                 return;
         }
@@ -166,7 +151,6 @@ App.db.sync._resolveConflict = async function(action) {
     }
 };
 
-// ========== РАСШИРЕННЫЙ _updateLocalFromServer ==========
 App.db.sync._updateLocalFromServer = async function(entityType, serverData) {
     let storeArray, storeName;
     switch (entityType) {
@@ -202,7 +186,6 @@ App.db.sync._updateLocalFromServer = async function(entityType, serverData) {
     await App.db.put(storeName, serverData);
 };
 
-// Основная функция синхронизации
 App.db.sync.processSyncQueue = async function() {
     if (!navigator.onLine) {
         console.log('[Sync] Нет сети, синхронизация отложена');
@@ -230,7 +213,7 @@ App.db.sync.processSyncQueue = async function() {
                 } else {
                     const newRetryCount = (action.retryCount || 0) + 1;
                     await App.db.sync._updatePendingAction(action, newRetryCount, err.message);
-                    if (newRetryCount < MAX_RETRIES) {
+                    if (newRetryCount < SYNC_MAX_RETRIES) {
                         const delay = App.db.sync._getDelay(newRetryCount);
                         setTimeout(() => { if (navigator.onLine) App.db.sync.processSyncQueue(); }, delay);
                     }
