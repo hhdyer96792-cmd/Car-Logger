@@ -131,7 +131,6 @@ App.ui.pages.renderRecoveryCodesBlock = function(container) {
         </div>
     `;
     App.initIcons();
-    // Инициализация обработчиков (уникальная, без дублей)
     if (typeof App.ui.pages.initRecoveryCodesUI === 'function') {
         App.ui.pages.initRecoveryCodesUI();
     }
@@ -280,7 +279,6 @@ App.ui.pages.renderPremiumBlock = function() {
         const keyInput = document.getElementById('premium-key-input');
         const statusDiv = document.getElementById('premium-status-message');
         if (activateBtn) {
-            // Убираем старые обработчики
             const newActivateBtn = activateBtn.cloneNode(true);
             activateBtn.parentNode.replaceChild(newActivateBtn, activateBtn);
             newActivateBtn.onclick = async () => {
@@ -572,7 +570,6 @@ App.ui.pages.initRecoveryCodesUI = function() {
     let genBtn = document.getElementById('gen-new-codes-btn');
     if (!showBtn || !genBtn) return;
 
-    // Клонируем, чтобы убрать старые обработчики
     const newShowBtn = showBtn.cloneNode(true);
     const newGenBtn = genBtn.cloneNode(true);
     showBtn.parentNode.replaceChild(newShowBtn, showBtn);
@@ -608,7 +605,6 @@ App.ui.pages.initRecoveryCodesUI = function() {
             return;
         }
         await App.ui.alertModal('Новые резервные коды (сохраните их!):\n\n' + codes.join('\n'));
-        // Обновляем список
         const listEl = document.getElementById('recovery-codes-list');
         if (listEl) listEl.innerHTML = '<p class="hint">Новые коды сгенерированы. Нажмите "Показать", чтобы увидеть их.</p>';
     });
