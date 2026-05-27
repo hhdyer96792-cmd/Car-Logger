@@ -14,11 +14,11 @@
 
 (function() {
     let isLoggedIn = false;
-    let deferredPrompt = null;
-    let authSubscribed = false;
-    let isDemoMode = false;
-    let demoModeInitialized = false;
-    let dbInitialized = false;
+let deferredPrompt = null;
+let authSubscribed = false;
+let isDemoMode = false;
+let demoModeInitialized = false;
+let dbInitialized = false;
 
     const sidebarLoginBtn = document.getElementById('sidebar-login');
     const drawerLoginBtn = document.getElementById('drawer-login');
@@ -293,42 +293,57 @@
     }
 
     async function doLogout() {
-        console.log('[DEBUG] doLogout вызвана');
+    console.log('[DEBUG] doLogout вызвана');
 
-        // Очищаем пользовательские данные из памяти (но не криптографические ключи)
-        App.store.operations = [];
-        App.store.fuelLog = [];
-        App.store.tireLog = [];
-        App.store.parts = [];
-        App.store.serviceRecords = [];
-        App.store.mileageHistory = [];
-        App.store.cars = [];
-        App.store.activeCarId = null;
-        localStorage.removeItem('vesta_active_car_id');
-        localStorage.removeItem('vesta_username');
+    // Очищаем пользовательские данные из памяти
+    App.store.operations = [];
+    App.store.fuelLog = [];
+    App.store.tireLog = [];
+    App.store.parts = [];
+    App.store.serviceRecords = [];
+    App.store.mileageHistory = [];
+    App.store.cars = [];
+    App.store.activeCarId = null;
+    localStorage.removeItem('vesta_active_car_id');
+    localStorage.removeItem('vesta_username');
 
-        console.log('[DEBUG] doLogout: вызываем signOut()');
-        try {
-            await App.supabase.auth.signOut();
-            console.log('[DEBUG] signOut() выполнен успешно');
-        } catch (err) {
-            console.error('[DEBUG] Ошибка signOut:', err);
+    // Принудительная очистка IndexedDB (оставляем только криптографические данные)
+    if (App.db && App.db._db) {
+        const stores = ['operations', 'fuel_log', 'tires', 'parts', 'service_records', 'mileage_log', 'cars'];
+        for (const store of stores) {
+            try {
+                await App.db.clear(store);
+            } catch (e) {}
         }
-
-        isLoggedIn = false;
-        setInstallButtonVisible(false);
-        if (sidebarLoginBtn) sidebarLoginBtn.style.display = '';
-        if (drawerLoginBtn) drawerLoginBtn.style.display = '';
-        if (typeof App.events.closeDrawer === 'function') App.events.closeDrawer();
-        if (typeof App.supa !== 'undefined' && App.supa.clearUserIdCache) App.supa.clearUserIdCache();
-
-        // НЕ удаляем мастер-пароль и соль
-        // localStorage.removeItem('vesta_master_password_set');
-        // localStorage.removeItem('vesta_encryption_salt');
-
-        console.log('[DEBUG] doLogout: перезагрузка страницы');
-        window.location.reload();
     }
+
+    console.log('[DEBUG] doLogout: вызываем signOut()');
+    try {
+        // Таймаут на signOut, чтобы не ждать вечно
+        const signOutPromise = App.supabase.auth.signOut();
+        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('signOut timeout')), 3000));
+        await Promise.race([signOutPromise, timeoutPromise]);
+        console.log('[DEBUG] signOut() выполнен успешно');
+    } catch (err) {
+        console.error('[DEBUG] Ошибка signOut:', err);
+        // Даже при ошибке продолжаем выход
+    }
+
+    isLoggedIn = false;
+    setInstallButtonVisible(false);
+    if (sidebarLoginBtn) sidebarLoginBtn.style.display = '';
+    if (drawerLoginBtn) drawerLoginBtn.style.display = '';
+    if (typeof App.events.closeDrawer === 'function') App.events.closeDrawer();
+    if (typeof App.supa !== 'undefined' && App.supa.clearUserIdCache) App.supa.clearUserIdCache();
+
+    // Принудительно удаляем все токены, чтобы Supabase не пытался восстановить сессию
+    localStorage.removeItem('supabase.auth.token');
+    localStorage.removeItem('sb-auth-token');
+    sessionStorage.clear();
+
+    console.log('[DEBUG] doLogout: перезагрузка страницы');
+    window.location.reload();
+}
 
     async function forceLoadDataFromSupabase() {
         console.log('[DEBUG] forceLoadDataFromSupabase: загрузка данных напрямую из Supabase');
