@@ -293,42 +293,35 @@
     }
 
     async function doLogout() {
-        console.log('[DEBUG] doLogout вызвана');
-        if (typeof App.db.encryption !== 'undefined') App.db.encryption.clearMasterKey();
-        if (typeof App.store === 'undefined') return;
+    console.log('[DEBUG] doLogout вызвана');
+    if (typeof App.db.encryption !== 'undefined') App.db.encryption.clearMasterKey();
+    if (typeof App.store === 'undefined') return;
 
-        updateUsernameDisplay('');
-        clearDemoArtefacts();
+    updateUsernameDisplay('');
+    clearDemoArtefacts();
 
-        console.log('[DEBUG] doLogout: вызываем signOut()');
-        const { error } = await App.supabase.auth.signOut();
-        if (error) console.error('[DEBUG] Ошибка signOut:', error);
-        else console.log('[DEBUG] signOut() выполнен успешно');
-
-        isLoggedIn = false;
-        setInstallButtonVisible(false);
-        if (sidebarLoginBtn) sidebarLoginBtn.style.display = '';
-        if (drawerLoginBtn) drawerLoginBtn.style.display = '';
-        if (typeof App.events.closeDrawer === 'function') App.events.closeDrawer();
-        if (typeof App.supa !== 'undefined' && App.supa.clearUserIdCache) App.supa.clearUserIdCache();
-
-        localStorage.removeItem('vesta_master_password_set');
-        localStorage.removeItem('vesta_encryption_salt');
-
-        console.log('[DEBUG] doLogout: вызываем enterDemoMode()');
-        enterDemoMode();
-
-        if (typeof App.ui.pages.renderCarSelector === 'function') App.ui.pages.renderCarSelector();
-        if (typeof App.ui.pages.renderCarTab === 'function') App.ui.pages.renderCarTab();
-        if (typeof App.ui.pages.populateSettingsFields === 'function') App.ui.pages.populateSettingsFields();
-        if (typeof App.renderAll === 'function') App.renderAll();
-
-        // Принудительная перезагрузка страницы
-        setTimeout(() => {
-            console.log('[DEBUG] doLogout: перезагрузка страницы');
-            window.location.reload();
-        }, 500);
+    console.log('[DEBUG] doLogout: вызываем signOut()');
+    try {
+        await App.supabase.auth.signOut();
+        console.log('[DEBUG] signOut() выполнен успешно');
+    } catch (err) {
+        console.error('[DEBUG] Ошибка signOut:', err);
     }
+
+    isLoggedIn = false;
+    setInstallButtonVisible(false);
+    if (sidebarLoginBtn) sidebarLoginBtn.style.display = '';
+    if (drawerLoginBtn) drawerLoginBtn.style.display = '';
+    if (typeof App.events.closeDrawer === 'function') App.events.closeDrawer();
+    if (typeof App.supa !== 'undefined' && App.supa.clearUserIdCache) App.supa.clearUserIdCache();
+
+    localStorage.removeItem('vesta_master_password_set');
+    localStorage.removeItem('vesta_encryption_salt');
+
+    // Принудительная перезагрузка страницы (сбрасывает всё состояние)
+    console.log('[DEBUG] doLogout: перезагрузка страницы');
+    window.location.reload();
+}
 
     // Функция принудительной загрузки данных из Supabase (в обход шифрования)
     async function forceLoadDataFromSupabase() {
