@@ -1,4 +1,4 @@
-// src/ui/components/modal.js (исправленный, без дублей)
+// src/ui/components/modal.js
 window.App = window.App || {};
 App.ui = App.ui || {};
 
