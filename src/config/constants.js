@@ -2,7 +2,7 @@
 window.App = window.App || {};
 
 App.config = {
-    DEBUG: false,
+    DEBUG: true,
     
     // Новая версия приложения (увеличивать при каждом релизе)
     APP_VERSION: '2.1.0',
