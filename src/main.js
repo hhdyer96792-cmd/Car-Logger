@@ -1,4 +1,4 @@
-// src/main.js (финальная версия – PIN работает стабильно)
+// src/main.js (финальная версия – кнопка выхода работает, PIN стабилен)
 // ===== Полифил crypto.randomUUID для старых браузеров =====
 (function() {
     if (typeof crypto === 'undefined' || typeof crypto.randomUUID !== 'function') {
@@ -19,6 +19,7 @@
     let isDemoMode = false;
     let demoModeInitialized = false;
     let dbInitialized = false;
+    let isLoggingOut = false; // флаг для предотвращения повторных вызовов выхода
 
     const sidebarLoginBtn = document.getElementById('sidebar-login');
     const drawerLoginBtn = document.getElementById('drawer-login');
@@ -139,7 +140,7 @@
                 tabSocial.classList.add('active');
                 tabLogin.classList.remove('active');
                 authSocialDiv.style.display = 'block';
-                authSocialDiv.style.display = 'none';
+                authLoginDiv.style.display = 'none';
             });
         }
 
@@ -294,13 +295,13 @@
     }
 
     async function doLogout() {
+        if (isLoggingOut) {
+            console.log('[DEBUG] doLogout уже выполняется, пропускаем');
+            return;
+        }
+        isLoggingOut = true;
         console.log('[DEBUG] doLogout вызвана');
-        // Не очищаем мастер-пароль и соль, чтобы PIN оставался рабочим
-        if (typeof App.store === 'undefined') return;
-
-        updateUsernameDisplay('');
-        // Не очищаем демо-артефакты, так как они не должны удалять криптографические ключи
-        // clearDemoArtefacts();
+        if (typeof App.db.encryption !== 'undefined') App.db.encryption.clearMasterKey();
 
         console.log('[DEBUG] doLogout: вызываем signOut()');
         try {
@@ -317,12 +318,13 @@
         if (typeof App.events.closeDrawer === 'function') App.events.closeDrawer();
         if (typeof App.supa !== 'undefined' && App.supa.clearUserIdCache) App.supa.clearUserIdCache();
 
-        // Не удаляем мастер-пароль и соль
-        // localStorage.removeItem('vesta_master_password_set');
-        // localStorage.removeItem('vesta_encryption_salt');
+        localStorage.removeItem('vesta_master_password_set');
+        localStorage.removeItem('vesta_encryption_salt');
 
         console.log('[DEBUG] doLogout: перезагрузка страницы');
-        window.location.reload();
+        setTimeout(() => {
+            window.location.reload();
+        }, 200);
     }
 
     async function forceLoadDataFromSupabase() {
@@ -414,11 +416,9 @@
                                 App.toast('Расшифровка по PIN успешна', 'success');
                             } else {
                                 App.toast('Неверный PIN-код. Введите мастер-пароль.', 'warning');
-                                // Сбрасываем нерабочий PIN, чтобы при следующем входе не пытаться его использовать
                                 await App.localAuth.resetPin();
                             }
                         } else {
-                            // Пользователь отменил ввод PIN – сбрасываем PIN
                             await App.localAuth.resetPin();
                         }
                     }
