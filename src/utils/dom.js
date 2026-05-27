@@ -97,8 +97,67 @@ App.setSyncStatus = function(status) {
     }
     App.initIcons();
 };
+
 App.log = function() {
     if (App.config.DEBUG) {
         console.log.apply(console, arguments);
     }
 };
+
+// ========== Глобальное логирование ошибок ==========
+(function() {
+    // Функция отправки ошибки на сервер
+    async function sendErrorToServer(errorInfo) {
+        // Не отправляем ошибки при разработке или если нет Supabase
+        if (!App.config || App.config.DEBUG === true) return;
+        if (!App.supabase) return;
+
+        try {
+            // Получаем сессию (JWT)
+            const { data: { session } } = await App.supabase.auth.getSession();
+            if (!session) return;
+
+            await fetch('https://qbjlccdqaudyvedpysil.supabase.co/functions/v1/log-error', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${session.access_token}`
+                },
+                body: JSON.stringify(errorInfo)
+            });
+        } catch (err) {
+            // Тихо падаем, чтобы не зациклиться
+            console.warn('Failed to send error log:', err);
+        }
+    }
+
+    // Перехват синхронных ошибок
+    window.onerror = function(message, source, lineno, colno, error) {
+        const errorInfo = {
+            message: String(message),
+            stack: error?.stack || null,
+            filename: source,
+            lineno: lineno,
+            colno: colno,
+            userAgent: navigator.userAgent,
+            url: window.location.href
+        };
+        sendErrorToServer(errorInfo);
+        // Не блокируем выполнение других обработчиков
+        return false;
+    };
+
+    // Перехват необработанных Promise rejections
+    window.addEventListener('unhandledrejection', function(event) {
+        const errorInfo = {
+            message: event.reason?.message || String(event.reason),
+            stack: event.reason?.stack || null,
+            filename: null,
+            lineno: null,
+            colno: null,
+            userAgent: navigator.userAgent,
+            url: window.location.href
+        };
+        sendErrorToServer(errorInfo);
+    });
+})();
