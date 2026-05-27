@@ -122,6 +122,7 @@ App.log = function() {
         } catch (err) {
             // Тихо падаем, чтобы не зациклиться
             console.warn('Failed to send error log:', err);
+console.log('[DEBUG] Sending error to server:', errorInfo);
         }
     }
 
@@ -137,6 +138,7 @@ App.log = function() {
             url: window.location.href
         };
         sendErrorToServer(errorInfo);
+console.log('Global error caught:', message);
         // Не блокируем выполнение других обработчиков
         return false;
     };
