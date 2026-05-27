@@ -1,4 +1,4 @@
-// src/main.js (финальная версия с флагом обработки SIGNED_IN)
+// src/main.js (финальная версия – PIN работает стабильно)
 // ===== Полифил crypto.randomUUID для старых браузеров =====
 (function() {
     if (typeof crypto === 'undefined' || typeof crypto.randomUUID !== 'function') {
@@ -60,6 +60,7 @@
         }
         demoModeInitialized = false;
         isDemoMode = false;
+        // НЕ удаляем vestra_master_password_set и vestra_encryption_salt
     }
 
     function enterDemoMode() {
@@ -294,11 +295,12 @@
 
     async function doLogout() {
         console.log('[DEBUG] doLogout вызвана');
-        if (typeof App.db.encryption !== 'undefined') App.db.encryption.clearMasterKey();
+        // Не очищаем мастер-пароль и соль, чтобы PIN оставался рабочим
         if (typeof App.store === 'undefined') return;
 
         updateUsernameDisplay('');
-        clearDemoArtefacts();
+        // Не очищаем демо-артефакты, так как они не должны удалять криптографические ключи
+        // clearDemoArtefacts();
 
         console.log('[DEBUG] doLogout: вызываем signOut()');
         try {
@@ -315,8 +317,9 @@
         if (typeof App.events.closeDrawer === 'function') App.events.closeDrawer();
         if (typeof App.supa !== 'undefined' && App.supa.clearUserIdCache) App.supa.clearUserIdCache();
 
-        localStorage.removeItem('vesta_master_password_set');
-        localStorage.removeItem('vesta_encryption_salt');
+        // Не удаляем мастер-пароль и соль
+        // localStorage.removeItem('vesta_master_password_set');
+        // localStorage.removeItem('vesta_encryption_salt');
 
         console.log('[DEBUG] doLogout: перезагрузка страницы');
         window.location.reload();
@@ -410,8 +413,13 @@
                                 if (typeof App.renderAll === 'function') App.renderAll();
                                 App.toast('Расшифровка по PIN успешна', 'success');
                             } else {
-                                App.toast('Неверный PIN-код. Попробуйте мастер-пароль.', 'error');
+                                App.toast('Неверный PIN-код. Введите мастер-пароль.', 'warning');
+                                // Сбрасываем нерабочий PIN, чтобы при следующем входе не пытаться его использовать
+                                await App.localAuth.resetPin();
                             }
+                        } else {
+                            // Пользователь отменил ввод PIN – сбрасываем PIN
+                            await App.localAuth.resetPin();
                         }
                     }
                     if (!masterPassword) {
@@ -462,7 +470,7 @@
                             await forceLoadDataFromSupabase();
                         }
                     }
-                    if (masterPassword && !hasPin && App.localAuth && App.localAuth.isPinSupported()) {
+                    if (masterPassword && !await App.localAuth.isPinSet() && App.localAuth && App.localAuth.isPinSupported()) {
                         const wantPin = await App.ui.confirmModalAsync('Настроить быстрый вход по PIN-коду?');
                         if (wantPin) {
                             let pinSet = false;
