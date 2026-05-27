@@ -135,40 +135,45 @@ App.ui.confirmModalAsync = function(message) {
 };
 
 // Простая Promise-версия promptModal (без подмены createModal)
-App.ui.promptModalAsync = function(title, defaultValue) {
+App.ui.promptModalAsync = function(title, placeholder, isPassword = false) {
     return new Promise(function(resolve) {
-        var content = '<input type="text" id="prompt-input" value="' + App.utils.escapeHtml(defaultValue || '') + '" style="width:100%; margin-bottom:16px;">' +
-            '<div class="modal-actions" style="display:flex; gap:8px; justify-content:flex-end;">' +
-                '<button id="prompt-ok-btn" class="primary-btn">ОК</button>' +
-                '<button id="prompt-cancel-btn" class="secondary-btn">Отмена</button>' +
-            '</div>';
-        var modal = App.ui.createModal(title, content);
-        var input = modal.querySelector('#prompt-input');
-        var okBtn = modal.querySelector('#prompt-ok-btn');
-        var cancelBtn = modal.querySelector('#prompt-cancel-btn');
-        var resolved = false;
-
+        const inputType = isPassword ? 'password' : 'text';
+        const content = `
+            <input type="${inputType}" id="prompt-input" placeholder="${App.utils.escapeHtml(placeholder || '')}" style="width:100%; margin-bottom:16px;">
+            <div class="modal-actions" style="display:flex; gap:8px; justify-content:flex-end;">
+                <button id="prompt-ok-btn" class="primary-btn">ОК</button>
+                <button id="prompt-cancel-btn" class="secondary-btn">Отмена</button>
+            </div>
+        `;
+        const modal = App.ui.createModal(title, content);
+        const input = modal.querySelector('#prompt-input');
+        const okBtn = modal.querySelector('#prompt-ok-btn');
+        const cancelBtn = modal.querySelector('#prompt-cancel-btn');
+        input.focus();
         function cleanup() {
-            if (modal && modal.parentNode) modal.remove();
+            if (modal && modal.remove) modal.remove();
         }
-        function onResult(value) {
-            if (resolved) return;
-            resolved = true;
+        okBtn.onclick = () => {
+            const value = input.value;
             cleanup();
             resolve(value);
-        }
-        input.focus();
-        input.select();
-        okBtn.onclick = function() { onResult(input.value); };
-        cancelBtn.onclick = function() { onResult(null); };
-        input.addEventListener('keydown', function(e) {
-            if (e.key === 'Enter') onResult(input.value);
-        });
-        var originalRemove = modal.remove;
+        };
+        cancelBtn.onclick = () => {
+            cleanup();
+            resolve(null);
+        };
+        // При закрытии через крестик или оверлей
+        const originalRemove = modal.remove;
         modal.remove = function() {
             originalRemove.call(modal);
-            onResult(null);
+            resolve(null);
         };
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                okBtn.click();
+            }
+        });
     });
 };
 
