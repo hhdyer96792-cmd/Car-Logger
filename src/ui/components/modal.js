@@ -101,36 +101,57 @@ App.ui.confirmModal = function(message, onConfirm) {
     });
 };
 
-App.ui.confirmModalAsync = function(message) {
+App.ui.promptModalAsync = function(title, placeholder, isPassword = false) {
     return new Promise(function(resolve) {
-        var content = '<p style="margin-bottom:16px;">' + App.utils.escapeHtml(message) + '</p>' +
-            '<div class="modal-actions" style="display:flex; gap:8px; justify-content:center;">' +
-                '<button id="confirm-yes-btn" class="primary-btn">Да</button>' +
-                '<button id="confirm-no-btn" class="secondary-btn">Нет</button>' +
-            '</div>';
-        var modal = App.ui.createModal('Подтверждение', content);
-        var yesBtn = document.getElementById('confirm-yes-btn');
-        var noBtn = document.getElementById('confirm-no-btn');
-        var resolved = false;
-
+        const inputType = isPassword ? 'password' : 'text';
+        const content = `
+            <input type="${inputType}" id="prompt-input" placeholder="${App.utils.escapeHtml(placeholder || '')}" style="width:100%; margin-bottom:16px;">
+            <div class="modal-actions" style="display:flex; gap:8px; justify-content:flex-end;">
+                <button id="prompt-ok-btn" class="primary-btn">ОК</button>
+                <button id="prompt-cancel-btn" class="secondary-btn">Отмена</button>
+            </div>
+        `;
+        const modal = App.ui.createModal(title, content);
+        const input = modal.querySelector('#prompt-input');
+        const okBtn = modal.querySelector('#prompt-ok-btn');
+        const cancelBtn = modal.querySelector('#prompt-cancel-btn');
+        input.focus();
+        let resolved = false;
         function cleanup() {
-            if (!modal.parentNode) return;
-            modal.remove();
-        }
-        function onResult(result) {
             if (resolved) return;
             resolved = true;
-            cleanup();
-            resolve(result);
+            if (modal && modal.remove) modal.remove();
         }
-        if (yesBtn) yesBtn.onclick = function() { onResult(true); };
-        if (noBtn) noBtn.onclick = function() { onResult(false); };
-        
-        var originalRemove = modal.remove;
+        const onOk = (e) => {
+            if (e) e.stopPropagation();
+            if (resolved) return;
+            const value = input.value;
+            cleanup();
+            resolve(value);
+        };
+        const onCancel = (e) => {
+            if (e) e.stopPropagation();
+            if (resolved) return;
+            cleanup();
+            resolve(null);
+        };
+        okBtn.onclick = onOk;
+        cancelBtn.onclick = onCancel;
+        // Закрытие через крестик или оверлей
+        const originalRemove = modal.remove;
         modal.remove = function() {
             originalRemove.call(modal);
-            onResult(false);
+            if (!resolved) {
+                resolved = true;
+                resolve(null);
+            }
         };
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                onOk();
+            }
+        });
     });
 };
 
