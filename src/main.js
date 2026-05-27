@@ -1,4 +1,4 @@
-// src/main.js (финальная версия – кнопка выхода работает, PIN стабилен)
+// src/main.js (финальная версия – кнопка выхода работает стабильно после простоя)
 // ===== Полифил crypto.randomUUID для старых браузеров =====
 (function() {
     if (typeof crypto === 'undefined' || typeof crypto.randomUUID !== 'function') {
@@ -19,7 +19,6 @@
     let isDemoMode = false;
     let demoModeInitialized = false;
     let dbInitialized = false;
-    let isLoggingOut = false; // флаг для предотвращения повторных вызовов выхода
 
     const sidebarLoginBtn = document.getElementById('sidebar-login');
     const drawerLoginBtn = document.getElementById('drawer-login');
@@ -61,7 +60,6 @@
         }
         demoModeInitialized = false;
         isDemoMode = false;
-        // НЕ удаляем vestra_master_password_set и vestra_encryption_salt
     }
 
     function enterDemoMode() {
@@ -295,49 +293,42 @@
     }
 
     async function doLogout() {
-    if (isLoggingOut) {
-        console.log('[DEBUG] doLogout уже выполняется, пропускаем');
-        return;
-    }
-    isLoggingOut = true;
-    console.log('[DEBUG] doLogout вызвана');
+        console.log('[DEBUG] doLogout вызвана');
 
-    // Очищаем пользовательские данные из памяти (но не криптографические ключи)
-    App.store.operations = [];
-    App.store.fuelLog = [];
-    App.store.tireLog = [];
-    App.store.parts = [];
-    App.store.serviceRecords = [];
-    App.store.mileageHistory = [];
-    App.store.cars = [];
-    App.store.activeCarId = null;
-    localStorage.removeItem('vesta_active_car_id');
-    localStorage.removeItem('vesta_username');
+        // Очищаем пользовательские данные из памяти (но не криптографические ключи)
+        App.store.operations = [];
+        App.store.fuelLog = [];
+        App.store.tireLog = [];
+        App.store.parts = [];
+        App.store.serviceRecords = [];
+        App.store.mileageHistory = [];
+        App.store.cars = [];
+        App.store.activeCarId = null;
+        localStorage.removeItem('vesta_active_car_id');
+        localStorage.removeItem('vesta_username');
 
-    console.log('[DEBUG] doLogout: вызываем signOut()');
-    try {
-        await App.supabase.auth.signOut();
-        console.log('[DEBUG] signOut() выполнен успешно');
-    } catch (err) {
-        console.error('[DEBUG] Ошибка signOut:', err);
-    }
+        console.log('[DEBUG] doLogout: вызываем signOut()');
+        try {
+            await App.supabase.auth.signOut();
+            console.log('[DEBUG] signOut() выполнен успешно');
+        } catch (err) {
+            console.error('[DEBUG] Ошибка signOut:', err);
+        }
 
-    isLoggedIn = false;
-    setInstallButtonVisible(false);
-    if (sidebarLoginBtn) sidebarLoginBtn.style.display = '';
-    if (drawerLoginBtn) drawerLoginBtn.style.display = '';
-    if (typeof App.events.closeDrawer === 'function') App.events.closeDrawer();
-    if (typeof App.supa !== 'undefined' && App.supa.clearUserIdCache) App.supa.clearUserIdCache();
+        isLoggedIn = false;
+        setInstallButtonVisible(false);
+        if (sidebarLoginBtn) sidebarLoginBtn.style.display = '';
+        if (drawerLoginBtn) drawerLoginBtn.style.display = '';
+        if (typeof App.events.closeDrawer === 'function') App.events.closeDrawer();
+        if (typeof App.supa !== 'undefined' && App.supa.clearUserIdCache) App.supa.clearUserIdCache();
 
-    // НЕ УДАЛЯЕМ соль и флаг мастер-пароля
-    // localStorage.removeItem('vesta_master_password_set');
-    // localStorage.removeItem('vesta_encryption_salt');
+        // НЕ удаляем мастер-пароль и соль, чтобы PIN оставался рабочим
+        // localStorage.removeItem('vesta_master_password_set');
+        // localStorage.removeItem('vesta_encryption_salt');
 
-    console.log('[DEBUG] doLogout: перезагрузка страницы');
-    setTimeout(() => {
+        console.log('[DEBUG] doLogout: перезагрузка страницы');
         window.location.reload();
-    }, 500);
-}
+    }
 
     async function forceLoadDataFromSupabase() {
         console.log('[DEBUG] forceLoadDataFromSupabase: загрузка данных напрямую из Supabase');
@@ -368,6 +359,19 @@
         } catch (err) {
             console.error('[DEBUG] Ошибка принудительной загрузки:', err);
             App.toast('Не удалось загрузить данные', 'error');
+        }
+    }
+
+    function bindLogoutButtons() {
+        const logoutSidebarBtn = document.getElementById('sidebar-logout');
+        const logoutDrawerBtn = document.getElementById('drawer-logout');
+        if (logoutSidebarBtn && !logoutSidebarBtn._listenerAttached) {
+            logoutSidebarBtn.addEventListener('click', doLogout);
+            logoutSidebarBtn._listenerAttached = true;
+        }
+        if (logoutDrawerBtn && !logoutDrawerBtn._listenerAttached) {
+            logoutDrawerBtn.addEventListener('click', doLogout);
+            logoutDrawerBtn._listenerAttached = true;
         }
     }
 
@@ -753,6 +757,12 @@
         if (sidebarLoginBtn) sidebarLoginBtn.addEventListener('click', openAuthModal);
         if (drawerLoginBtn) drawerLoginBtn.addEventListener('click', openAuthModal);
 
+        // Привязываем кнопки выхода (с гарантией, что обработчик не потеряется)
+        bindLogoutButtons();
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') bindLogoutButtons();
+        });
+
         window.addEventListener('beforeinstallprompt', (e) => {
             e.preventDefault();
             deferredPrompt = e;
@@ -774,11 +784,6 @@
                 }
             });
         }
-
-        const logoutSidebarBtn = document.getElementById('sidebar-logout');
-        if (logoutSidebarBtn) logoutSidebarBtn.addEventListener('click', doLogout);
-        const logoutDrawerBtn = document.getElementById('drawer-logout');
-        if (logoutDrawerBtn) logoutDrawerBtn.addEventListener('click', doLogout);
 
         window.addEventListener('online', () => {
             if (typeof App.toast === 'function') App.toast('Сеть восстановлена', 'success');
