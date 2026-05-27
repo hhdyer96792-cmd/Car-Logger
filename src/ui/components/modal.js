@@ -1,4 +1,4 @@
-// src/ui/components/modal.js (исправленный)
+// src/ui/components/modal.js (исправленный, без дублей)
 window.App = window.App || {};
 App.ui = App.ui || {};
 
@@ -101,6 +101,40 @@ App.ui.confirmModal = function(message, onConfirm) {
     });
 };
 
+App.ui.confirmModalAsync = function(message) {
+    return new Promise(function(resolve) {
+        var content = '<p style="margin-bottom:16px;">' + App.utils.escapeHtml(message) + '</p>' +
+            '<div class="modal-actions" style="display:flex; gap:8px; justify-content:center;">' +
+                '<button id="confirm-yes-btn" class="primary-btn">Да</button>' +
+                '<button id="confirm-no-btn" class="secondary-btn">Нет</button>' +
+            '</div>';
+        var modal = App.ui.createModal('Подтверждение', content);
+        var yesBtn = modal.querySelector('#confirm-yes-btn');
+        var noBtn = modal.querySelector('#confirm-no-btn');
+        var resolved = false;
+
+        function cleanup() {
+            if (!modal.parentNode) return;
+            modal.remove();
+        }
+        function onResult(result) {
+            if (resolved) return;
+            resolved = true;
+            cleanup();
+            resolve(result);
+        }
+        if (yesBtn) yesBtn.onclick = function() { onResult(true); };
+        if (noBtn) noBtn.onclick = function() { onResult(false); };
+        
+        var originalRemove = modal.remove;
+        modal.remove = function() {
+            originalRemove.call(modal);
+            onResult(false);
+        };
+    });
+};
+
+// Единственная корректная версия promptModalAsync
 App.ui.promptModalAsync = function(title, placeholder, isPassword = false) {
     return new Promise(function(resolve) {
         const inputType = isPassword ? 'password' : 'text';
@@ -137,7 +171,6 @@ App.ui.promptModalAsync = function(title, placeholder, isPassword = false) {
         };
         okBtn.onclick = onOk;
         cancelBtn.onclick = onCancel;
-        // Закрытие через крестик или оверлей
         const originalRemove = modal.remove;
         modal.remove = function() {
             originalRemove.call(modal);
@@ -155,50 +188,7 @@ App.ui.promptModalAsync = function(title, placeholder, isPassword = false) {
     });
 };
 
-// Простая Promise-версия promptModal (без подмены createModal)
-App.ui.promptModalAsync = function(title, placeholder, isPassword = false) {
-    return new Promise(function(resolve) {
-        const inputType = isPassword ? 'password' : 'text';
-        const content = `
-            <input type="${inputType}" id="prompt-input" placeholder="${App.utils.escapeHtml(placeholder || '')}" style="width:100%; margin-bottom:16px;">
-            <div class="modal-actions" style="display:flex; gap:8px; justify-content:flex-end;">
-                <button id="prompt-ok-btn" class="primary-btn">ОК</button>
-                <button id="prompt-cancel-btn" class="secondary-btn">Отмена</button>
-            </div>
-        `;
-        const modal = App.ui.createModal(title, content);
-        const input = modal.querySelector('#prompt-input');
-        const okBtn = modal.querySelector('#prompt-ok-btn');
-        const cancelBtn = modal.querySelector('#prompt-cancel-btn');
-        input.focus();
-        function cleanup() {
-            if (modal && modal.remove) modal.remove();
-        }
-        okBtn.onclick = () => {
-            const value = input.value;
-            cleanup();
-            resolve(value);
-        };
-        cancelBtn.onclick = () => {
-            cleanup();
-            resolve(null);
-        };
-        // При закрытии через крестик или оверлей
-        const originalRemove = modal.remove;
-        modal.remove = function() {
-            originalRemove.call(modal);
-            resolve(null);
-        };
-        input.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                okBtn.click();
-            }
-        });
-    });
-};
-
-// Старая версия promptModal с колбэком (для обратной совместимости)
+// Старая версия promptModal (с колбэком) для обратной совместимости
 App.ui.promptModal = function(title, defaultValue, onSubmit) {
     var content = '<input type="text" id="prompt-input" value="' + App.utils.escapeHtml(defaultValue || '') + '" style="margin-bottom:16px;">' +
         '<div class="modal-actions" style="display:flex; gap:8px; justify-content:flex-end;">' +
