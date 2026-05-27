@@ -1,4 +1,4 @@
-// src/main.js (финальная версия – кнопка выхода работает стабильно после простоя)
+// src/main.js (финальная версия с делегированием кликов)
 // ===== Полифил crypto.randomUUID для старых браузеров =====
 (function() {
     if (typeof crypto === 'undefined' || typeof crypto.randomUUID !== 'function') {
@@ -322,7 +322,7 @@
         if (typeof App.events.closeDrawer === 'function') App.events.closeDrawer();
         if (typeof App.supa !== 'undefined' && App.supa.clearUserIdCache) App.supa.clearUserIdCache();
 
-        // НЕ удаляем мастер-пароль и соль, чтобы PIN оставался рабочим
+        // НЕ удаляем мастер-пароль и соль
         // localStorage.removeItem('vesta_master_password_set');
         // localStorage.removeItem('vesta_encryption_salt');
 
@@ -359,19 +359,6 @@
         } catch (err) {
             console.error('[DEBUG] Ошибка принудительной загрузки:', err);
             App.toast('Не удалось загрузить данные', 'error');
-        }
-    }
-
-    function bindLogoutButtons() {
-        const logoutSidebarBtn = document.getElementById('sidebar-logout');
-        const logoutDrawerBtn = document.getElementById('drawer-logout');
-        if (logoutSidebarBtn && !logoutSidebarBtn._listenerAttached) {
-            logoutSidebarBtn.addEventListener('click', doLogout);
-            logoutSidebarBtn._listenerAttached = true;
-        }
-        if (logoutDrawerBtn && !logoutDrawerBtn._listenerAttached) {
-            logoutDrawerBtn.addEventListener('click', doLogout);
-            logoutDrawerBtn._listenerAttached = true;
         }
     }
 
@@ -757,10 +744,14 @@
         if (sidebarLoginBtn) sidebarLoginBtn.addEventListener('click', openAuthModal);
         if (drawerLoginBtn) drawerLoginBtn.addEventListener('click', openAuthModal);
 
-        // Привязываем кнопки выхода (с гарантией, что обработчик не потеряется)
-        bindLogoutButtons();
-        document.addEventListener('visibilitychange', () => {
-            if (document.visibilityState === 'visible') bindLogoutButtons();
+        // ========== Глобальное делегирование для кнопки выхода ==========
+        document.body.addEventListener('click', (e) => {
+            const target = e.target.closest('#sidebar-logout, #drawer-logout');
+            if (target && (target.id === 'sidebar-logout' || target.id === 'drawer-logout')) {
+                e.preventDefault();
+                e.stopPropagation();
+                doLogout();
+            }
         });
 
         window.addEventListener('beforeinstallprompt', (e) => {
