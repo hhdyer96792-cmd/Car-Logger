@@ -1,4 +1,4 @@
-// src/utils/dom.js
+// src/utils/dom.js (исправленная версия с проверкой сессии и POST)
 window.App = window.App || {};
 App.utils = App.utils || {};
 
@@ -109,15 +109,16 @@ App.log = function() {
     // Функция отправки ошибки на сервер
     async function sendErrorToServer(errorInfo) {
         // Не отправляем ошибки при разработке или если нет Supabase
-        if (!App.config || App.config.DEBUG === true) return;
+        if (App.config && App.config.DEBUG === true) return;
         if (!App.supabase) return;
 
         try {
-            // Получаем сессию (JWT)
+            // Получаем активную сессию (только если пользователь залогинен)
             const { data: { session } } = await App.supabase.auth.getSession();
-            if (!session) return;
+            if (!session) return; // неавторизованные ошибки не логируем
 
-            await fetch('https://qbjlccdqaudyvedpysil.supabase.co/functions/v1/log-error', {
+            // Отправляем POST-запрос
+            const response = await fetch('https://qbjlccdqaudyvedpysil.supabase.co/functions/v1/log-error', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -125,6 +126,9 @@ App.log = function() {
                 },
                 body: JSON.stringify(errorInfo)
             });
+            if (!response.ok) {
+                console.warn('Failed to send error log, status:', response.status);
+            }
         } catch (err) {
             // Тихо падаем, чтобы не зациклиться
             console.warn('Failed to send error log:', err);
