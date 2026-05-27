@@ -1,4 +1,4 @@
-// src/main.js (финальная версия с обходом проблем мастер-пароля)
+// src/main.js (финальная версия с исправленным выходом, PIN, мастер-паролем, полями ввода с placeholder)
 // ===== Полифил crypto.randomUUID для старых браузеров =====
 (function() {
     if (typeof crypto === 'undefined' || typeof crypto.randomUUID !== 'function') {
@@ -138,7 +138,7 @@
                 tabSocial.classList.add('active');
                 tabLogin.classList.remove('active');
                 authSocialDiv.style.display = 'block';
-                authLoginDiv.style.display = 'none';
+                authSocialDiv.style.display = 'none';
             });
         }
 
@@ -293,35 +293,34 @@
     }
 
     async function doLogout() {
-    console.log('[DEBUG] doLogout вызвана');
-    if (typeof App.db.encryption !== 'undefined') App.db.encryption.clearMasterKey();
-    if (typeof App.store === 'undefined') return;
+        console.log('[DEBUG] doLogout вызвана');
+        if (typeof App.db.encryption !== 'undefined') App.db.encryption.clearMasterKey();
+        if (typeof App.store === 'undefined') return;
 
-    updateUsernameDisplay('');
-    clearDemoArtefacts();
+        updateUsernameDisplay('');
+        clearDemoArtefacts();
 
-    console.log('[DEBUG] doLogout: вызываем signOut()');
-    try {
-        await App.supabase.auth.signOut();
-        console.log('[DEBUG] signOut() выполнен успешно');
-    } catch (err) {
-        console.error('[DEBUG] Ошибка signOut:', err);
+        console.log('[DEBUG] doLogout: вызываем signOut()');
+        try {
+            await App.supabase.auth.signOut();
+            console.log('[DEBUG] signOut() выполнен успешно');
+        } catch (err) {
+            console.error('[DEBUG] Ошибка signOut:', err);
+        }
+
+        isLoggedIn = false;
+        setInstallButtonVisible(false);
+        if (sidebarLoginBtn) sidebarLoginBtn.style.display = '';
+        if (drawerLoginBtn) drawerLoginBtn.style.display = '';
+        if (typeof App.events.closeDrawer === 'function') App.events.closeDrawer();
+        if (typeof App.supa !== 'undefined' && App.supa.clearUserIdCache) App.supa.clearUserIdCache();
+
+        localStorage.removeItem('vesta_master_password_set');
+        localStorage.removeItem('vesta_encryption_salt');
+
+        console.log('[DEBUG] doLogout: перезагрузка страницы');
+        window.location.reload();
     }
-
-    isLoggedIn = false;
-    setInstallButtonVisible(false);
-    if (sidebarLoginBtn) sidebarLoginBtn.style.display = '';
-    if (drawerLoginBtn) drawerLoginBtn.style.display = '';
-    if (typeof App.events.closeDrawer === 'function') App.events.closeDrawer();
-    if (typeof App.supa !== 'undefined' && App.supa.clearUserIdCache) App.supa.clearUserIdCache();
-
-    localStorage.removeItem('vesta_master_password_set');
-    localStorage.removeItem('vesta_encryption_salt');
-
-    // Принудительная перезагрузка страницы (сбрасывает всё состояние)
-    console.log('[DEBUG] doLogout: перезагрузка страницы');
-    window.location.reload();
-}
 
     // Функция принудительной загрузки данных из Supabase (в обход шифрования)
     async function forceLoadDataFromSupabase() {
@@ -342,14 +341,12 @@
             App.store.serviceRecords = history;
             App.store.mileageHistory = mileageHistory;
             console.log('[DEBUG] Данные загружены напрямую. operations:', App.store.operations.length);
-            // Сохраняем в IndexedDB (не зашифрованными)
             for (const op of operations) await App.store.saveOperationToDB(op);
             for (const f of fuelLog) await App.store.saveFuelRecordToDB(f);
             for (const t of tireLog) await App.store.saveTireRecordToDB(t);
             for (const p of parts) await App.store.savePartToDB(p);
             for (const h of history) await App.store.saveHistoryRecordToDB(h);
             for (const m of mileageHistory) await App.store.saveMileageRecordToDB(m);
-            // Обновляем UI
             if (typeof App.renderAll === 'function') App.renderAll();
             App.toast('Данные загружены (режим без шифрования)', 'info');
         } catch (err) {
@@ -383,6 +380,8 @@
                 if (sidebarLoginBtn) sidebarLoginBtn.style.display = 'none';
                 if (drawerLoginBtn) drawerLoginBtn.style.display = 'none';
                 document.body.classList.remove('auth-modal-open');
+                // Закрываем drawer, если он открыт
+                if (typeof App.events.closeDrawer === 'function') App.events.closeDrawer();
                 const dataPanel = document.getElementById('data-panel');
                 if (dataPanel) dataPanel.style.display = 'block';
                 const syncIndicatorOnline = document.getElementById('sync-indicator');
@@ -395,7 +394,7 @@
                 const hasPin = App.localAuth && await App.localAuth.isPinSet();
                 console.log('[DEBUG] hasPin =', hasPin);
                 if (hasPin) {
-                    const pin = await App.ui.promptModalAsync('Быстрый доступ', 'Введите PIN-код (4+ цифр)');
+                    const pin = await App.ui.promptModalAsync('Быстрый доступ', 'Введите PIN-код', true);
                     if (pin) {
                         masterPassword = await App.localAuth.verifyPin(pin);
                         console.log('[DEBUG] verifyPin вернул', !!masterPassword);
@@ -417,7 +416,7 @@
                     const message = hasMasterPassword ? 'Введите мастер-пароль' : 'Установите мастер-пароль для шифрования данных (запомните его!)';
                     let password = null;
                     try {
-                        password = await App.ui.promptModalAsync('Мастер-пароль', message);
+                        password = await App.ui.promptModalAsync('Мастер-пароль', message, true);
                         console.log('[DEBUG] Результат promptModalAsync:', password);
                     } catch (err) {
                         console.error('[DEBUG] Ошибка при вызове promptModalAsync:', err);
@@ -455,8 +454,6 @@
                         }
                     } else {
                         App.toast('Без мастер-пароля чувствительные данные будут недоступны', 'warning');
-                        // Принудительно загружаем данные без шифрования
-                        console.log('[DEBUG] Мастер-пароль не введён, загружаем данные напрямую');
                         await forceLoadDataFromSupabase();
                     }
                 }
@@ -465,9 +462,9 @@
                     if (wantPin) {
                         let pinSet = false;
                         while (!pinSet) {
-                            const pin = await App.ui.promptModalAsync('PIN-код (4+ цифры)', '');
+                            const pin = await App.ui.promptModalAsync('PIN-код', 'Введите 4+ цифры', true);
                             if (pin && pin.length >= 4 && /^\d+$/.test(pin)) {
-                                const confirmPin = await App.ui.promptModalAsync('Подтвердите PIN', '');
+                                const confirmPin = await App.ui.promptModalAsync('Подтвердите PIN', 'Повторите PIN', true);
                                 if (confirmPin === pin) {
                                     try {
                                         await App.localAuth.setPin(pin, masterPassword);
@@ -497,7 +494,7 @@
                 }
 
                 if (event === 'PASSWORD_RECOVERY') {
-                    const newPassword = await App.ui.promptModalAsync('Новый пароль', 'Введите новый пароль (минимум 6 символов)');
+                    const newPassword = await App.ui.promptModalAsync('Новый пароль', 'Введите новый пароль (минимум 6 символов)', true);
                     if (newPassword && newPassword.length >= 6) {
                         const { error } = await App.supabase.auth.updateUser({ password: newPassword });
                         if (error) App.toast('Ошибка смены пароля', 'error');
@@ -780,7 +777,7 @@
 
         window.addEventListener('load', () => setTimeout(() => { if (typeof App.initIcons === 'function') App.initIcons(); }, 200));
 
-        // FAB-меню
+        // FAB-меню (оставлено без изменений)
         (function() {
             const fab = document.createElement('div');
             fab.id = 'fab-menu';
