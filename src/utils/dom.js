@@ -2,6 +2,11 @@
 window.App = window.App || {};
 App.utils = App.utils || {};
 
+/**
+ * Показывает тост-уведомление.
+ * @param {string} message - Текст сообщения.
+ * @param {string} [type='info'] - Тип: 'info', 'success', 'error', 'warning'.
+ */
 App.toast = function(message, type) {
     type = type || 'info';
     var container = document.getElementById('toast-container');
@@ -47,29 +52,32 @@ App.setSyncStatus = function(status) {
     var syncIcon = syncIndicator.querySelector('i');
     if (!syncIcon) return;
 
+    // Удаляем старые классы
+    syncIndicator.classList.remove('synced', 'syncing', 'local', 'error');
+
     switch (status) {
         case 'synced':
-            syncIndicator.className = 'synced';
-            syncIndicator.title = 'Данные синхронизированы';
+            syncIndicator.classList.add('synced');
+            syncIndicator.title = 'Синхронизировано с сервером';
             syncIcon.setAttribute('data-lucide', 'cloud');
             break;
         case 'syncing':
-            syncIndicator.className = 'syncing';
+            syncIndicator.classList.add('syncing');
             syncIndicator.title = 'Синхронизация...';
             syncIcon.setAttribute('data-lucide', 'cloud');
             break;
         case 'local':
-            syncIndicator.className = 'local';
-            syncIndicator.title = 'Локальный режим (офлайн)';
+            syncIndicator.classList.add('local');
+            syncIndicator.title = 'Локальный режим (данные не синхронизированы)';
             syncIcon.setAttribute('data-lucide', 'cloud-off');
             break;
         case 'error':
-            syncIndicator.className = 'error';
-            syncIndicator.title = 'Ошибка синхронизации';
+            syncIndicator.classList.add('error');
+            syncIndicator.title = 'Ошибка соединения';
             syncIcon.setAttribute('data-lucide', 'cloud-off');
             break;
         default:
-            syncIndicator.className = '';
+            syncIndicator.classList.add('synced');
             syncIcon.setAttribute('data-lucide', 'cloud');
     }
     App.initIcons();
