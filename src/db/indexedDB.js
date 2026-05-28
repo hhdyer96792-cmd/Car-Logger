@@ -3,9 +3,8 @@ window.App = window.App || {};
 App.db = App.db || {};
 
 const DB_NAME = 'CarLoggerDB';
-const DB_VERSION = 2; // увеличивать при изменениях схемы
+const DB_VERSION = 2;
 
-// Список хранилищ и их индексы
 const STORES = {
     operations: { keyPath: 'id', indexes: ['car_id', 'category'] },
     fuel_log: { keyPath: 'id', indexes: ['car_id', 'date'] },
@@ -26,7 +25,6 @@ const STORES = {
     local_auth: { keyPath: 'id' }
 };
 
-// Инициализация: открытие БД, создание хранилищ, миграция из localStorage
 App.db.init = function() {
     return new Promise((resolve, reject) => {
         if (App.db._db) {
@@ -44,7 +42,6 @@ App.db.init = function() {
         };
         request.onupgradeneeded = async (event) => {
             const db = event.target.result;
-            // Создаём только те хранилища, которых ещё нет
             for (let [storeName, config] of Object.entries(STORES)) {
                 if (!db.objectStoreNames.contains(storeName)) {
                     const store = db.createObjectStore(storeName, {
@@ -62,14 +59,12 @@ App.db.init = function() {
     });
 };
 
-// Вспомогательная функция для получения хранилища в транзакции
 App.db._getStore = function(storeName, mode = 'readonly') {
     if (!App.db._db) throw new Error('Database not initialized. Call App.db.init() first.');
     const tx = App.db._db.transaction(storeName, mode);
     return tx.objectStore(storeName);
 };
 
-// CRUD операции
 App.db.getAll = async function(storeName) {
     const store = App.db._getStore(storeName, 'readonly');
     return new Promise((resolve, reject) => {
@@ -97,6 +92,20 @@ App.db.put = async function(storeName, item) {
     });
 };
 
+// Пакетная запись
+App.db.putMany = async function(storeName, items) {
+    if (!items.length) return;
+    const tx = App.db._db.transaction(storeName, 'readwrite');
+    const store = tx.objectStore(storeName);
+    return new Promise((resolve, reject) => {
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+        for (const item of items) {
+            store.put(item);
+        }
+    });
+};
+
 App.db.delete = async function(storeName, id) {
     const store = App.db._getStore(storeName, 'readwrite');
     return new Promise((resolve, reject) => {
@@ -115,7 +124,22 @@ App.db.clear = async function(storeName) {
     });
 };
 
-// Миграция из localStorage в IndexedDB
+App.db.clearAllStores = async function() {
+    if (!App.db._db) {
+        console.warn('[DB] База не инициализирована, очистка невозможна');
+        return;
+    }
+    const storeNames = Object.keys(STORES);
+    for (const storeName of storeNames) {
+        try {
+            await App.db.clear(storeName);
+            console.log(`[DB] Очищено хранилище: ${storeName}`);
+        } catch (e) {
+            console.error(`[DB] Ошибка очистки хранилища ${storeName}:`, e);
+        }
+    }
+};
+
 App.db.migrateFromLocalStorage = async function() {
     console.log('[DB] Starting migration from localStorage');
     const cacheKey = App.config.CACHE_KEY;
@@ -131,38 +155,36 @@ App.db.migrateFromLocalStorage = async function() {
         console.error('[DB] Failed to parse localStorage data', e);
         return;
     }
-    // Карта соответствия: ключи из localStorage → имена хранилищ
     const mapping = {
         operations: 'operations',
         parts: 'parts',
         fuelLog: 'fuel_log',
         tireLog: 'tires',
-        workCosts: 'work_costs', // но work_costs нет в нашей схеме, пропустим
+        workCosts: null,
         baseMileage: null,
         baseMotohours: null,
         purchaseDate: null,
         settings: 'settings'
     };
-    // Переносим массивы
     for (let [localKey, storeName] of Object.entries(mapping)) {
         if (storeName && data[localKey] && Array.isArray(data[localKey]) && data[localKey].length) {
-            for (let item of data[localKey]) {
+            const items = data[localKey].map(item => {
                 if (!item.id && storeName !== 'settings') {
                     item.id = item.uuid || crypto.randomUUID();
                 }
-                await App.db.put(storeName, item).catch(e => console.warn(`Failed to migrate ${localKey} item`, e));
-            }
+                return item;
+            });
+            await App.db.putMany(storeName, items);
         }
     }
-    // Настройки (объект, не массив)
     if (data.settings) {
         const settingsItem = { id: 1, ...data.settings };
-        await App.db.put('settings', settingsItem).catch(console.warn);
+        await App.db.put('settings', settingsItem);
     }
     console.log('[DB] Migration completed');
     localStorage.setItem('vesta_migrated_to_indexeddb', 'true');
     const clearStorage = await App.ui.confirmModalAsync('Данные успешно перенесены в новую базу. Очистить старый localStorage для экономии места?');
-if (clearStorage) {
+    if (clearStorage) {
         localStorage.removeItem(cacheKey);
         localStorage.removeItem(App.config.PENDING_KEY);
         localStorage.removeItem(App.config.CALENDAR_CACHE_KEY);
@@ -179,7 +201,6 @@ if (clearStorage) {
     }
 };
 
-// Обёртка для транзакций
 App.db.transaction = async function(storeNames, mode, callback) {
     const db = App.db._db;
     if (!db) throw new Error('DB not initialized');
@@ -200,19 +221,4 @@ App.db.transaction = async function(storeNames, mode, callback) {
         throw e;
     }
     return result;
-    App.db.clearAllStores = async function() {
-    if (!App.db._db) {
-        console.warn('[DB] База не инициализирована, очистка невозможна');
-        return;
-    }
-    const storeNames = Object.keys(STORES);
-    for (const storeName of storeNames) {
-        try {
-            await App.db.clear(storeName);
-            console.log(`[DB] Очищено хранилище: ${storeName}`);
-        } catch (e) {
-            console.error(`[DB] Ошибка очистки хранилища ${storeName}:`, e);
-        }
-    }
-};
 };
