@@ -2,11 +2,6 @@
 window.App = window.App || {};
 App.utils = App.utils || {};
 
-/**
- * Показывает тост-уведомление.
- * @param {string} message - Текст сообщения.
- * @param {string} [type='info'] - Тип: 'info', 'success', 'error', 'warning'.
- */
 App.toast = function(message, type) {
     type = type || 'info';
     var container = document.getElementById('toast-container');
@@ -23,17 +18,11 @@ App.toast = function(message, type) {
     }, 3000);
 };
 
-/**
- * Безопасная вставка HTML (санитизация).
- * @param {string} text - Исходная строка.
- * @returns {string} Очищенная строка.
- */
 App.utils.sanitizeHtml = function(text) {
     if (!text) return '';
     if (typeof DOMPurify !== 'undefined') {
         return DOMPurify.sanitize(text);
     }
-    // Ручное экранирование основных символов
     return String(text).replace(/[&<>]/g, function(m) {
         if (m === '&') return '&amp;';
         if (m === '<') return '&lt;';
@@ -42,28 +31,16 @@ App.utils.sanitizeHtml = function(text) {
     });
 };
 
-/**
- * Экранирование HTML (алиас).
- * @param {string} str
- * @returns {string}
- */
 App.utils.escapeHtml = function(str) {
     return App.utils.sanitizeHtml(str);
 };
 
-/**
- * Инициализация иконок Lucide (вызывать после изменений DOM).
- */
 App.initIcons = function() {
     if (typeof lucide !== 'undefined' && lucide.createIcons) {
         lucide.createIcons();
     }
 };
 
-/**
- * Установка статуса синхронизации в индикаторе.
- * @param {string} status - 'synced', 'syncing', 'local', 'error'
- */
 App.setSyncStatus = function(status) {
     var syncIndicator = document.getElementById('sync-indicator');
     if (!syncIndicator) return;
@@ -73,7 +50,7 @@ App.setSyncStatus = function(status) {
     switch (status) {
         case 'synced':
             syncIndicator.className = 'synced';
-            syncIndicator.title = 'Синхронизировано с Google';
+            syncIndicator.title = 'Данные синхронизированы';
             syncIcon.setAttribute('data-lucide', 'cloud');
             break;
         case 'syncing':
@@ -83,12 +60,12 @@ App.setSyncStatus = function(status) {
             break;
         case 'local':
             syncIndicator.className = 'local';
-            syncIndicator.title = 'Локальный режим (данные только в браузере)';
+            syncIndicator.title = 'Локальный режим (офлайн)';
             syncIcon.setAttribute('data-lucide', 'cloud-off');
             break;
         case 'error':
             syncIndicator.className = 'error';
-            syncIndicator.title = 'Ошибка соединения';
+            syncIndicator.title = 'Ошибка синхронизации';
             syncIcon.setAttribute('data-lucide', 'cloud-off');
             break;
         default:
@@ -103,57 +80,3 @@ App.log = function() {
         console.log.apply(console, arguments);
     }
 };
-
-// ========== Глобальное логирование ошибок (без JWT, с проверкой Origin на сервере) ==========
-(function() {
-    // Функция отправки ошибки на сервер
-    async function sendErrorToServer(errorInfo) {
-        // Не отправляем ошибки при разработке или если нет Supabase
-        if (App.config && App.config.DEBUG === true) return;
-        if (!App.supabase) return;
-
-        try {
-            // Отправляем POST-запрос без токена (JWT отключён, защита через Origin)
-            await fetch('https://qbjlccdqaudyvedpysil.supabase.co/functions/v1/log-error', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(errorInfo)
-            });
-        } catch (err) {
-            // Тихо падаем, чтобы не зациклиться
-            console.warn('Failed to send error log:', err);
-console.log('[DEBUG] Sending error to server:', errorInfo);
-        }
-    }
-
-    // Перехват синхронных ошибок
-    window.onerror = function(message, source, lineno, colno, error) {
-        const errorInfo = {
-            message: String(message),
-            stack: error?.stack || null,
-            filename: source,
-            lineno: lineno,
-            colno: colno,
-            userAgent: navigator.userAgent,
-            url: window.location.href
-        };
-        sendErrorToServer(errorInfo);
-console.log('Global error caught:', message);
-        // Не блокируем выполнение других обработчиков
-        return false;
-    };
-
-    // Перехват необработанных Promise rejections
-    window.addEventListener('unhandledrejection', function(event) {
-        const errorInfo = {
-            message: event.reason?.message || String(event.reason),
-            stack: event.reason?.stack || null,
-            filename: null,
-            lineno: null,
-            colno: null,
-            userAgent: navigator.userAgent,
-            url: window.location.href
-        };
-        sendErrorToServer(errorInfo);
-    });
-})();
