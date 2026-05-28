@@ -4,7 +4,6 @@ App.storage = App.storage || {};
 
 function checkResponse({ data, error }, actionName) {
     if (error) throw error;
-    // Для удаления не проверяем data (успешное удаление может вернуть пустой массив)
     if (actionName === 'delete') return;
 }
 
@@ -19,7 +18,6 @@ async function queueAction(action) {
         }
     }
     if (navigator.onLine && typeof App.db.sync.processSyncQueue === 'function') {
-        // Даём маленькую задержку, но после await addPendingAction это уже безопасно
         setTimeout(() => App.db.sync.processSyncQueue(), 50);
     }
 }
@@ -27,32 +25,26 @@ async function queueAction(action) {
 function refreshUIToFuel() {
     if (typeof App.ui.pages.renderFuelTab === 'function') App.ui.pages.renderFuelTab();
 }
-
 function refreshUIToTables() {
     if (typeof App.ui.pages.renderTOTable === 'function') App.ui.pages.renderTOTable();
     if (typeof App.ui.pages.renderDashboard === 'function') App.ui.pages.renderDashboard();
 }
-
 function refreshUIToParts() {
     if (typeof App.ui.pages.renderPartsTab === 'function') App.ui.pages.renderPartsTab();
     if (typeof App.ui.pages.renderDashboard === 'function') App.ui.pages.renderDashboard();
 }
-
 function refreshUIToTires() {
     if (typeof App.ui.pages.renderTiresTab === 'function') App.ui.pages.renderTiresTab();
     if (typeof App.ui.pages.renderDashboard === 'function') App.ui.pages.renderDashboard();
 }
-
 function refreshUIToMileage() {
     if (typeof App.ui.pages.renderDashboard === 'function') App.ui.pages.renderDashboard();
     if (typeof App.ui.pages.renderTOStats === 'function') App.ui.pages.renderTOStats();
 }
-
 function refreshUIToSettings() {
     if (typeof App.ui.pages.populateSettingsFields === 'function') App.ui.pages.populateSettingsFields();
     if (typeof App.ui.pages.renderDashboard === 'function') App.ui.pages.renderDashboard();
 }
-
 function refreshUIToHistory() {
     if (typeof App.ui.pages.renderHistoryCards === 'function') App.ui.pages.renderHistoryCards();
     if (typeof App.ui.pages.renderDashboard === 'function') App.ui.pages.renderDashboard();
@@ -60,14 +52,16 @@ function refreshUIToHistory() {
 
 // ========== ОПЕРАЦИИ ==========
 App.storage.saveOperation = async function(op) {
+    const carId = App.store.activeCarId;
+    const opWithCarId = { ...op, car_id: carId };
     if (!navigator.onLine) {
         await queueAction({
             type: 'save',
             entityType: 'operation',
             entityId: op.id,
-            data: op
+            data: opWithCarId
         });
-        await App.store.saveOperationToDB(op);
+        await App.store.saveOperationToDB(opWithCarId);
         if (op.id) {
             const idx = App.store.operations.findIndex(o => o.id == op.id);
             if (idx !== -1) App.store.operations[idx] = op;
@@ -83,7 +77,8 @@ App.storage.saveOperation = async function(op) {
     const res = await App.supa.saveOperation(op);
     checkResponse(res, 'save');
     if (res.data && res.data[0]) op.id = res.data[0].id;
-    await App.store.saveOperationToDB(op);
+    const finalOp = { ...op, car_id: carId };
+    await App.store.saveOperationToDB(finalOp);
     const idx = App.store.operations.findIndex(o => o.id == op.id);
     if (idx !== -1) App.store.operations[idx] = op;
     else App.store.operations.push(op);
@@ -111,16 +106,18 @@ App.storage.deleteOperation = async function(operationId) {
     refreshUIToTables();
 };
 
-// ========== ИСТОРИЯ (записи ТО) ==========
+// ========== ИСТОРИЯ ==========
 App.storage.addHistoryRecord = async function(rec) {
+    const carId = App.store.activeCarId;
+    const recWithCarId = { ...rec, car_id: carId };
     if (!navigator.onLine) {
         await queueAction({
             type: 'save',
             entityType: 'history',
             entityId: rec.id,
-            data: rec
+            data: recWithCarId
         });
-        await App.store.saveHistoryRecordToDB(rec);
+        await App.store.saveHistoryRecordToDB(recWithCarId);
         App.store.serviceRecords.push(rec);
         App.toast('Запись сохранена локально', 'warning');
         refreshUIToHistory();
@@ -129,7 +126,8 @@ App.storage.addHistoryRecord = async function(rec) {
     const res = await App.supa.saveHistoryRecord(rec);
     checkResponse(res, 'save');
     if (res.data && res.data[0]) rec.id = res.data[0].id;
-    await App.store.saveHistoryRecordToDB(rec);
+    const finalRec = { ...rec, car_id: carId };
+    await App.store.saveHistoryRecordToDB(finalRec);
     const idx = App.store.serviceRecords.findIndex(r => r.id == rec.id);
     if (idx !== -1) App.store.serviceRecords[idx] = rec;
     else App.store.serviceRecords.push(rec);
@@ -165,14 +163,16 @@ App.storage.deleteHistoryRecord = async function(rowIndex) {
 
 // ========== ЗАПЧАСТИ ==========
 App.storage.savePart = async function(part) {
+    const carId = App.store.activeCarId;
+    const partWithCarId = { ...part, car_id: carId };
     if (!navigator.onLine) {
         await queueAction({
             type: 'save',
             entityType: 'part',
             entityId: part.id,
-            data: part
+            data: partWithCarId
         });
-        await App.store.savePartToDB(part);
+        await App.store.savePartToDB(partWithCarId);
         const idx = App.store.parts.findIndex(p => p.id == part.id);
         if (idx !== -1) App.store.parts[idx] = part;
         else App.store.parts.push(part);
@@ -183,7 +183,8 @@ App.storage.savePart = async function(part) {
     const res = await App.supa.savePart(part);
     checkResponse(res, 'save');
     if (res.data && res.data[0]) part.id = res.data[0].id;
-    await App.store.savePartToDB(part);
+    const finalPart = { ...part, car_id: carId };
+    await App.store.savePartToDB(finalPart);
     const idx = App.store.parts.findIndex(p => p.id == part.id);
     if (idx !== -1) App.store.parts[idx] = part;
     else App.store.parts.push(part);
@@ -213,14 +214,16 @@ App.storage.deletePart = async function(partId) {
 
 // ========== ТОПЛИВО ==========
 App.storage.saveFuelRecord = async function(id, record) {
+    const carId = App.store.activeCarId;
+    const recordWithCarId = { ...record, car_id: carId };
     if (!navigator.onLine) {
         await queueAction({
             type: 'save',
             entityType: 'fuel',
             entityId: id,
-            data: record
+            data: recordWithCarId
         });
-        await App.store.saveFuelRecordToDB(record);
+        await App.store.saveFuelRecordToDB(recordWithCarId);
         const idx = App.store.fuelLog.findIndex(f => f.id == id);
         if (idx !== -1) App.store.fuelLog[idx] = record;
         else App.store.fuelLog.push(record);
@@ -231,7 +234,8 @@ App.storage.saveFuelRecord = async function(id, record) {
     const res = await App.supa.saveFuelRecord(record);
     checkResponse(res, 'save');
     if (res.data && res.data[0]) record.id = res.data[0].id;
-    await App.store.saveFuelRecordToDB(record);
+    const finalRecord = { ...record, car_id: carId };
+    await App.store.saveFuelRecordToDB(finalRecord);
     const idx = App.store.fuelLog.findIndex(f => f.id == record.id);
     if (idx !== -1) App.store.fuelLog[idx] = record;
     else App.store.fuelLog.push(record);
@@ -261,14 +265,16 @@ App.storage.deleteFuelRecord = async function(id) {
 
 // ========== ШИНЫ ==========
 App.storage.saveTireRecord = async function(id, record) {
+    const carId = App.store.activeCarId;
+    const recordWithCarId = { ...record, car_id: carId };
     if (!navigator.onLine) {
         await queueAction({
             type: 'save',
             entityType: 'tire',
             entityId: id,
-            data: record
+            data: recordWithCarId
         });
-        await App.store.saveTireRecordToDB(record);
+        await App.store.saveTireRecordToDB(recordWithCarId);
         const idx = App.store.tireLog.findIndex(t => t.id == id);
         if (idx !== -1) App.store.tireLog[idx] = record;
         else App.store.tireLog.push(record);
@@ -279,7 +285,8 @@ App.storage.saveTireRecord = async function(id, record) {
     const res = await App.supa.saveTireRecord(record);
     checkResponse(res, 'save');
     if (res.data && res.data[0]) record.id = res.data[0].id;
-    await App.store.saveTireRecordToDB(record);
+    const finalRecord = { ...record, car_id: carId };
+    await App.store.saveTireRecordToDB(finalRecord);
     const idx = App.store.tireLog.findIndex(t => t.id == record.id);
     if (idx !== -1) App.store.tireLog[idx] = record;
     else App.store.tireLog.push(record);
@@ -310,7 +317,8 @@ App.storage.deleteTireRecord = async function(id) {
 // ========== ПРОБЕГ ==========
 App.storage.addMileageRecord = async function(date, mileage, motohours) {
     const userId = await App.supa.getCurrentUserId();
-    const record = { date, mileage, motohours, user_id: userId, car_id: App.store.activeCarId };
+    const carId = App.store.activeCarId;
+    const record = { date, mileage, motohours, user_id: userId, car_id: carId };
     if (!navigator.onLine) {
         await queueAction({
             type: 'save',
@@ -370,7 +378,7 @@ App.storage.saveSettings = async function(settings) {
     refreshUIToSettings();
 };
 
-// ========== ЗАГРУЗКА ВСЕХ ДАННЫХ (ОНЛАЙН) – ИСПРАВЛЕНА ==========
+// ========== ЗАГРУЗКА ВСЕХ ДАННЫХ (ОНЛАЙН) ==========
 App.storage.loadAllData = async function() {
     if (!navigator.onLine) {
         App.toast('Нет подключения к интернету. Показываю кэшированные данные.', 'warning');
@@ -392,13 +400,20 @@ App.storage.loadAllData = async function() {
             App.supa.loadMileageHistory()
         ]);
 
-        // Используем пакетную запись для ускорения
-        await App.db.putMany('operations', operations);
-        await App.db.putMany('fuel_log', fuelLog);
-        await App.db.putMany('tires', tireLog);
-        await App.db.putMany('parts', parts);
-        await App.db.putMany('service_records', history);
-        await App.db.putMany('mileage_log', mileageHistory);
+        const carId = App.store.activeCarId;
+        const opsWithCar = operations.map(op => ({ ...op, car_id: carId }));
+        const fuelWithCar = fuelLog.map(f => ({ ...f, car_id: carId }));
+        const tiresWithCar = tireLog.map(t => ({ ...t, car_id: carId }));
+        const partsWithCar = parts.map(p => ({ ...p, car_id: carId }));
+        const historyWithCar = history.map(h => ({ ...h, car_id: carId }));
+        const mileageWithCar = mileageHistory.map(m => ({ ...m, car_id: carId }));
+
+        await App.db.putMany('operations', opsWithCar);
+        await App.db.putMany('fuel_log', fuelWithCar);
+        await App.db.putMany('tires', tiresWithCar);
+        await App.db.putMany('parts', partsWithCar);
+        await App.db.putMany('service_records', historyWithCar);
+        await App.db.putMany('mileage_log', mileageWithCar);
         if (settings) {
             Object.assign(App.store.settings, settings);
             await App.db.put('settings', { id: 1, ...settings });
