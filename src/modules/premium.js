@@ -83,7 +83,6 @@ App.premium.activateKey = async function(keyValue) {
     
     await App.premium.checkStatus();
     
-    // Обновляем интерфейс вкладки "Автомобиль", чтобы показать кнопки VIN/номер
     if (typeof App.ui.pages.renderCarTab === 'function') {
         App.ui.pages.renderCarTab();
     }
@@ -111,7 +110,6 @@ App.premium.deactivateDevice = async function() {
     App.store.premiumTier = 'free';
     App.store.premiumFeatures = [];
     
-    // Обновляем интерфейс вкладки "Автомобиль", чтобы скрыть кнопки
     if (typeof App.ui.pages.renderCarTab === 'function') {
         App.ui.pages.renderCarTab();
     }
@@ -149,7 +147,9 @@ App.premium.init = async function() {
         console.error('[Premium] Ошибка инициализации:', err);
     }
     
-    setInterval(() => {
+    // Сохраняем интервал в свойство, чтобы можно было очистить при выходе
+    if (App.premium._checkInterval) clearInterval(App.premium._checkInterval);
+    App.premium._checkInterval = setInterval(() => {
         App.premium.checkStatus().catch(err => console.error('[Premium] Ошибка периодической проверки:', err));
     }, 60 * 60 * 1000);
 };
