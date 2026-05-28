@@ -40,10 +40,14 @@ App.premium.checkStatus = async function() {
     App.store.premiumExpiresAt = data.expires_at;
     App.store.isPremium = (data.active && data.tier !== 'free');
     
-    // Временно отключаем авто-загрузку премиум-модулей из-за ошибок блокировок
-    // if (data.active && data.tier !== 'free') {
-    //     await App.premium.loadModulesByTier(data.tier);
-    // }
+    if (data.active && data.tier !== 'free') {
+        // Включаем авто-загрузку модулей с обработкой ошибок
+        try {
+            await App.premium.loadModulesByTier(data.tier);
+        } catch (err) {
+            console.error('[Premium] Ошибка загрузки модулей:', err);
+        }
+    }
     
     return data;
 };
@@ -129,9 +133,7 @@ App.premium.init = async function() {
     try {
         const status = await App.premium.checkStatus();
         if (status.active && status.tier !== 'free') {
-            // Временно отключаем авто-загрузку модулей
-            // await App.premium.loadModulesByTier(status.tier);
-            console.log('[Premium] Статус проверен, авто-загрузка модулей временно отключена');
+            await App.premium.loadModulesByTier(status.tier);
         }
     } catch (err) {
         console.error('[Premium] Ошибка инициализации:', err);
