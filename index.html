@@ -3,6 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes">
+<meta http-equiv="Content-Security-Policy" content="
+    default-src 'self';
+    script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://unpkg.com https://www.gstatic.com https://cdn.sheetjs.com https://cdnjs.cloudflare.com;
+    style-src 'self' 'unsafe-inline' https://unpkg.com;
+    img-src 'self' data: blob: https://*.supabase.co;
+    connect-src 'self' https://*.supabase.co wss://*.supabase.co https://qbjlccdqaudyvedpysil.supabase.co https://router.project-osrm.org https://nominatim.openstreetmap.org;
+    font-src 'self' data:;
+    frame-src 'self';
+    worker-src 'self' blob:;
+">
     <title>Car Logger D&C</title>
     <link rel="stylesheet" href="style.css">
     <link rel="manifest" href="manifest.json">
