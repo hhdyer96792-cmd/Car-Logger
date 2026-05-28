@@ -295,7 +295,6 @@
     async function doLogout() {
         console.log('[DEBUG] doLogout вызвана');
 
-        // Очищаем пользовательские данные из памяти
         App.store.operations = [];
         App.store.fuelLog = [];
         App.store.tireLog = [];
@@ -307,7 +306,6 @@
         localStorage.removeItem('vesta_active_car_id');
         localStorage.removeItem('vesta_username');
 
-        // Принудительная очистка IndexedDB (оставляем только криптографические данные)
         if (App.db && App.db._db) {
             const stores = ['operations', 'fuel_log', 'tires', 'parts', 'service_records', 'mileage_log', 'cars'];
             for (const store of stores) {
@@ -480,6 +478,10 @@
                                 if (typeof App.renderAll === 'function') App.renderAll();
                                 App.toast(hasMasterPassword ? 'Расшифровка успешна' : 'Мастер-пароль сохранён', 'success');
                                 masterPassword = password;
+                                // Сбрасываем счётчик попыток PIN при успешном входе через мастер-пароль
+                                if (App.localAuth && App.localAuth.resetPinAttempts) {
+                                    App.localAuth.resetPinAttempts();
+                                }
                             } else {
                                 App.toast('Неверный мастер-пароль', 'error');
                             }
@@ -708,6 +710,7 @@
         }
     }
 
+    // ===== ОСНОВНАЯ ФУНКЦИЯ onReady =====
     function onReady() {
         console.log('[DEBUG] onReady: начало');
         document.body.classList.add('no-transition');
@@ -737,6 +740,17 @@
             navigator.storage.persist().then(isPersisted => console.log('Persistent storage:', isPersisted ? 'granted' : 'denied'));
         }
 
+        // ===== РЕГИСТРАЦИЯ SERVICE WORKER =====
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/service-worker.js').then(reg => {
+                console.log('[SW] Зарегистрирован:', reg);
+            }).catch(err => console.error('[SW] Ошибка регистрации:', err));
+            
+            navigator.serviceWorker.register('/firebase-messaging-sw.js').then(reg => {
+                console.log('[Firebase SW] зарегистрирован');
+            }).catch(err => console.warn('[Firebase SW] ошибка:', err));
+        }
+
         initDatabase().then(() => {
             console.log('[DEBUG] initDatabase завершён, проверяем сессию');
             const savedSession = localStorage.getItem('supabase.auth.token');
@@ -759,7 +773,6 @@
         if (sidebarLoginBtn) sidebarLoginBtn.addEventListener('click', openAuthModal);
         if (drawerLoginBtn) drawerLoginBtn.addEventListener('click', openAuthModal);
 
-        // ========== Глобальное делегирование для кнопки выхода ==========
         document.body.addEventListener('click', (e) => {
             const target = e.target.closest('#sidebar-logout, #drawer-logout');
             if (target && (target.id === 'sidebar-logout' || target.id === 'drawer-logout')) {
@@ -814,6 +827,7 @@
 
         window.addEventListener('load', () => setTimeout(() => { if (typeof App.initIcons === 'function') App.initIcons(); }, 200));
 
+        // ===== ПЛАВАЮЩАЯ FAB-КНОПКА =====
         (function() {
             const fab = document.createElement('div');
             fab.id = 'fab-menu';
@@ -905,26 +919,3 @@
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', onReady);
     else onReady();
 })();
-
-importScripts('https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js');
-importScripts('https://www.gstatic.com/firebasejs/9.22.0/firebase-messaging-compat.js');
-
-firebase.initializeApp({
-  apiKey: "AIzaSyCKz1GKDdqxtK6NyLQAZ84QqUUCaqTQDWQ",
-  authDomain: "car-k3eeper.firebaseapp.com",
-  projectId: "car-k3eeper",
-  storageBucket: "car-k3eeper.firebasestorage.app",
-  messagingSenderId: "826833638199",
-  appId: "1:826833638199:web:647fedbe3eae5b605240b2"
-});
-
-const messaging = firebase.messaging();
-
-messaging.onBackgroundMessage(function(payload) {
-  const notificationTitle = payload.notification.title || 'Напоминание о ТО';
-  const notificationOptions = {
-    body: payload.notification.body || '',
-    icon: 'icon-192.png'
-  };
-  self.registration.showNotification(notificationTitle, notificationOptions);
-});
