@@ -4,12 +4,11 @@ App.storage = App.storage || {};
 
 function checkResponse({ data, error }, actionName) {
     if (error) throw error;
-    if (data && Array.isArray(data) && data.length === 0 && actionName === 'delete') {
-        throw new Error('Нет прав на удаление');
-    }
+    // Для удаления не проверяем data (успешное удаление может вернуть пустой массив)
+    if (actionName === 'delete') return;
+    // Для остальных действий можно проверить наличие данных, если нужно
 }
 
-// ========== ОФЛАЙН-ОЧЕРЕДЬ ==========
 async function queueAction(action) {
     await App.store.addPendingAction(action);
     if ('serviceWorker' in navigator && 'SyncManager' in window) {
@@ -393,15 +392,16 @@ App.storage.loadAllData = async function() {
             App.supa.loadMileageHistory()
         ]);
 
-        for (const op of operations) await App.store.saveOperationToDB(op);
-        for (const f of fuelLog) await App.store.saveFuelRecordToDB(f);
-        for (const t of tireLog) await App.store.saveTireRecordToDB(t);
-        for (const p of parts) await App.store.savePartToDB(p);
-        for (const h of history) await App.store.saveHistoryRecordToDB(h);
-        for (const m of mileageHistory) await App.store.saveMileageRecordToDB(m);
+        // Пакетная запись
+        await App.db.putMany('operations', operations);
+        await App.db.putMany('fuel_log', fuelLog);
+        await App.db.putMany('tires', tireLog);
+        await App.db.putMany('parts', parts);
+        await App.db.putMany('service_records', history);
+        await App.db.putMany('mileage_log', mileageHistory);
         if (settings) {
             Object.assign(App.store.settings, settings);
-            await App.store.saveSettingsToDB();
+            await App.db.put('settings', { id: 1, ...settings });
         }
 
         App.store.operations = operations;
