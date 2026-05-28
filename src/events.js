@@ -246,19 +246,30 @@ App.events.switchToTab = function(tabId) {
             if (typeof App.ui.pages.renderDashboard === 'function') App.ui.pages.renderDashboard();
             break;
         case 'to':
-            (async function() {
-                if (!App.store.operations || App.store.operations.length === 0) {
-                    await App.storage.loadAllData();
-                }
-                if (typeof App.ui.pages.renderTotalCost === 'function') App.ui.pages.renderTotalCost();
-                if (typeof App.ui.pages.renderTOStats === 'function') App.ui.pages.renderTOStats();
-                if (typeof App.ui.pages.renderOilResourceCard === 'function') App.ui.pages.renderOilResourceCard();
-                if (typeof App.ui.pages.renderResourceBars === 'function') App.ui.pages.renderResourceBars();
-                if (typeof App.ui.pages.renderTOCostChart === 'function') App.ui.pages.renderTOCostChart();
-                if (typeof App.ui.pages.renderTOCategoryPieChart === 'function') App.ui.pages.renderTOCategoryPieChart();
-                if (typeof App.ui.pages.renderTOTable === 'function') App.ui.pages.renderTOTable();
-            })();
-            break;
+    (async function() {
+        const container = document.getElementById('to-cards-container');
+        const originalHtml = container ? container.innerHTML : '';
+        // Показываем индикатор загрузки, если данных ещё нет
+        if (container && (!App.store.operations || App.store.operations.length === 0)) {
+            container.innerHTML = '<div class="spinner"></div><p class="hint">Загрузка данных...</p>';
+        }
+        try {
+            if (!App.store.operations || App.store.operations.length === 0) {
+                await App.storage.loadAllData();
+            }
+            if (typeof App.ui.pages.renderTotalCost === 'function') App.ui.pages.renderTotalCost();
+            if (typeof App.ui.pages.renderTOStats === 'function') App.ui.pages.renderTOStats();
+            if (typeof App.ui.pages.renderOilResourceCard === 'function') App.ui.pages.renderOilResourceCard();
+            if (typeof App.ui.pages.renderResourceBars === 'function') App.ui.pages.renderResourceBars();
+            if (typeof App.ui.pages.renderTOCostChart === 'function') App.ui.pages.renderTOCostChart();
+            if (typeof App.ui.pages.renderTOCategoryPieChart === 'function') App.ui.pages.renderTOCategoryPieChart();
+            if (typeof App.ui.pages.renderTOTable === 'function') App.ui.pages.renderTOTable();
+        } catch (err) {
+            console.error('[Events] Ошибка загрузки вкладки ТО:', err);
+            if (container) container.innerHTML = '<p class="hint error">Ошибка загрузки данных. Попробуйте обновить страницу.</p>';
+        }
+    })();
+    break;
         case 'stats':
             if (typeof App.ui.pages.renderFinanceTab === 'function') App.ui.pages.renderFinanceTab();
             break;
