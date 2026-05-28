@@ -371,12 +371,11 @@ App.store = {
             console.error('[Store] Ошибка loadCars:', err);
             return [];
         }
+    },
 
-   // ========== ПРОВЕРКА НАЛИЧИЯ ДЕЙСТВИЯ В ОЧЕРЕДИ ==========
+    // ========== ПРОВЕРКА НАЛИЧИЯ ДЕЙСТВИЯ В ОЧЕРЕДИ ==========
     isRecordPending: function(recordId) {
         if (!recordId) return false;
         return this.pendingActions.some(action => action.entityId == recordId);
-    }
-};
     }
 };
