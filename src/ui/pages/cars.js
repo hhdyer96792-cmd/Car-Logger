@@ -346,7 +346,7 @@ App.ui.pages.checkPendingInvites = function() {
     });
 };
 
-/* ========== НОВАЯ ВКЛАДКА «АВТОМОБИЛЬ» ========== */
+/* ========== НОВАЯ ВКЛАДКА «АВТОМОБИЛЬ» (исправлена) ========== */
 App.ui.pages.renderCarTab = function() {
     var selector = document.getElementById('car-page-selector');
     if (selector) {
@@ -418,48 +418,51 @@ App.ui.pages.renderCarTab = function() {
         App.ui.pages.initCsvImport();
     }
     
-    // Исправление расположения кнопок VIN/номер (под полем ввода)
+    // Исправление: удаляем старый блок кнопок, если он есть, чтобы не дублировать
+    var existingVinWrapper = document.getElementById('vin-buttons-wrapper');
+    if (existingVinWrapper) {
+        existingVinWrapper.remove();
+    }
+    
     var vinContainer = document.querySelector('.car-fields-grid');
     if (vinContainer) {
         var oldVinInput = document.getElementById('car-vin');
-        var wrapper = null;
+        var wrapper = document.createElement('div');
+        wrapper.id = 'vin-buttons-wrapper';
+        wrapper.style.display = 'flex';
+        wrapper.style.flexDirection = 'column';
+        wrapper.style.gap = '8px';
+        oldVinInput.parentNode.insertBefore(wrapper, oldVinInput);
+        wrapper.appendChild(oldVinInput);
         
-        if (oldVinInput && !document.getElementById('vin-info-btn')) {
-            wrapper = document.createElement('div');
-            wrapper.style.display = 'flex';
-            wrapper.style.flexDirection = 'column';
-            wrapper.style.gap = '8px';
-            oldVinInput.parentNode.insertBefore(wrapper, oldVinInput);
-            wrapper.appendChild(oldVinInput);
+        var btnContainer = document.createElement('div');
+        btnContainer.style.display = 'flex';
+        btnContainer.style.gap = '8px';
+        btnContainer.style.flexWrap = 'wrap';
+        
+        if (App.store.isPremium) {
+            var vinBtn = document.createElement('button');
+            vinBtn.id = 'vin-info-btn';
+            vinBtn.className = 'secondary-btn';
+            vinBtn.innerHTML = '<i data-lucide="info"></i> Инфо по VIN';
+            btnContainer.appendChild(vinBtn);
             
-            var btnContainer = document.createElement('div');
-            btnContainer.style.display = 'flex';
-            btnContainer.style.gap = '8px';
-            btnContainer.style.flexWrap = 'wrap';
-            
-            if (App.store.isPremium) {
-                var vinBtn = document.createElement('button');
-                vinBtn.id = 'vin-info-btn';
-                vinBtn.className = 'secondary-btn';
-                vinBtn.innerHTML = '<i data-lucide="info"></i> Инфо по VIN';
-                btnContainer.appendChild(vinBtn);
-                
-                var plateBtn = document.createElement('button');
-                plateBtn.id = 'plate-info-btn';
-                plateBtn.className = 'secondary-btn';
-                plateBtn.innerHTML = '<i data-lucide="flag"></i> Инфо по номеру';
-                btnContainer.appendChild(plateBtn);
-            } else {
-                var hintSpan = document.createElement('span');
-                hintSpan.className = 'hint';
-                hintSpan.innerHTML = '<i data-lucide="lock"></i> Поиск по VIN/номеру доступен в Premium';
-                btnContainer.appendChild(hintSpan);
-            }
-            
-            wrapper.appendChild(btnContainer);
-            App.initIcons();
+            var plateBtn = document.createElement('button');
+            plateBtn.id = 'plate-info-btn';
+            plateBtn.className = 'secondary-btn';
+            plateBtn.innerHTML = '<i data-lucide="flag"></i> Инфо по номеру';
+            btnContainer.appendChild(plateBtn);
+        } else {
+            var hintSpan = document.createElement('span');
+            hintSpan.className = 'hint';
+            hintSpan.id = 'premium-hint-vin';
+            hintSpan.innerHTML = '<i data-lucide="lock"></i> Поиск по VIN/номеру доступен в Premium';
+            btnContainer.appendChild(hintSpan);
         }
         
+        wrapper.appendChild(btnContainer);
+        
+        // Обработчики кнопок
         var vinInfoBtn = document.getElementById('vin-info-btn');
         if (vinInfoBtn) {
             vinInfoBtn.addEventListener('click', async () => {
@@ -523,7 +526,7 @@ App.ui.pages.loadCarDetails = function(carId) {
     document.getElementById('car-vin').value = s.vin || '';
 };
 
-/* ========== ОСНОВНЫЕ ПАРАМЕТРЫ ========== */
+/* ========== ОСНОВНЫЕ ПАРАМЕТРЫ (без изменений) ========== */
 App.ui.pages.renderBasicParams = async function() {
     let baseMileage = 0, baseMotohours = 0, purchaseDate = '', purchaseCost = 0;
     if (App.store.activeCarId && App.supa && typeof App.supa.getVehicleState === 'function') {
@@ -1038,7 +1041,7 @@ App.ui.pages.checkAndShowInitialParamsModal = async function() {
     }
 };
 
-/* ========== СОВМЕСТНЫЙ ДОСТУП ========== */
+/* ========== СОВМЕСТНЫЙ ДОСТУП (экспортные функции оставлены для совместимости) ========== */
 App.ui.pages.renderSharingListForCarTab = function() {
     var container = document.getElementById('sharing-container');
     if (!container) return;
