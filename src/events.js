@@ -216,8 +216,8 @@ App.events.initNavigation = function() {
     });
 };
 
+// ========== ИСПРАВЛЕННАЯ ФУНКЦИЯ switchToTab ==========
 App.events.switchToTab = function(tabId) {
-    // Если вкладка уже активна – ничего не делаем (предотвращает лишние перерисовки)
     if (App.events.currentActiveTab === tabId) return;
 
     document.body.style.overflow = '';
@@ -239,8 +239,6 @@ App.events.switchToTab = function(tabId) {
     });
 
     App.events.closeDrawer();
-
-    // Запоминаем текущую вкладку
     App.events.currentActiveTab = tabId;
 
     switch (tabId) {
@@ -280,11 +278,10 @@ App.events.switchToTab = function(tabId) {
         case 'car':
             if (typeof App.ui.pages.renderCarTab === 'function') App.ui.pages.renderCarTab();
             break;
-          case 'settings':
+        case 'settings':
             if (typeof App.ui.pages.populateSettingsFields === 'function') App.ui.pages.populateSettingsFields();
-            // Добавляем проверку статуса подписки при открытии вкладки настроек
             if (typeof App.ui.pages.checkPushSubscriptionStatus === 'function') {
-App.ui.pages.checkPushSubscriptionStatus();
+                App.ui.pages.checkPushSubscriptionStatus();
             }
             break;
     }
