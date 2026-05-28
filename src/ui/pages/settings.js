@@ -193,7 +193,6 @@ App.ui.pages.renderAccountPasswordBlock = function(container) {
         changeAccountBtn.addEventListener('click', async () => {
             const statusDiv = document.getElementById('account-password-status');
             try {
-                // Проверяем текущий пароль
                 const currentPwd = await App.ui.promptModalAsync('Смена пароля входа', 'Введите текущий пароль:');
                 if (!currentPwd) return;
                 const { data: { user } } = await App.supabase.auth.getUser();
@@ -409,7 +408,6 @@ App.ui.pages.populateSettingsFields = async function() {
     `;
     App.initIcons();
 
-    // Заполнение текущих значений уведомлений
     const notificationMethodSelect = document.getElementById('notification-method');
     if (notificationMethodSelect) notificationMethodSelect.value = App.store.settings.notificationMethod || 'telegram';
     const reminderInput = document.getElementById('reminder-days-input');
@@ -417,7 +415,6 @@ App.ui.pages.populateSettingsFields = async function() {
     const telegramToggle = document.getElementById('telegram-toggle');
     if (telegramToggle) telegramToggle.checked = App.store.settings.telegramEnabled !== false;
 
-    // Привязка Telegram
     const telegramBindArea = document.getElementById('telegram-bind-area');
     if (telegramBindArea) {
         if (App.store.isPremium) {
@@ -453,7 +450,6 @@ App.ui.pages.populateSettingsFields = async function() {
         App.initIcons();
     }
 
-    // Обработчики уведомлений (только один раз)
     if (!settingsListenersAttached) {
         const saveBtn = document.getElementById('save-settings-btn');
         if (saveBtn) {
@@ -594,7 +590,6 @@ App.ui.pages.renderPinSettings = async function() {
         return;
     }
 
-    // Проверяем, заблокирован ли PIN
     const attempts = localStorage.getItem('vesta_pin_attempts');
     let blockedMessage = '';
     if (attempts) {
