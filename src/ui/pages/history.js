@@ -3,6 +3,15 @@ window.App = window.App || {};
 App.ui = App.ui || {};
 App.ui.pages = App.ui.pages || {};
 
+// ========== ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ DEBOUNCE ==========
+function debounce(func, delay) {
+    let timeout;
+    return function(...args) {
+        clearTimeout(timeout);
+        timeout = setTimeout(() => func.apply(this, args), delay);
+    };
+}
+
 // Инициализация фильтров (заполнение селектов)
 App.ui.pages.initHistoryFilters = function() {
     App.ui.pages.populateHistoryOperationFilter();
@@ -59,8 +68,12 @@ App.ui.pages.populateHistoryExecutorFilter = function() {
     if (current) select.value = current;
 };
 
-// Привязка событий фильтров
+// Привязка событий фильтров (с debounce)
 App.ui.pages.bindHistoryFilterEvents = function() {
+    // Создаём debounced версию renderHistoryCards
+    const debouncedRender = debounce(() => App.ui.pages.renderHistoryCards(), 300);
+
+    // Фильтры с событием 'change' (используем debouncedRender)
     var filters = [
         'history-period-select', 'history-operation-filter', 'history-category-filter', 'history-executor-filter',
         'history-sort-order', 'history-diy-only'
@@ -68,23 +81,23 @@ App.ui.pages.bindHistoryFilterEvents = function() {
     filters.forEach(function(id) {
         var el = document.getElementById(id);
         if (el) {
-            el.addEventListener('change', function() {
-                App.ui.pages.renderHistoryCards();
-            });
-        }
-    });
-    ['history-search', 'history-cost-min', 'history-cost-max', 'history-mileage-min', 'history-mileage-max'].forEach(function(id) {
-        var el = document.getElementById(id);
-        if (el) {
-            el.addEventListener('input', function() {
-                App.ui.pages.renderHistoryCards();
-            });
+            el.addEventListener('change', debouncedRender);
         }
     });
 
+    // Поля ввода с событием 'input' (используем debouncedRender)
+    ['history-search', 'history-cost-min', 'history-cost-max', 'history-mileage-min', 'history-mileage-max'].forEach(function(id) {
+        var el = document.getElementById(id);
+        if (el) {
+            el.addEventListener('input', debouncedRender);
+        }
+    });
+
+    // Кнопка сброса – без debounce (мгновенный сброс и рендер)
     var resetBtn = document.getElementById('history-reset-filters');
     if (resetBtn) {
         resetBtn.addEventListener('click', function() {
+            // Сбрасываем значения всех фильтров
             ['history-period-select','history-operation-filter','history-category-filter','history-executor-filter',
              'history-search','history-diy-only','history-cost-min','history-cost-max','history-mileage-min','history-mileage-max','history-sort-order'
             ].forEach(function(id) {
@@ -95,6 +108,7 @@ App.ui.pages.bindHistoryFilterEvents = function() {
                 }
             });
             document.getElementById('history-sort-order').value = 'date-desc';
+            // Рендерим сразу (без debounce)
             App.ui.pages.renderHistoryCards();
         });
     }
