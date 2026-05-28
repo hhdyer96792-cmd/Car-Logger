@@ -6,9 +6,24 @@ App.ui.pages = App.ui.pages || {};
 // Период по умолчанию
 App.ui.pages.financePeriod = 'month';
 
+// Хранилище экземпляров графиков
+App.charts._financeDynamics = null;
+App.charts._financeCostHist = null;
+App.charts._financePie = null;
+App.charts._financeComp = null;
+
 // Проверка доступности Chart.js
 function isChartAvailable() {
     return typeof Chart !== 'undefined';
+}
+
+// Вспомогательная функция для обновления данных графика
+function updateChartData(chart, labels, datasets) {
+    if (!chart) return false;
+    chart.data.labels = labels;
+    chart.data.datasets = datasets;
+    chart.update();
+    return true;
 }
 
 // Главный вход при открытии вкладки
@@ -16,7 +31,7 @@ App.ui.pages.renderFinanceTab = function() {
     App.ui.pages.populateFinancePeriodSwitch();
     App.ui.pages.updateFinanceMetrics();
     App.ui.pages.updateFinanceForecast();
-    App.ui.pages.renderDynamicsChart();
+    App.ui.pages.renderDynamicsChart();   // теперь ленивый рендер
     App.ui.pages.renderCostHistogram();
     App.ui.pages.renderFinancePie();
     App.ui.pages.renderComparison();
@@ -24,7 +39,7 @@ App.ui.pages.renderFinanceTab = function() {
 
 // Быстрый вызов из events.js (старое имя)
 App.ui.pages.renderStats = function() { App.ui.pages.renderFinanceTab(); };
-App.ui.pages.renderFuelAnalytics = function() {}; // больше не используется
+App.ui.pages.renderFuelAnalytics = function() {};
 
 // ---------- Переключатель периода ----------
 App.ui.pages.populateFinancePeriodSwitch = function() {
@@ -38,6 +53,7 @@ App.ui.pages.populateFinancePeriodSwitch = function() {
             App.ui.pages.financePeriod = period;
             container.querySelectorAll('.period-btn').forEach(function(b) { b.classList.remove('active'); });
             this.classList.add('active');
+            // Обновляем метрики и графики
             App.ui.pages.updateFinanceMetrics();
             App.ui.pages.updateFinanceForecast();
             App.ui.pages.renderDynamicsChart();
@@ -190,12 +206,14 @@ App.ui.pages.updateFinanceForecast = function() {
         '<div class="hint">(на основе среднего за последние 3 месяца)</div>';
 };
 
-// ---------- Линейный график динамики с прогнозом ----------
+// ---------- Линейный график динамики с прогнозом (ленивая инициализация) ----------
 App.ui.pages.renderDynamicsChart = function() {
     if (!isChartAvailable()) return;
-    App.charts.destroyChart('financeDynamicsChart');
     var canvas = document.getElementById('financeDynamicsChart');
     if (!canvas) return;
+    var ctx = canvas.getContext('2d');
+
+    // Получаем данные
     var monthly = aggregateMonthlyCosts();
     var now = new Date();
     var labels = [];
@@ -215,46 +233,54 @@ App.ui.pages.renderDynamicsChart = function() {
     }
     var forecastDataPadded = new Array(labels.length - 3).fill(null).concat(forecastData);
 
-    var ctx = canvas.getContext('2d');
-    App.charts._financeDyn = new Chart(ctx, {
-        type: 'line',
-        data: {
-            labels: labels,
-            datasets: [
-                {
-                    label: 'Факт',
-                    data: factData.concat(new Array(3).fill(null)),
-                    borderColor: '#3498db',
-                    backgroundColor: 'transparent',
-                    tension: 0.2,
-                    pointRadius: 2
-                },
-                {
-                    label: 'Прогноз',
-                    data: forecastDataPadded,
-                    borderColor: '#e74c3c',
-                    borderDash: [5,5],
-                    backgroundColor: 'transparent',
-                    tension: 0.2,
-                    pointRadius: 2
-                }
-            ]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: { legend: { position: 'bottom' } },
-            scales: { y: { beginAtZero: true } }
-        }
-    });
+    // Если графика ещё нет – создаём, иначе обновляем данные
+    if (!App.charts._financeDynamics) {
+        App.charts._financeDynamics = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [
+                    {
+                        label: 'Факт',
+                        data: factData.concat(new Array(3).fill(null)),
+                        borderColor: '#3498db',
+                        backgroundColor: 'transparent',
+                        tension: 0.2,
+                        pointRadius: 2
+                    },
+                    {
+                        label: 'Прогноз',
+                        data: forecastDataPadded,
+                        borderColor: '#e74c3c',
+                        borderDash: [5,5],
+                        backgroundColor: 'transparent',
+                        tension: 0.2,
+                        pointRadius: 2
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { position: 'bottom' } },
+                scales: { y: { beginAtZero: true } }
+            }
+        });
+    } else {
+        App.charts._financeDynamics.data.labels = labels;
+        App.charts._financeDynamics.data.datasets[0].data = factData.concat(new Array(3).fill(null));
+        App.charts._financeDynamics.data.datasets[1].data = forecastDataPadded;
+        App.charts._financeDynamics.update();
+    }
 };
 
-// ---------- Гистограмма общих затрат ----------
+// ---------- Гистограмма общих затрат (ленивая) ----------
 App.ui.pages.renderCostHistogram = function() {
     if (!isChartAvailable()) return;
-    App.charts.destroyChart('financeCostHistogram');
     var canvas = document.getElementById('financeCostHistogram');
     if (!canvas) return;
+    var ctx = canvas.getContext('2d');
+
     var period = App.ui.pages.financePeriod;
     var labels, data;
     var monthly = aggregateMonthlyCosts();
@@ -306,32 +332,39 @@ App.ui.pages.renderCostHistogram = function() {
         });
     }
 
-    var ctx = canvas.getContext('2d');
-    App.charts._financeCostHist = new Chart(ctx, {
-        type: 'bar',
-        data: {
-            labels: labels,
-            datasets: [{
-                label: 'Общие затраты',
-                data: data,
-                backgroundColor: 'rgba(52, 152, 219, 0.7)'
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: { legend: { display: false } },
-            scales: { y: { beginAtZero: true } }
-        }
-    });
+    // Создаём или обновляем график
+    if (!App.charts._financeCostHist) {
+        App.charts._financeCostHist = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Общие затраты',
+                    data: data,
+                    backgroundColor: 'rgba(52, 152, 219, 0.7)'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: { y: { beginAtZero: true } }
+            }
+        });
+    } else {
+        App.charts._financeCostHist.data.labels = labels;
+        App.charts._financeCostHist.data.datasets[0].data = data;
+        App.charts._financeCostHist.update();
+    }
 };
 
-// ---------- Круговая диаграмма распределения ----------
+// ---------- Круговая диаграмма распределения (ленивая) ----------
 App.ui.pages.renderFinancePie = function() {
     if (!isChartAvailable()) return;
-    App.charts.destroyChart('financePieChart');
     var canvas = document.getElementById('financePieChart');
     if (!canvas) return;
+    var ctx = canvas.getContext('2d');
+
     var period = App.ui.pages.financePeriod;
     var range = getPeriodDateRange(period);
     var costs = getTotalCostsInPeriod(range.start, range.end);
@@ -339,23 +372,32 @@ App.ui.pages.renderFinancePie = function() {
     var data = [costs.fuel, costs.to, costs.parts, costs.tires];
     var colors = ['#e74c3c', '#3498db', '#2ecc71', '#f39c12'];
 
-    if (data.every(function(v){return v===0;})) return;
-    var ctx = canvas.getContext('2d');
-    App.charts._financePie = new Chart(ctx, {
-        type: 'doughnut',
-        data: {
-            labels: labels,
-            datasets: [{ data: data, backgroundColor: colors }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: true,
-            plugins: { legend: { position: 'bottom' } }
-        }
-    });
+    if (data.every(function(v){ return v===0; })) {
+        if (App.charts._financePie) App.charts._financePie.destroy();
+        return;
+    }
+
+    if (!App.charts._financePie) {
+        App.charts._financePie = new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: labels,
+                datasets: [{ data: data, backgroundColor: colors }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                plugins: { legend: { position: 'bottom' } }
+            }
+        });
+    } else {
+        App.charts._financePie.data.labels = labels;
+        App.charts._financePie.data.datasets[0].data = data;
+        App.charts._financePie.update();
+    }
 };
 
-// ---------- Сравнение периодов ----------
+// ---------- Сравнение периодов (ленивый график) ----------
 App.ui.pages.renderComparison = function() {
     var select1 = document.getElementById('compare-period-1');
     var select2 = document.getElementById('compare-period-2');
@@ -392,24 +434,29 @@ App.ui.pages.renderComparison = function() {
 
         var canvas = document.getElementById('financeComparisonChart');
         if (canvas && isChartAvailable()) {
-            if (App.charts._financeComp) App.charts._financeComp.destroy();
             var ctx = canvas.getContext('2d');
-            App.charts._financeComp = new Chart(ctx, {
-                type: 'bar',
-                data: {
-                    labels: ['Топливо','ТО','Запчасти','Шины'],
-                    datasets: [
-                        { label: key1, data: [c1.fuel, c1.to, c1.parts, c1.tires], backgroundColor: '#3498db' },
-                        { label: key2, data: [c2.fuel, c2.to, c2.parts, c2.tires], backgroundColor: '#e74c3c' }
-                    ]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: { legend: { position: 'bottom' } },
-                    scales: { y: { beginAtZero: true } }
-                }
-            });
+            var labels = ['Топливо','ТО','Запчасти','Шины'];
+            var datasets = [
+                { label: key1, data: [c1.fuel, c1.to, c1.parts, c1.tires], backgroundColor: '#3498db' },
+                { label: key2, data: [c2.fuel, c2.to, c2.parts, c2.tires], backgroundColor: '#e74c3c' }
+            ];
+
+            if (!App.charts._financeComp) {
+                App.charts._financeComp = new Chart(ctx, {
+                    type: 'bar',
+                    data: { labels: labels, datasets: datasets },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: { legend: { position: 'bottom' } },
+                        scales: { y: { beginAtZero: true } }
+                    }
+                });
+            } else {
+                App.charts._financeComp.data.labels = labels;
+                App.charts._financeComp.data.datasets = datasets;
+                App.charts._financeComp.update();
+            }
         }
     };
 
