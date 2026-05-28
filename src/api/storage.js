@@ -9,27 +9,9 @@ function checkResponse({ data, error }, actionName) {
     }
 }
 
-// ========== ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ДЛЯ RETRY ==========
-async function fetchWithRetry(fn, retries = 3, delay = 1000) {
-    let lastError;
-    for (let i = 0; i < retries; i++) {
-        try {
-            return await fn();
-        } catch (err) {
-            lastError = err;
-            console.warn(`[Storage] Попытка ${i + 1}/${retries} не удалась:`, err.message);
-            if (i < retries - 1) {
-                await new Promise(resolve => setTimeout(resolve, delay * Math.pow(2, i)));
-            }
-        }
-    }
-    throw lastError;
-}
-
 // ========== ОФЛАЙН-ОЧЕРЕДЬ ==========
 async function queueAction(action) {
     await App.store.addPendingAction(action);
-    // Регистрация фоновой синхронизации (если поддерживается)
     if ('serviceWorker' in navigator && 'SyncManager' in window) {
         try {
             const registration = await navigator.serviceWorker.ready;
@@ -38,10 +20,43 @@ async function queueAction(action) {
             console.warn('[Storage] Background Sync registration failed:', err);
         }
     }
-    // Если приложение онлайн – запускаем синхронизацию немедленно (улучшение UX)
     if (navigator.onLine && typeof App.db.sync.processSyncQueue === 'function') {
         setTimeout(() => App.db.sync.processSyncQueue(), 100);
     }
+}
+
+function refreshUIToFuel() {
+    if (typeof App.ui.pages.renderFuelTab === 'function') App.ui.pages.renderFuelTab();
+}
+
+function refreshUIToTables() {
+    if (typeof App.ui.pages.renderTOTable === 'function') App.ui.pages.renderTOTable();
+    if (typeof App.ui.pages.renderDashboard === 'function') App.ui.pages.renderDashboard();
+}
+
+function refreshUIToParts() {
+    if (typeof App.ui.pages.renderPartsTab === 'function') App.ui.pages.renderPartsTab();
+    if (typeof App.ui.pages.renderDashboard === 'function') App.ui.pages.renderDashboard();
+}
+
+function refreshUIToTires() {
+    if (typeof App.ui.pages.renderTiresTab === 'function') App.ui.pages.renderTiresTab();
+    if (typeof App.ui.pages.renderDashboard === 'function') App.ui.pages.renderDashboard();
+}
+
+function refreshUIToMileage() {
+    if (typeof App.ui.pages.renderDashboard === 'function') App.ui.pages.renderDashboard();
+    if (typeof App.ui.pages.renderTOStats === 'function') App.ui.pages.renderTOStats();
+}
+
+function refreshUIToSettings() {
+    if (typeof App.ui.pages.populateSettingsFields === 'function') App.ui.pages.populateSettingsFields();
+    if (typeof App.ui.pages.renderDashboard === 'function') App.ui.pages.renderDashboard();
+}
+
+function refreshUIToHistory() {
+    if (typeof App.ui.pages.renderHistoryCards === 'function') App.ui.pages.renderHistoryCards();
+    if (typeof App.ui.pages.renderDashboard === 'function') App.ui.pages.renderDashboard();
 }
 
 // ========== ОПЕРАЦИИ ==========
@@ -59,11 +74,11 @@ App.storage.saveOperation = async function(op) {
             if (idx !== -1) App.store.operations[idx] = op;
             else App.store.operations.push(op);
         } else {
-            // Временный ID для нового объекта (будет заменён при синхронизации)
             if (!op.id) op.id = crypto.randomUUID();
             App.store.operations.push(op);
         }
         App.toast('Операция сохранена локально', 'warning');
+        refreshUIToTables();
         return;
     }
     const res = await App.supa.saveOperation(op);
@@ -73,6 +88,7 @@ App.storage.saveOperation = async function(op) {
     const idx = App.store.operations.findIndex(o => o.id == op.id);
     if (idx !== -1) App.store.operations[idx] = op;
     else App.store.operations.push(op);
+    refreshUIToTables();
 };
 
 App.storage.deleteOperation = async function(operationId) {
@@ -86,12 +102,14 @@ App.storage.deleteOperation = async function(operationId) {
         await App.db.delete('operations', operationId);
         App.store.operations = App.store.operations.filter(o => o.id != operationId);
         App.toast('Удаление сохранено локально', 'warning');
+        refreshUIToTables();
         return;
     }
     const res = await App.supabase.from('operations').delete().eq('id', operationId).select();
     checkResponse(res, 'delete');
     await App.db.delete('operations', operationId);
     App.store.operations = App.store.operations.filter(o => o.id != operationId);
+    refreshUIToTables();
 };
 
 // ========== ИСТОРИЯ (записи ТО) ==========
@@ -106,6 +124,7 @@ App.storage.addHistoryRecord = async function(rec) {
         await App.store.saveHistoryRecordToDB(rec);
         App.store.serviceRecords.push(rec);
         App.toast('Запись сохранена локально', 'warning');
+        refreshUIToHistory();
         return;
     }
     const res = await App.supa.saveHistoryRecord(rec);
@@ -115,6 +134,7 @@ App.storage.addHistoryRecord = async function(rec) {
     const idx = App.store.serviceRecords.findIndex(r => r.id == rec.id);
     if (idx !== -1) App.store.serviceRecords[idx] = rec;
     else App.store.serviceRecords.push(rec);
+    refreshUIToHistory();
 };
 
 App.storage.updateHistoryRecord = async function(rowIndex, record) {
@@ -134,12 +154,14 @@ App.storage.deleteHistoryRecord = async function(rowIndex) {
         await App.db.delete('service_records', record.id);
         App.store.serviceRecords = App.store.serviceRecords.filter(r => r.id != record.id);
         App.toast('Удаление сохранено локально', 'warning');
+        refreshUIToHistory();
         return;
     }
     const res = await App.supabase.from('history').delete().eq('id', record.id).select();
     checkResponse(res, 'delete');
     await App.db.delete('service_records', record.id);
     App.store.serviceRecords = App.store.serviceRecords.filter(r => r.id != record.id);
+    refreshUIToHistory();
 };
 
 // ========== ЗАПЧАСТИ ==========
@@ -156,6 +178,7 @@ App.storage.savePart = async function(part) {
         if (idx !== -1) App.store.parts[idx] = part;
         else App.store.parts.push(part);
         App.toast('Запчасть сохранена локально', 'warning');
+        refreshUIToParts();
         return;
     }
     const res = await App.supa.savePart(part);
@@ -165,6 +188,7 @@ App.storage.savePart = async function(part) {
     const idx = App.store.parts.findIndex(p => p.id == part.id);
     if (idx !== -1) App.store.parts[idx] = part;
     else App.store.parts.push(part);
+    refreshUIToParts();
 };
 
 App.storage.deletePart = async function(partId) {
@@ -178,12 +202,14 @@ App.storage.deletePart = async function(partId) {
         await App.db.delete('parts', partId);
         App.store.parts = App.store.parts.filter(p => p.id != partId);
         App.toast('Удаление сохранено локально', 'warning');
+        refreshUIToParts();
         return;
     }
     const res = await App.supabase.from('parts').delete().eq('id', partId).select();
     checkResponse(res, 'delete');
     await App.db.delete('parts', partId);
     App.store.parts = App.store.parts.filter(p => p.id != partId);
+    refreshUIToParts();
 };
 
 // ========== ТОПЛИВО ==========
@@ -200,6 +226,7 @@ App.storage.saveFuelRecord = async function(id, record) {
         if (idx !== -1) App.store.fuelLog[idx] = record;
         else App.store.fuelLog.push(record);
         App.toast('Заправка сохранена локально', 'warning');
+        refreshUIToFuel();
         return;
     }
     const res = await App.supa.saveFuelRecord(record);
@@ -209,6 +236,7 @@ App.storage.saveFuelRecord = async function(id, record) {
     const idx = App.store.fuelLog.findIndex(f => f.id == record.id);
     if (idx !== -1) App.store.fuelLog[idx] = record;
     else App.store.fuelLog.push(record);
+    refreshUIToFuel();
 };
 
 App.storage.deleteFuelRecord = async function(id) {
@@ -222,12 +250,14 @@ App.storage.deleteFuelRecord = async function(id) {
         await App.db.delete('fuel_log', id);
         App.store.fuelLog = App.store.fuelLog.filter(f => f.id != id);
         App.toast('Удаление сохранено локально', 'warning');
+        refreshUIToFuel();
         return;
     }
     const res = await App.supabase.from('fuel_log').delete().eq('id', id).select();
     checkResponse(res, 'delete');
     await App.db.delete('fuel_log', id);
     App.store.fuelLog = App.store.fuelLog.filter(f => f.id != id);
+    refreshUIToFuel();
 };
 
 // ========== ШИНЫ ==========
@@ -244,6 +274,7 @@ App.storage.saveTireRecord = async function(id, record) {
         if (idx !== -1) App.store.tireLog[idx] = record;
         else App.store.tireLog.push(record);
         App.toast('Шины сохранены локально', 'warning');
+        refreshUIToTires();
         return;
     }
     const res = await App.supa.saveTireRecord(record);
@@ -253,6 +284,7 @@ App.storage.saveTireRecord = async function(id, record) {
     const idx = App.store.tireLog.findIndex(t => t.id == record.id);
     if (idx !== -1) App.store.tireLog[idx] = record;
     else App.store.tireLog.push(record);
+    refreshUIToTires();
 };
 
 App.storage.deleteTireRecord = async function(id) {
@@ -266,12 +298,14 @@ App.storage.deleteTireRecord = async function(id) {
         await App.db.delete('tires', id);
         App.store.tireLog = App.store.tireLog.filter(t => t.id != id);
         App.toast('Удаление сохранено локально', 'warning');
+        refreshUIToTires();
         return;
     }
     const res = await App.supabase.from('tires').delete().eq('id', id).select();
     checkResponse(res, 'delete');
     await App.db.delete('tires', id);
     App.store.tireLog = App.store.tireLog.filter(t => t.id != id);
+    refreshUIToTires();
 };
 
 // ========== ПРОБЕГ ==========
@@ -288,6 +322,7 @@ App.storage.addMileageRecord = async function(date, mileage, motohours) {
         await App.store.saveMileageRecordToDB(record);
         App.store.mileageHistory.push(record);
         App.toast('Запись пробега сохранена локально', 'warning');
+        refreshUIToMileage();
         return;
     }
     const res = await App.supabase.from('mileage_log').insert(record).select();
@@ -295,6 +330,7 @@ App.storage.addMileageRecord = async function(date, mileage, motohours) {
     if (res.data && res.data[0]) record.id = res.data[0].id;
     await App.store.saveMileageRecordToDB(record);
     App.store.mileageHistory.push(record);
+    refreshUIToMileage();
 };
 
 // ========== НАСТРОЙКИ ==========
@@ -309,6 +345,7 @@ App.storage.saveSettings = async function(settings) {
         Object.assign(App.store.settings, settings);
         await App.store.saveSettingsToDB();
         App.toast('Настройки сохранены локально', 'warning');
+        refreshUIToSettings();
         return;
     }
     await App.supa.saveVehicleState({
@@ -331,9 +368,10 @@ App.storage.saveSettings = async function(settings) {
     Object.assign(App.store.settings, settings);
     await App.store.saveSettingsToDB();
     App.toast('Настройки сохранены', 'success');
+    refreshUIToSettings();
 };
 
-// ========== ЗАГРУЗКА ВСЕХ ДАННЫХ (ОНЛАЙН) С RETRY ==========
+// ========== ЗАГРУЗКА ВСЕХ ДАННЫХ (ОНЛАЙН) ==========
 App.storage.loadAllData = async function() {
     if (!navigator.onLine) {
         App.toast('Нет подключения к интернету. Показываю кэшированные данные.', 'warning');
@@ -345,22 +383,16 @@ App.storage.loadAllData = async function() {
     }
 
     try {
-        // Оборачиваем загрузку в fetchWithRetry (3 попытки, задержка 1, 2, 4 сек)
-        const [operations, fuelLog, tireLog, parts, history, settings, mileageHistory] = await fetchWithRetry(
-            () => Promise.all([
-                App.supa.loadOperations(),
-                App.supa.loadFuelLog(),
-                App.supa.loadTires(),
-                App.supa.loadParts(),
-                App.supa.loadHistory(),
-                App.supa.loadSettings(),
-                App.supa.loadMileageHistory()
-            ]),
-            3,
-            1000
-        );
+        const [operations, fuelLog, tireLog, parts, history, settings, mileageHistory] = await Promise.all([
+            App.supa.loadOperations(),
+            App.supa.loadFuelLog(),
+            App.supa.loadTires(),
+            App.supa.loadParts(),
+            App.supa.loadHistory(),
+            App.supa.loadSettings(),
+            App.supa.loadMileageHistory()
+        ]);
 
-        // Сохраняем каждую сущность в IndexedDB
         for (const op of operations) await App.store.saveOperationToDB(op);
         for (const f of fuelLog) await App.store.saveFuelRecordToDB(f);
         for (const t of tireLog) await App.store.saveTireRecordToDB(t);
@@ -372,7 +404,6 @@ App.storage.loadAllData = async function() {
             await App.store.saveSettingsToDB();
         }
 
-        // Обновляем App.store
         App.store.operations = operations;
         App.store.fuelLog = fuelLog;
         App.store.tireLog = tireLog;
@@ -386,16 +417,6 @@ App.storage.loadAllData = async function() {
         App.setSyncStatus('synced');
     } catch (e) {
         console.error(e);
-        App.toast('Ошибка загрузки данных после нескольких попыток. Проверьте соединение.', 'error');
-        // При ошибке всё равно пытаемся показать кэшированные данные, если они есть
-        await App.store.loadFromIndexedDB();
-        if (App.store.operations.length > 0 || App.store.fuelLog.length > 0) {
-            document.getElementById('data-panel').style.display = 'block';
-            if (typeof App.renderAll === 'function') App.renderAll();
-            App.setSyncStatus('local');
-            App.toast('Показываю ранее загруженные данные из кэша.', 'warning');
-        } else {
-            App.toast('Не удалось загрузить данные из сети и из кэша.', 'error');
-        }
+        App.toast('Ошибка загрузки данных', 'error');
     }
 };
