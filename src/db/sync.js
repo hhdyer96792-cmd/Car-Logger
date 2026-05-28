@@ -110,24 +110,24 @@ App.db.sync._updateLocalId = async function(entityType, oldId, newId) {
     }
 };
 
+// ========== ИСПРАВЛЕННАЯ ФУНКЦИЯ _resolveConflict ==========
 App.db.sync._resolveConflict = async function(action) {
     const { entityType, entityId } = action;
-    let tableName, serverData;
+    let tableName;
+    switch (entityType) {
+        case 'operation': tableName = 'operations'; break;
+        case 'fuel': tableName = 'fuel_log'; break;
+        case 'tire': tableName = 'tires'; break;
+        case 'part': tableName = 'parts'; break;
+        case 'history': tableName = 'history'; break;
+        case 'mileage': tableName = 'mileage_log'; break;
+        default: return;
+    }
     try {
-        switch (entityType) {
-            case 'operation': tableName = 'operations'; break;
-            case 'fuel': tableName = 'fuel_log'; break;
-            case 'tire': tableName = 'tires'; break;
-            case 'part': tableName = 'parts'; break;
-            case 'history': tableName = 'history'; break;
-            case 'mileage': tableName = 'mileage_log'; break;
-            default: return;
-        }
-        // Загружаем актуальную версию с сервера
         const { data, error } = await App.supabase.from(tableName).select('*').eq('id', entityId).single();
         if (error) {
             if (error.status === 404) {
-                // На сервере запись удалена – удаляем локально
+                // Запись удалена на сервере – удаляем локально
                 await App.db.delete(tableName, entityId);
                 const storeKey = {
                     'operations': 'operations',
@@ -138,18 +138,16 @@ App.db.sync._resolveConflict = async function(action) {
                     'mileage_log': 'mileageHistory'
                 }[tableName];
                 if (storeKey && App.store[storeKey]) {
-                    App.store[storeKey] = App.store[storeKey].filter(item => item.id != entityId);
+                    App.store[storeKey] = App.store[storeKey].filter(i => i.id != entityId);
                 }
                 return;
             }
             throw error;
         }
-        serverData = data;
-        if (serverData) {
-            await App.db.sync._updateLocalFromServer(entityType, serverData);
-        }
+        // Обновляем локальную запись данными с сервера
+        await App.db.sync._updateLocalFromServer(entityType, data);
     } catch (err) {
-        console.error(`[Sync] Не удалось разрешить конфликт:`, err);
+        console.error('[Sync] Не удалось разрешить конфликт:', err);
     }
 };
 
