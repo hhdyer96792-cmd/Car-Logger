@@ -19,7 +19,8 @@ async function queueAction(action) {
         }
     }
     if (navigator.onLine && typeof App.db.sync.processSyncQueue === 'function') {
-        setTimeout(() => App.db.sync.processSyncQueue(), 100);
+        // Даём маленькую задержку, но после await addPendingAction это уже безопасно
+        setTimeout(() => App.db.sync.processSyncQueue(), 50);
     }
 }
 
