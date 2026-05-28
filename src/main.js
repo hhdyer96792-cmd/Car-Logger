@@ -419,27 +419,30 @@ let dbInitialized = false;
                     let masterPassword = null;
                     const hasPin = App.localAuth && await App.localAuth.isPinSet();
                     console.log('[DEBUG] hasPin =', hasPin);
-                    if (hasPin) {
-                        await new Promise(r => setTimeout(r, 100));
-                        const pin = await App.ui.promptModalAsync('Быстрый доступ', 'Введите PIN-код', true);
-                        if (pin) {
-                            masterPassword = await App.localAuth.verifyPin(pin);
-                            console.log('[DEBUG] verifyPin вернул', !!masterPassword);
-                            if (masterPassword) {
-                                const salt = App.db.encryption.getStoredSalt();
-                                const { key } = await App.db.encryption.initMasterKey(masterPassword, salt);
-                                App.db.encryption.setMasterKey(key, salt);
-                                await App.store.loadFromIndexedDB();
-                                if (typeof App.renderAll === 'function') App.renderAll();
-                                App.toast('Расшифровка по PIN успешна', 'success');
-                            } else {
-                                App.toast('Неверный PIN-код. Введите мастер-пароль.', 'warning');
-                                await App.localAuth.resetPin();
-                            }
-                        } else {
-                            await App.localAuth.resetPin();
-                        }
-                    }
+                   if (hasPin) {
+    await new Promise(r => setTimeout(r, 100));
+    try {
+        const pin = await App.ui.promptModalAsync('Быстрый доступ', 'Введите PIN-код', true);
+        if (pin) {
+            masterPassword = await App.localAuth.verifyPin(pin);
+            console.log('[DEBUG] verifyPin вернул', !!masterPassword);
+            if (masterPassword) {
+                const salt = App.db.encryption.getStoredSalt();
+                const { key } = await App.db.encryption.initMasterKey(masterPassword, salt);
+                App.db.encryption.setMasterKey(key, salt);
+                await App.store.loadFromIndexedDB();
+                if (typeof App.renderAll === 'function') App.renderAll();
+                App.toast('Расшифровка по PIN успешна', 'success');
+            }
+        }
+    } catch (pinError) {
+        // Обработка ошибок verifyPin (неверный PIN, блокировка)
+        console.warn('[DEBUG] PIN error:', pinError.message);
+        App.toast(pinError.message, 'error');
+        // При ошибке PIN не сбрасываем, просто продолжаем к мастер-паролю
+        masterPassword = null;
+    }
+}
                     if (!masterPassword) {
                         const hasMasterPassword = localStorage.getItem('vesta_master_password_set') === 'true';
                         console.log('[DEBUG] hasMasterPassword =', hasMasterPassword);
