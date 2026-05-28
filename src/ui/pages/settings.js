@@ -575,7 +575,7 @@ App.ui.pages.initRecoveryCodesUI = function() {
     });
 };
 
-// ==================== PIN-код ====================
+/// ==================== PIN-код ====================
 App.ui.pages.renderPinSettings = async function() {
     const container = document.getElementById('pin-settings-container');
     if (!container) return;
@@ -594,11 +594,25 @@ App.ui.pages.renderPinSettings = async function() {
         return;
     }
 
+    // Проверяем, заблокирован ли PIN
+    const attempts = localStorage.getItem('vesta_pin_attempts');
+    let blockedMessage = '';
+    if (attempts) {
+        try {
+            const data = JSON.parse(attempts);
+            if (data.blockedUntil && Date.now() < data.blockedUntil) {
+                const minutesLeft = Math.ceil((data.blockedUntil - Date.now()) / 60000);
+                blockedMessage = `<p class="hint" style="color: var(--danger);">PIN временно заблокирован (${minutesLeft} мин.). Введите мастер-пароль для разблокировки.</p>`;
+            }
+        } catch(e) {}
+    }
+
     if (hasPin) {
         container.innerHTML = `
             <div class="card">
                 <h3><i data-lucide="lock"></i> Быстрый вход по PIN</h3>
                 <p>PIN-код установлен. Вы можете сбросить его.</p>
+                ${blockedMessage}
                 <button id="pin-reset-btn" class="secondary-btn">Сбросить PIN</button>
             </div>
         `;
@@ -619,30 +633,10 @@ App.ui.pages.renderPinSettings = async function() {
             <div class="card">
                 <h3><i data-lucide="fingerprint"></i> Быстрый вход по PIN</h3>
                 <p>Установите PIN-код (4+ цифр), чтобы не вводить мастер-пароль при каждом запуске.</p>
+                ${blockedMessage}
                 <button id="pin-setup-btn" class="primary-btn">Установить PIN</button>
             </div>
         `;
-        
-        const attempts = localStorage.getItem('vesta_pin_attempts');
-let blockedMessage = '';
-if (attempts) {
-    try {
-        const data = JSON.parse(attempts);
-        if (data.blockedUntil && Date.now() < data.blockedUntil) {
-            const minutesLeft = Math.ceil((data.blockedUntil - Date.now()) / 60000);
-            blockedMessage = `<p class="hint" style="color: var(--danger);">PIN временно заблокирован (${minutesLeft} мин.). Введите мастер-пароль для разблокировки.</p>`;
-        }
-    } catch(e) {}
-}
-container.innerHTML = `
-    <div class="card">
-        <h3><i data-lucide="lock"></i> Быстрый вход по PIN</h3>
-        <p>PIN-код установлен. Вы можете сбросить его.</p>
-        ${blockedMessage}
-        <button id="pin-reset-btn" class="secondary-btn">Сбросить PIN</button>
-    </div>
-`;
-        
         const setupBtn = document.getElementById('pin-setup-btn');
         if (setupBtn) {
             const newSetupBtn = setupBtn.cloneNode(true);
