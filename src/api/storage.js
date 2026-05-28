@@ -6,7 +6,6 @@ function checkResponse({ data, error }, actionName) {
     if (error) throw error;
     // Для удаления не проверяем data (успешное удаление может вернуть пустой массив)
     if (actionName === 'delete') return;
-    // Для остальных действий можно проверить наличие данных, если нужно
 }
 
 async function queueAction(action) {
@@ -370,7 +369,7 @@ App.storage.saveSettings = async function(settings) {
     refreshUIToSettings();
 };
 
-// ========== ЗАГРУЗКА ВСЕХ ДАННЫХ (ОНЛАЙН) ==========
+// ========== ЗАГРУЗКА ВСЕХ ДАННЫХ (ОНЛАЙН) – ИСПРАВЛЕНА ==========
 App.storage.loadAllData = async function() {
     if (!navigator.onLine) {
         App.toast('Нет подключения к интернету. Показываю кэшированные данные.', 'warning');
@@ -392,7 +391,7 @@ App.storage.loadAllData = async function() {
             App.supa.loadMileageHistory()
         ]);
 
-        // Пакетная запись
+        // Используем пакетную запись для ускорения
         await App.db.putMany('operations', operations);
         await App.db.putMany('fuel_log', fuelLog);
         await App.db.putMany('tires', tireLog);
