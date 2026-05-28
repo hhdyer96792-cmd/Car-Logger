@@ -2,7 +2,6 @@
 window.App = window.App || {};
 App.timelineCharts = App.timelineCharts || {};
 
-// Хранилище активных экземпляров Chart.js для каждого canvas
 App.timelineCharts.activeCharts = {};
 
 App.timelineCharts.destroyChart = function(canvasId) {
