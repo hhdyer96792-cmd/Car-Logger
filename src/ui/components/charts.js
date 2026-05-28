@@ -434,11 +434,9 @@ App.charts.renderOilResourceBar = function() {
  * Мини-график расхода топлива (дашборд) – показывает средний расход.
  */
 App.charts.renderMiniFuelConsumptionChart = function() {
+    App.charts.destroyChart('dash-fuel-consumption-chart');
     var canvas = document.getElementById('dash-fuel-consumption-chart');
     if (!canvas) return;
-    if (App.charts._dashFuelChart) {
-        App.charts._dashFuelChart.destroy();
-    }
     var grouped = App.logic.groupFuelByMonth();
     var months = grouped.months.slice(-6);
     var data = grouped.averageConsumption.slice(-6);
@@ -481,7 +479,7 @@ App.charts.renderMiniFuelConsumptionChart = function() {
         scales: { y: { beginAtZero: true } }
     };
 
-    App.charts._dashFuelChart = new Chart(ctx, {
+    App.charts.activeCharts['dash-fuel-consumption-chart'] = new Chart(ctx, {
         type: chartType,
         data: { labels: months, datasets: [dataset] },
         options: options
@@ -489,18 +487,16 @@ App.charts.renderMiniFuelConsumptionChart = function() {
 };
 
 App.charts.renderMiniCostsChart = function() {
+    App.charts.destroyChart('dash-costs-chart');
     var canvas = document.getElementById('dash-costs-chart');
     if (!canvas) return;
-    if (App.charts._dashCostsChart) {
-        App.charts._dashCostsChart.destroy();
-    }
     var grouped = App.logic.groupCostsByMonth('6months');
     var months = grouped.months;
     var fuelCosts = grouped.fuelCosts;
     var toCosts = grouped.toCosts;
 
     var ctx = canvas.getContext('2d');
-    App.charts._dashCostsChart = new Chart(ctx, {
+    App.charts.activeCharts['dash-costs-chart'] = new Chart(ctx, {
         type: 'bar',
         data: {
             labels: months,
@@ -522,15 +518,13 @@ App.charts.renderMiniCostsChart = function() {
 };
 
 App.charts.renderMiniExpensePieChart = function() {
+    App.charts.destroyChart('dash-expense-pie-chart');
     var canvas = document.getElementById('dash-expense-pie-chart');
     if (!canvas) return;
-    if (App.charts._dashPieChart) {
-        App.charts._dashPieChart.destroy();
-    }
     var structure = App.logic.calculateExpenseStructure('6months');
 
     var ctx = canvas.getContext('2d');
-    App.charts._dashPieChart = new Chart(ctx, {
+    App.charts.activeCharts['dash-expense-pie-chart'] = new Chart(ctx, {
         type: 'doughnut',
         data: {
             labels: structure.labels,
