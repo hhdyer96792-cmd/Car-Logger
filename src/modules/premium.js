@@ -41,7 +41,6 @@ App.premium.checkStatus = async function() {
     App.store.isPremium = (data.active && data.tier !== 'free');
     
     if (data.active && data.tier !== 'free') {
-        // Включаем авто-загрузку модулей с обработкой ошибок
         try {
             await App.premium.loadModulesByTier(data.tier);
         } catch (err) {
@@ -83,6 +82,12 @@ App.premium.activateKey = async function(keyValue) {
     }
     
     await App.premium.checkStatus();
+    
+    // Обновляем интерфейс вкладки "Автомобиль", чтобы показать кнопки VIN/номер
+    if (typeof App.ui.pages.renderCarTab === 'function') {
+        App.ui.pages.renderCarTab();
+    }
+    
     return data;
 };
 
@@ -105,6 +110,11 @@ App.premium.deactivateDevice = async function() {
     App.store.isPremium = false;
     App.store.premiumTier = 'free';
     App.store.premiumFeatures = [];
+    
+    // Обновляем интерфейс вкладки "Автомобиль", чтобы скрыть кнопки
+    if (typeof App.ui.pages.renderCarTab === 'function') {
+        App.ui.pages.renderCarTab();
+    }
 };
 
 App.premium.loadModulesByTier = async function(tier) {
