@@ -300,12 +300,16 @@ App.store = {
     },
     saveCalendarCache: function() {},
 
+    // ========== ИСПРАВЛЕННЫЙ МЕТОД setActiveCar ==========
     setActiveCar: function(carId) {
         this.activeCarId = carId;
         localStorage.setItem('vesta_active_car_id', carId);
-        // Обновляем UI, но НЕ перезагружаем все данные из IndexedDB
         if (typeof App.ui.pages.renderCarSelector === 'function') App.ui.pages.renderCarSelector();
         if (typeof App.ui.pages.renderCarTab === 'function') App.ui.pages.renderCarTab();
+        // Обязательно перезагружаем все данные нового автомобиля
+        if (typeof App.storage.loadAllData === 'function') {
+            App.storage.loadAllData();
+        }
     },
 
     // ========== НАДЁЖНАЯ ЗАГРУЗКА АВТОМОБИЛЕЙ ==========
@@ -313,14 +317,12 @@ App.store = {
         try {
             const { data: { user } } = await App.supabase.auth.getUser();
             if (!user) return [];
-            // Прямой запрос к Supabase
             const { data: cars, error } = await App.supabase
                 .from('cars')
                 .select('*')
                 .eq('user_id', user.id);
             if (error) throw error;
             if (cars && cars.length) {
-                // Сохраняем в IndexedDB
                 for (const car of cars) {
                     await App.db.put('cars', car);
                 }
@@ -332,7 +334,6 @@ App.store = {
                 console.log('[Store] Автомобили загружены:', cars);
                 return cars;
             } else {
-                // Нет автомобилей – создаём
                 console.log('[Store] Автомобилей нет, создаём...');
                 const { data: newCar, error: createError } = await App.supabase
                     .from('cars')
