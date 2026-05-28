@@ -42,7 +42,7 @@ App.store = {
     calendarEventCache: new Map(),
     serverTimestamps: {},
 
-    // ========== ЗАГРУЗКА ИЗ INDEXEDDB ==========
+    // ========== ЗАГРУЗКА ИЗ INDEXEDDB (с фильтрацией по car_id) ==========
     loadFromIndexedDB: async function() {
         if (!App.db || !App.db._db) {
             console.warn('[Store] IndexedDB не инициализирована, загружаю из localStorage (fallback)');
@@ -51,88 +51,107 @@ App.store = {
         }
 
         try {
+            const activeCarId = this.activeCarId;
+            if (!activeCarId) {
+                console.warn('[Store] activeCarId не установлен, данные не загружены');
+                return;
+            }
+
             const ops = await App.db.getAll('operations');
-            this.operations = ops.map(op => ({
-                id: op.id,
-                uuid: op.id,
-                category: op.category,
-                name: op.name,
-                intervalKm: op.intervalKm || 0,
-                intervalMonths: op.intervalMonths || 0,
-                intervalMotohours: op.intervalMotohours || null,
-                lastDate: op.lastDate || null,
-                lastMileage: op.lastMileage || 0,
-                lastMotohours: op.lastMotohours || 0,
-                updatedAt: op.updatedAt
-            }));
+            this.operations = ops
+                .filter(op => op.car_id == activeCarId)
+                .map(op => ({
+                    id: op.id,
+                    uuid: op.id,
+                    category: op.category,
+                    name: op.name,
+                    intervalKm: op.intervalKm || 0,
+                    intervalMonths: op.intervalMonths || 0,
+                    intervalMotohours: op.intervalMotohours || null,
+                    lastDate: op.lastDate || null,
+                    lastMileage: op.lastMileage || 0,
+                    lastMotohours: op.lastMotohours || 0,
+                    updatedAt: op.updatedAt
+                }));
 
             const fuel = await App.db.getAll('fuel_log');
-            this.fuelLog = fuel.map(f => ({
-                id: f.id,
-                uuid: f.id,
-                date: f.date,
-                mileage: f.mileage,
-                liters: f.liters,
-                pricePerLiter: f.pricePerLiter,
-                fullTank: f.fullTank ? 'TRUE' : '',
-                fuelType: f.fuelType || 'Бензин',
-                notes: f.notes || ''
-            }));
+            this.fuelLog = fuel
+                .filter(f => f.car_id == activeCarId)
+                .map(f => ({
+                    id: f.id,
+                    uuid: f.id,
+                    date: f.date,
+                    mileage: f.mileage,
+                    liters: f.liters,
+                    pricePerLiter: f.pricePerLiter,
+                    fullTank: f.fullTank ? 'TRUE' : '',
+                    fuelType: f.fuelType || 'Бензин',
+                    notes: f.notes || ''
+                }));
 
             const tires = await App.db.getAll('tires');
-            this.tireLog = tires.map(t => ({
-                id: t.id,
-                uuid: t.id,
-                date: t.date,
-                type: t.type || '',
-                mileage: t.mileage,
-                model: t.model || '',
-                size: t.size || '',
-                wear: t.wear || '',
-                notes: t.notes || '',
-                purchaseCost: t.purchaseCost || 0,
-                mountCost: t.mountCost || 0,
-                isDIY: t.isDIY || false
-            }));
+            this.tireLog = tires
+                .filter(t => t.car_id == activeCarId)
+                .map(t => ({
+                    id: t.id,
+                    uuid: t.id,
+                    date: t.date,
+                    type: t.type || '',
+                    mileage: t.mileage,
+                    model: t.model || '',
+                    size: t.size || '',
+                    wear: t.wear || '',
+                    notes: t.notes || '',
+                    purchaseCost: t.purchaseCost || 0,
+                    mountCost: t.mountCost || 0,
+                    isDIY: t.isDIY || false
+                }));
 
             const parts = await App.db.getAll('parts');
-            this.parts = parts.map(p => ({
-                id: p.id,
-                uuid: p.id,
-                operation: p.operation || '',
-                oem: p.oem || '',
-                analog: p.analog || '',
-                price: p.price || '',
-                supplier: p.supplier || '',
-                link: p.link || '',
-                comment: p.comment || '',
-                inStock: p.inStock || 0,
-                location: p.location || '',
-                dateAdded: p.dateAdded || ''
-            }));
+            this.parts = parts
+                .filter(p => p.car_id == activeCarId)
+                .map(p => ({
+                    id: p.id,
+                    uuid: p.id,
+                    operation: p.operation || '',
+                    oem: p.oem || '',
+                    analog: p.analog || '',
+                    price: p.price || '',
+                    supplier: p.supplier || '',
+                    link: p.link || '',
+                    comment: p.comment || '',
+                    inStock: p.inStock || 0,
+                    location: p.location || '',
+                    dateAdded: p.dateAdded || ''
+                }));
 
             const history = await App.db.getAll('service_records');
-            this.serviceRecords = history.map(h => ({
-                id: h.id,
-                operation_id: h.operation_id,
-                date: h.date,
-                mileage: h.mileage || '',
-                motohours: h.motohours || '',
-                parts_cost: h.parts_cost || 0,
-                work_cost: h.work_cost || 0,
-                is_diy: h.is_diy || false,
-                notes: h.notes || '',
-                photo_url: h.photo_url || '',
-                user_id: h.user_id,
-                rowIndex: h.id
-            }));
+            this.serviceRecords = history
+                .filter(h => h.car_id == activeCarId)
+                .map(h => ({
+                    id: h.id,
+                    operation_id: h.operation_id,
+                    date: h.date,
+                    mileage: h.mileage || '',
+                    motohours: h.motohours || '',
+                    parts_cost: h.parts_cost || 0,
+                    work_cost: h.work_cost || 0,
+                    is_diy: h.is_diy || false,
+                    notes: h.notes || '',
+                    photo_url: h.photo_url || '',
+                    user_id: h.user_id,
+                    rowIndex: h.id
+                }));
 
             const mileage = await App.db.getAll('mileage_log');
-            this.mileageHistory = mileage.map(m => ({
-                date: m.date,
-                mileage: m.mileage,
-                motohours: m.motohours || 0
-            })).sort((a, b) => new Date(a.date) - new Date(b.date));
+            this.mileageHistory = mileage
+                .filter(m => m.car_id == activeCarId)
+                .map(m => ({
+                    date: m.date,
+                    mileage: m.mileage,
+                    motohours: m.motohours || 0
+                }))
+                .sort((a, b) => new Date(a.date) - new Date(b.date));
 
             const settings = await App.db.getById('settings', 1);
             if (settings) {
@@ -168,7 +187,10 @@ App.store = {
 
             const cars = await App.db.getAll('cars');
             this.cars = cars;
-            this.activeCarId = localStorage.getItem('vesta_active_car_id') || (cars[0] ? cars[0].id : null);
+            if (!this.activeCarId && cars.length > 0) {
+                this.activeCarId = cars[0].id;
+                localStorage.setItem('vesta_active_car_id', this.activeCarId);
+            }
 
             const pending = await App.db.getAll('pending_actions');
             this.pendingActions = pending.sort((a, b) => a.timestamp - b.timestamp);
@@ -178,7 +200,7 @@ App.store = {
             this.purchaseDate = '';
 
             this.calculateOwnershipDays();
-            console.log('[Store] Данные загружены из IndexedDB');
+            console.log('[Store] Данные загружены из IndexedDB с фильтром car_id =', activeCarId);
         } catch (err) {
             console.error('[Store] Ошибка загрузки из IndexedDB:', err);
             this.initFromLocalStorage();
@@ -300,19 +322,16 @@ App.store = {
     },
     saveCalendarCache: function() {},
 
-    // ========== ИСПРАВЛЕННЫЙ МЕТОД setActiveCar ==========
     setActiveCar: function(carId) {
         this.activeCarId = carId;
         localStorage.setItem('vesta_active_car_id', carId);
         if (typeof App.ui.pages.renderCarSelector === 'function') App.ui.pages.renderCarSelector();
         if (typeof App.ui.pages.renderCarTab === 'function') App.ui.pages.renderCarTab();
-        // Обязательно перезагружаем все данные нового автомобиля
         if (typeof App.storage.loadAllData === 'function') {
             App.storage.loadAllData();
         }
     },
 
-    // ========== НАДЁЖНАЯ ЗАГРУЗКА АВТОМОБИЛЕЙ ==========
     loadCars: async function() {
         try {
             const { data: { user } } = await App.supabase.auth.getUser();
