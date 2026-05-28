@@ -18,6 +18,7 @@ App.utils.validateNumberInput = function(input, allowFloat, allowEmpty, allowNeg
         input.style.borderColor = '';
         return null;
     }
+var normalized = raw.replace(',', '.');
     var num = allowFloat ? parseFloat(raw) : parseInt(raw, 10);
     if (isNaN(num) || (allowFloat && raw.match(/[^0-9.,\-]/)) || (!allowFloat && raw.match(/[^0-9\-]/))) {
         input.style.borderColor = 'var(--danger)';
