@@ -9,6 +9,23 @@ function checkResponse({ data, error }, actionName) {
     }
 }
 
+// ========== ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ДЛЯ RETRY ==========
+async function fetchWithRetry(fn, retries = 3, delay = 1000) {
+    let lastError;
+    for (let i = 0; i < retries; i++) {
+        try {
+            return await fn();
+        } catch (err) {
+            lastError = err;
+            console.warn(`[Storage] Попытка ${i + 1}/${retries} не удалась:`, err.message);
+            if (i < retries - 1) {
+                await new Promise(resolve => setTimeout(resolve, delay * Math.pow(2, i)));
+            }
+        }
+    }
+    throw lastError;
+}
+
 // ========== ОФЛАЙН-ОЧЕРЕДЬ ==========
 async function queueAction(action) {
     await App.store.addPendingAction(action);
@@ -316,7 +333,7 @@ App.storage.saveSettings = async function(settings) {
     App.toast('Настройки сохранены', 'success');
 };
 
-// ========== ЗАГРУЗКА ВСЕХ ДАННЫХ (ОНЛАЙН) ==========
+// ========== ЗАГРУЗКА ВСЕХ ДАННЫХ (ОНЛАЙН) С RETRY ==========
 App.storage.loadAllData = async function() {
     if (!navigator.onLine) {
         App.toast('Нет подключения к интернету. Показываю кэшированные данные.', 'warning');
@@ -328,15 +345,20 @@ App.storage.loadAllData = async function() {
     }
 
     try {
-        const [operations, fuelLog, tireLog, parts, history, settings, mileageHistory] = await Promise.all([
-            App.supa.loadOperations(),
-            App.supa.loadFuelLog(),
-            App.supa.loadTires(),
-            App.supa.loadParts(),
-            App.supa.loadHistory(),
-            App.supa.loadSettings(),
-            App.supa.loadMileageHistory()
-        ]);
+        // Оборачиваем загрузку в fetchWithRetry (3 попытки, задержка 1, 2, 4 сек)
+        const [operations, fuelLog, tireLog, parts, history, settings, mileageHistory] = await fetchWithRetry(
+            () => Promise.all([
+                App.supa.loadOperations(),
+                App.supa.loadFuelLog(),
+                App.supa.loadTires(),
+                App.supa.loadParts(),
+                App.supa.loadHistory(),
+                App.supa.loadSettings(),
+                App.supa.loadMileageHistory()
+            ]),
+            3,
+            1000
+        );
 
         // Сохраняем каждую сущность в IndexedDB
         for (const op of operations) await App.store.saveOperationToDB(op);
@@ -364,6 +386,16 @@ App.storage.loadAllData = async function() {
         App.setSyncStatus('synced');
     } catch (e) {
         console.error(e);
-        App.toast('Ошибка загрузки данных', 'error');
+        App.toast('Ошибка загрузки данных после нескольких попыток. Проверьте соединение.', 'error');
+        // При ошибке всё равно пытаемся показать кэшированные данные, если они есть
+        await App.store.loadFromIndexedDB();
+        if (App.store.operations.length > 0 || App.store.fuelLog.length > 0) {
+            document.getElementById('data-panel').style.display = 'block';
+            if (typeof App.renderAll === 'function') App.renderAll();
+            App.setSyncStatus('local');
+            App.toast('Показываю ранее загруженные данные из кэша.', 'warning');
+        } else {
+            App.toast('Не удалось загрузить данные из сети и из кэша.', 'error');
+        }
     }
 };
