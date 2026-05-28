@@ -56,17 +56,32 @@ App.db.sync._executeAction = async function(action) {
 
 App.db.sync._executeDelete = async function(action) {
     const { entityType, entityId } = action;
-    let deleteMethod;
+    let tableName;
     switch (entityType) {
-        case 'operation': deleteMethod = () => App.storage.deleteOperation(entityId); break;
-        case 'fuel': deleteMethod = () => App.storage.deleteFuelRecord(entityId); break;
-        case 'tire': deleteMethod = () => App.storage.deleteTireRecord(entityId); break;
-        case 'part': deleteMethod = () => App.storage.deletePart(entityId); break;
-        case 'history': deleteMethod = () => App.storage.deleteHistoryRecord(entityId); break;
+        case 'operation': tableName = 'operations'; break;
+        case 'fuel': tableName = 'fuel_log'; break;
+        case 'tire': tableName = 'tires'; break;
+        case 'part': tableName = 'parts'; break;
+        case 'history': tableName = 'history'; break;
         default: throw new Error(`Unknown entityType for delete: ${entityType}`);
     }
-    const result = await deleteMethod();
-    if (result && result.error) throw result.error;
+    // Прямое удаление через Supabase
+    const { error } = await App.supabase.from(tableName).delete().eq('id', entityId);
+    if (error) throw error;
+    // Удаляем локальную запись
+    await App.db.delete(tableName, entityId);
+    // Обновляем соответствующий массив в store
+    let storeKey;
+    switch (entityType) {
+        case 'operation': storeKey = 'operations'; break;
+        case 'fuel': storeKey = 'fuelLog'; break;
+        case 'tire': storeKey = 'tireLog'; break;
+        case 'part': storeKey = 'parts'; break;
+        case 'history': storeKey = 'serviceRecords'; break;
+    }
+    if (storeKey && App.store[storeKey]) {
+        App.store[storeKey] = App.store[storeKey].filter(item => item.id != entityId);
+    }
     return { success: true };
 };
 
@@ -96,7 +111,46 @@ App.db.sync._updateLocalId = async function(entityType, oldId, newId) {
 };
 
 App.db.sync._resolveConflict = async function(action) {
-    console.warn('[Sync] Conflict resolution not fully implemented');
+    const { entityType, entityId } = action;
+    let tableName, serverData;
+    try {
+        switch (entityType) {
+            case 'operation': tableName = 'operations'; break;
+            case 'fuel': tableName = 'fuel_log'; break;
+            case 'tire': tableName = 'tires'; break;
+            case 'part': tableName = 'parts'; break;
+            case 'history': tableName = 'history'; break;
+            case 'mileage': tableName = 'mileage_log'; break;
+            default: return;
+        }
+        // Загружаем актуальную версию с сервера
+        const { data, error } = await App.supabase.from(tableName).select('*').eq('id', entityId).single();
+        if (error) {
+            if (error.status === 404) {
+                // На сервере запись удалена – удаляем локально
+                await App.db.delete(tableName, entityId);
+                const storeKey = {
+                    'operations': 'operations',
+                    'fuel_log': 'fuelLog',
+                    'tires': 'tireLog',
+                    'parts': 'parts',
+                    'history': 'serviceRecords',
+                    'mileage_log': 'mileageHistory'
+                }[tableName];
+                if (storeKey && App.store[storeKey]) {
+                    App.store[storeKey] = App.store[storeKey].filter(item => item.id != entityId);
+                }
+                return;
+            }
+            throw error;
+        }
+        serverData = data;
+        if (serverData) {
+            await App.db.sync._updateLocalFromServer(entityType, serverData);
+        }
+    } catch (err) {
+        console.error(`[Sync] Не удалось разрешить конфликт:`, err);
+    }
 };
 
 App.db.sync._updateLocalFromServer = async function(entityType, serverData) {
@@ -107,6 +161,7 @@ App.db.sync._updateLocalFromServer = async function(entityType, serverData) {
         case 'tire': storeArray = App.store.tireLog; storeName = 'tires'; break;
         case 'part': storeArray = App.store.parts; storeName = 'parts'; break;
         case 'history': storeArray = App.store.serviceRecords; storeName = 'service_records'; break;
+        case 'mileage': storeArray = App.store.mileageHistory; storeName = 'mileage_log'; break;
         default: return;
     }
     const idx = storeArray.findIndex(i => i.id == serverData.id);
