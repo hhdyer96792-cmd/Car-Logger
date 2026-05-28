@@ -8,7 +8,7 @@ App.ui.pages.renderTiresTab = function() {
     App.ui.pages.renderTotalTiresCost();
     App.ui.pages.renderTireWearBars();
     App.ui.pages.renderTiresCards();
-    App.ui.pages.renderTireCalculator(); // калькулятор не меняется
+    App.ui.pages.renderTireCalculator();
 };
 
 // Поддержка старого вызова из events.js
@@ -16,7 +16,7 @@ App.ui.pages.renderTiresTable = function() {
     App.ui.pages.renderTiresTab();
 };
 
-// ---------- 1. Карточка «Всего затрат на колёса» ----------
+// ---------- 1. Карточка «Всего затрат на колёса» (с защитой от undefined) ----------
 App.ui.pages.renderTotalTiresCost = function() {
     var total = (App.store.tireLog || []).reduce(function(sum, t) {
         return sum + (parseFloat(t.purchaseCost) || 0) + (parseFloat(t.mountCost) || 0) + (parseFloat(t.diskCost) || 0);
@@ -25,7 +25,7 @@ App.ui.pages.renderTotalTiresCost = function() {
     if (el) el.textContent = total.toLocaleString() + ' ₽';
 };
 
-// ---------- 3. Прогресс-бары остатка протектора ----------
+// ---------- 2. Прогресс-бары остатка протектора ----------
 App.ui.pages.renderTireWearBars = function() {
     var container = document.getElementById('tire-wear-container');
     if (!container) return;
@@ -84,7 +84,7 @@ App.ui.pages.renderTireWearBars = function() {
     App.initIcons();
 };
 
-// ---------- 5. Карточки истории шин ----------
+// ---------- 3. Карточки истории шин (с защитой от undefined) ----------
 App.ui.pages.renderTiresCards = function() {
     var container = document.getElementById('tires-cards-container');
     if (!container) return;
@@ -105,7 +105,7 @@ App.ui.pages.renderTiresCards = function() {
         html += '<strong>' + App.utils.escapeHtml(t.date) + ' · ' + (t.type || '—') + ' · ' + App.utils.escapeHtml(t.model || '') + ' ' + App.utils.escapeHtml(t.size || '') + '</strong>';
         html += '<div class="card-meta">Пробег: ' + (t.mileage || '—') + ' км · Глубина протектора: ' + depth.toFixed(1) + ' мм</div>';
         html += '<div class="card-meta">Покупка: ' + (t.purchaseCost || '0') + ' ₽ · Монтаж: ' + (t.mountCost || '0') + ' ₽' + (t.isDIY ? ' (DIY)' : '') + '</div>';
-        if (t.diskCost > 0) html += '<div class="card-meta">Диски: ' + t.diskCost + ' ₽</div>';
+        if (t.diskCost > 0) html += '<div class="card-meta">Диски: ' + (t.diskCost || 0) + ' ₽</div>';
         if (t.notes) html += '<div class="card-meta">Прим.: ' + App.utils.escapeHtml(t.notes) + '</div>';
         html += '</div>';
         html += '<button class="icon-btn tire-toggle-btn"><i data-lucide="more-vertical"></i></button>';
@@ -139,7 +139,7 @@ App.ui.pages.renderTiresCards = function() {
     App.initIcons();
 };
 
-// ---------- КАЛЬКУЛЯТОР (существующий код, без изменений) ----------
+// ---------- КАЛЬКУЛЯТОР (без изменений) ----------
 App.ui.pages.parseTireSize = function(sizeStr) {
     var match = sizeStr.match(/(\d+)[\/\-](\d+)[\/\-R](\d+)/i);
     if (!match) return null;
@@ -275,7 +275,6 @@ App.ui.pages.openTireModal = function(record) {
             typeInput.value = newType;
             typeToggle.textContent = newType;
             typeToggle.className = 'tire-type-btn ' + (newType === 'Лето' ? 'summer' : 'winter');
-            // обновить подсказку глубины
             var wearUnit = modal.querySelector('#wear-unit');
             if (wearUnit) wearUnit.textContent = newType === 'Зима' ? '%' : 'мм';
         });
