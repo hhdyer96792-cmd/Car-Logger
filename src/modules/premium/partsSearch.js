@@ -1,29 +1,8 @@
 // src/modules/premium/partsSearch.js
 let vinInfoCache = new Map()
 let partsCache = new Map()
-let decoder = null // для @cardog/corgi
+let decoder = null
 
-// Инициализация (загружаем локальный декодер VIN)
-export async function init() {
-    console.log('[PartsSearch] Premium module initialized')
-    try {
-        // Динамический импорт библиотеки corgi
-        const { createDecoder } = await import('https://unpkg.com/@cardog/corgi@0.2.0/dist/browser/index.js')
-        decoder = await createDecoder({
-            databasePath: 'https://corgi.cardog.io/vpic.lite.db.gz'
-        })
-        console.log('[PartsSearch] Local VIN decoder ready')
-    } catch (err) {
-        console.warn('[PartsSearch] Local VIN decoder not available:', err)
-    }
-}
-
-// Закрыть декодер (при необходимости)
-export async function close() {
-    if (decoder) await decoder.close()
-}
-
-// Валидация VIN (формат, запрещённые символы I, O, Q)
 function validateVin(vin) {
     if (!vin || typeof vin !== 'string') {
         throw new Error('VIN не указан')
@@ -32,7 +11,6 @@ function validateVin(vin) {
     if (cleanVin.length !== 17) {
         throw new Error('VIN должен содержать ровно 17 символов')
     }
-    // Допустимые символы: A-H, J-N, P, R-Z, 0-9 (исключая I, O, Q)
     const validPattern = /^[A-HJ-NPR-Z0-9]{17}$/i
     if (!validPattern.test(cleanVin)) {
         throw new Error('VIN содержит недопустимые символы (допустимы буквы A-H J-N P R-Z и цифры, запрещены I, O, Q)')
@@ -40,7 +18,33 @@ function validateVin(vin) {
     return cleanVin
 }
 
-// Получение характеристик по VIN (локально + NHTSA)
+export async function init() {
+    console.log('[PartsSearch] Premium module initialized')
+    let retries = 3
+    while (retries > 0 && !decoder) {
+        try {
+            const { createDecoder } = await import('https://unpkg.com/@cardog/corgi@0.2.0/dist/browser/index.js')
+            decoder = await createDecoder({
+                databasePath: 'https://corgi.cardog.io/vpic.lite.db.gz'
+            })
+            console.log('[PartsSearch] Local VIN decoder ready')
+            break
+        } catch (err) {
+            console.warn('[PartsSearch] Local VIN decoder not available, retrying...', err)
+            retries--
+            if (retries === 0) {
+                console.error('[PartsSearch] Failed to load VIN decoder after multiple attempts')
+            } else {
+                await new Promise(r => setTimeout(r, 1000))
+            }
+        }
+    }
+}
+
+export async function close() {
+    if (decoder) await decoder.close()
+}
+
 export async function getVehicleInfo(vin) {
     const cleanVin = validateVin(vin)
     
@@ -51,7 +55,6 @@ export async function getVehicleInfo(vin) {
         return cached.data
     }
 
-    // 1. Локальное декодирование (бесплатно, офлайн)
     let localData = null
     if (decoder) {
         try {
@@ -62,7 +65,6 @@ export async function getVehicleInfo(vin) {
         } catch (e) {}
     }
 
-    // 2. Запрос к Edge Function (NHTSA)
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), 15000)
     try {
@@ -72,7 +74,6 @@ export async function getVehicleInfo(vin) {
         })
         clearTimeout(timeout)
         if (error) throw new Error(error.message)
-        // Объединяем с локальными данными (локальные могут быть точнее для некоторых полей)
         const combined = { ...data, ...localData }
         await App.db.put('vin_info', { id: cleanVin, data: combined, timestamp: Date.now() })
         vinInfoCache.set(cleanVin, combined)
@@ -84,7 +85,6 @@ export async function getVehicleInfo(vin) {
     }
 }
 
-// Получение информации по номерному знаку (Великобритания / Нидерланды)
 export async function getVehicleInfoByPlate(plate, country) {
     if (!plate || !country) throw new Error('Требуется номер и страна')
     country = country.toLowerCase()
@@ -115,7 +115,6 @@ export async function getVehicleInfoByPlate(plate, country) {
     }
 }
 
-// Поиск запчастей через платное API (только для премиум)
 export async function searchPartsByVIN(vin, options = {}) {
     if (!App.store.isPremium) throw new Error('Доступно только в Premium')
     const cleanVin = validateVin(vin)
@@ -137,7 +136,6 @@ export async function searchPartsByVIN(vin, options = {}) {
     }
 }
 
-// Поиск по OEM номеру (премиум)
 export async function searchPartsByOEM(oem, options = {}) {
     if (!App.store.isPremium) throw new Error('Доступно только в Premium')
     if (!oem) throw new Error('OEM номер обязателен')
@@ -160,13 +158,11 @@ export async function searchPartsByOEM(oem, options = {}) {
     }
 }
 
-// Модальное окно с информацией об автомобиле (бесплатно) – теперь поддерживает и VIN, и номер
 export async function showVehicleInfoModal(query, type = 'vin') {
     const modal = App.ui.createModal('Информация об автомобиле', '<div class="spinner"></div><p class="hint">Загрузка...</p>')
     try {
         let info
         if (type === 'vin') {
-            // Валидация VIN произойдёт внутри getVehicleInfo
             info = await getVehicleInfo(query)
         } else if (type === 'plate') {
             const parts = query.split(':')
@@ -191,7 +187,6 @@ export async function showVehicleInfoModal(query, type = 'vin') {
             if (searchBtn) {
                 searchBtn.onclick = async () => {
                     resultModal.remove()
-                    // Если у нас есть VIN – используем его, иначе пробуем найти по номеру (может не быть)
                     const vin = info.vin || (type === 'vin' ? query : null)
                     if (vin) await showPartsModal(vin)
                     else App.toast('VIN не найден, поиск запчастей недоступен', 'error')
@@ -204,7 +199,6 @@ export async function showVehicleInfoModal(query, type = 'vin') {
     }
 }
 
-// Модальное окно с результатами поиска запчастей (премиум) – без изменений
 export async function showPartsModal(vin) {
     if (!App.store.isPremium) {
         App.ui.createModal('Premium функция', '<p>Поиск запчастей доступен только в Premium-подписке</p><button id="upgrade-btn" class="primary-btn">Активировать Premium</button>')
