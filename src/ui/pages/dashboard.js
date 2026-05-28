@@ -278,7 +278,7 @@ App.ui.pages.renderChartSelectors = function() {
     App.initIcons();
 };
 
-// Отрисовка всех трёх выбранных графиков
+// Отрисовка всех трёх выбранных графиков (полная реализация всех 12 типов)
 App.ui.pages.renderSelectedCharts = function() {
     var selection = App.ui.pages.loadChartSelection();
     var chartIds = [selection.chart1, selection.chart2, selection.chart3];
@@ -317,9 +317,65 @@ App.ui.pages.renderSelectedCharts = function() {
                     if (typeof App.timelineCharts.renderAverageFuelPrice === 'function')
                         App.timelineCharts.renderAverageFuelPrice(canvasId, period);
                     break;
-                default:
-                    console.log('График типа ' + chartId + ' будет реализован позже');
+                case 4:
+                    if (typeof App.timelineCharts.renderFuelConsumption === 'function')
+                        App.timelineCharts.renderFuelConsumption(canvasId, period);
+                    else
+                        App.timelineCharts.showNoDataMessage(document.getElementById(canvasId), 'График расхода топлива в разработке');
                     break;
+                case 5:
+                    if (typeof App.timelineCharts.renderTOCostsByCategory === 'function')
+                        App.timelineCharts.renderTOCostsByCategory(canvasId, period);
+                    else
+                        App.timelineCharts.showNoDataMessage(document.getElementById(canvasId), 'График затрат на ТО по категориям в разработке');
+                    break;
+                case 6:
+                    if (typeof App.timelineCharts.renderTiresAndPartsCosts === 'function')
+                        App.timelineCharts.renderTiresAndPartsCosts(canvasId, period);
+                    else
+                        App.timelineCharts.showNoDataMessage(document.getElementById(canvasId), 'График расходов на шины и запчасти в разработке');
+                    break;
+                case 7:
+                    if (typeof App.timelineCharts.renderMileageForecast === 'function')
+                        App.timelineCharts.renderMileageForecast(canvasId, period);
+                    else
+                        App.timelineCharts.showNoDataMessage(document.getElementById(canvasId), 'Прогноз пробега в разработке');
+                    break;
+                case 8:
+                    if (typeof App.timelineCharts.renderOperationsCount === 'function')
+                        App.timelineCharts.renderOperationsCount(canvasId, period);
+                    else
+                        App.timelineCharts.showNoDataMessage(document.getElementById(canvasId), 'График количества операций в разработке');
+                    break;
+                case 9:
+                    if (typeof App.timelineCharts.renderCostPerKm === 'function')
+                        App.timelineCharts.renderCostPerKm(canvasId, period);
+                    else
+                        App.timelineCharts.showNoDataMessage(document.getElementById(canvasId), 'График стоимости км в разработке');
+                    break;
+                case 10:
+                    if (typeof App.timelineCharts.renderAverageSpeed === 'function')
+                        App.timelineCharts.renderAverageSpeed(canvasId, period);
+                    else
+                        App.timelineCharts.showNoDataMessage(document.getElementById(canvasId), 'График средней скорости в разработке');
+                    break;
+                case 11:
+                    if (typeof App.timelineCharts.renderMileageAndHours === 'function')
+                        App.timelineCharts.renderMileageAndHours(canvasId, period);
+                    else
+                        App.timelineCharts.showNoDataMessage(document.getElementById(canvasId), 'График пробега и моточасов в разработке');
+                    break;
+                case 12:
+                    if (typeof App.timelineCharts.renderExpensePie === 'function')
+                        App.timelineCharts.renderExpensePie(canvasId, period);
+                    else
+                        App.timelineCharts.showNoDataMessage(document.getElementById(canvasId), 'Круговая диаграмма расходов в разработке');
+                    break;
+                default:
+                    console.warn('Неизвестный тип графика:', chartId);
+                    if (typeof App.timelineCharts.showNoDataMessage === 'function') {
+                        App.timelineCharts.showNoDataMessage(document.getElementById(canvasId), 'График временно недоступен');
+                    }
             }
         } else {
             console.warn('App.timelineCharts не загружен');
@@ -803,6 +859,44 @@ App.ui.pages.renderDesktopDashboard = function() {
                     if (typeof App.timelineCharts.renderAverageFuelPrice === 'function')
                         App.timelineCharts.renderAverageFuelPrice(canvasId, period);
                     break;
+                case 4:
+                    if (typeof App.timelineCharts.renderFuelConsumption === 'function')
+                        App.timelineCharts.renderFuelConsumption(canvasId, period);
+                    break;
+                case 5:
+                    if (typeof App.timelineCharts.renderTOCostsByCategory === 'function')
+                        App.timelineCharts.renderTOCostsByCategory(canvasId, period);
+                    break;
+                case 6:
+                    if (typeof App.timelineCharts.renderTiresAndPartsCosts === 'function')
+                        App.timelineCharts.renderTiresAndPartsCosts(canvasId, period);
+                    break;
+                case 7:
+                    if (typeof App.timelineCharts.renderMileageForecast === 'function')
+                        App.timelineCharts.renderMileageForecast(canvasId, period);
+                    break;
+                case 8:
+                    if (typeof App.timelineCharts.renderOperationsCount === 'function')
+                        App.timelineCharts.renderOperationsCount(canvasId, period);
+                    break;
+                case 9:
+                    if (typeof App.timelineCharts.renderCostPerKm === 'function')
+                        App.timelineCharts.renderCostPerKm(canvasId, period);
+                    break;
+                case 10:
+                    if (typeof App.timelineCharts.renderAverageSpeed === 'function')
+                        App.timelineCharts.renderAverageSpeed(canvasId, period);
+                    break;
+                case 11:
+                    if (typeof App.timelineCharts.renderMileageAndHours === 'function')
+                        App.timelineCharts.renderMileageAndHours(canvasId, period);
+                    break;
+                case 12:
+                    if (typeof App.timelineCharts.renderExpensePie === 'function')
+                        App.timelineCharts.renderExpensePie(canvasId, period);
+                    break;
+                default:
+                    console.warn('Неизвестный тип графика:', chartId);
             }
         });
     });
@@ -858,7 +952,7 @@ App.ui.pages.showChartMenu = function(chartNum) {
             var grouped = App.logic.groupTotalCostsByMonth(period === 'year' ? 12 : (period === 'quarter' ? 3 : 1));
             for (var i = 0; i < grouped.months.length; i++) {
                 if (chartId === 1) {
-                    tableHtml += '<tr><td>' + grouped.months[i] + '</td><td>' + grouped.totalCosts[i].toLocaleString() + ' ₽</td></tr>';
+                    tableHtml += '<tr><td>' + grouped.months[i] + '<tr><td>' + grouped.totalCosts[i].toLocaleString() + ' ₽</td></tr>';
                 } else if (chartId === 2) {
                     tableHtml += '<tr><td>' + grouped.months[i] + '</td><td>Топливо: ' + grouped.fuelCosts[i].toLocaleString() + ' ₽<br>ТО: ' + grouped.toCosts[i].toLocaleString() + ' ₽</td></tr>';
                 }
@@ -882,6 +976,73 @@ App.ui.pages.showChartMenu = function(chartNum) {
                 var avg = data.totalLiters > 0 ? (data.totalCost / data.totalLiters).toFixed(2) : '—';
                 tableHtml += '<tr><td>' + m + '</td><td>' + avg + ' ₽/л</td></tr>';
             });
+        } else if (chartId === 4) {
+            // Для расхода топлива можно показать средний расход по месяцам
+            var fuelGrouped = App.logic.groupFuelByMonth();
+            var consumptionMonths = fuelGrouped.months;
+            var avgConsumption = fuelGrouped.averageConsumption;
+            for (var idx = 0; idx < consumptionMonths.length; idx++) {
+                var val = avgConsumption[idx];
+                if (val !== null) {
+                    tableHtml += '<tr><td>' + consumptionMonths[idx] + '</td><td>' + val.toFixed(1) + ' л/100км</td></tr>';
+                }
+            }
+        } else if (chartId === 5) {
+            var catCosts = {};
+            App.store.serviceRecords.forEach(function(rec) {
+                var op = App.store.operations.find(function(o) { return o.id == rec.operation_id; });
+                var cat = op ? op.category : 'Прочее';
+                var cost = (Number(rec.parts_cost) || 0) + (Number(rec.work_cost) || 0);
+                catCosts[cat] = (catCosts[cat] || 0) + cost;
+            });
+            for (var cat in catCosts) {
+                tableHtml += '<tr><td>' + cat + '</td><td>' + catCosts[cat].toLocaleString() + ' ₽</td></tr>';
+            }
+        } else if (chartId === 6) {
+            // Расходы на шины и запчасти суммарно
+            var tiresTotal = App.store.tireLog.reduce(function(s, t) { return s + (Number(t.purchaseCost)||0) + (Number(t.mountCost)||0); }, 0);
+            var partsTotal = App.store.parts.reduce(function(s, p) { return s + (Number(p.price)||0); }, 0);
+            tableHtml += '<tr><th>Шины</th><td>' + tiresTotal.toLocaleString() + ' ₽</td></tr>';
+            tableHtml += '<tr><th>Запчасти</th><td>' + partsTotal.toLocaleString() + ' ₽</td></tr>';
+        } else if (chartId === 7) {
+            var history = App.store.mileageHistory;
+            if (history.length >= 2) {
+                tableHtml += '<tr><th>Прогноз достижения 100000 км</th><td>' + (App.logic.predictMileageDate(100000)?.toLocaleDateString() || '—') + '</td></tr>';
+                tableHtml += '<tr><th>Прогноз достижения 200000 км</th><td>' + (App.logic.predictMileageDate(200000)?.toLocaleDateString() || '—') + '</td></tr>';
+            }
+        } else if (chartId === 8) {
+            var opCountByMonth = {};
+            App.store.serviceRecords.forEach(function(r) {
+                if (!r.date) return;
+                var d = new Date(r.date);
+                var key = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0');
+                opCountByMonth[key] = (opCountByMonth[key] || 0) + 1;
+            });
+            var sortedMonths = Object.keys(opCountByMonth).sort().slice(-6);
+            sortedMonths.forEach(function(m) {
+                tableHtml += '<tr><td>' + m + '</td><td>' + opCountByMonth[m] + ' оп.</td></tr>';
+            });
+        } else if (chartId === 9) {
+            var totalCostAll = (App.store.purchaseCost || 0) + 
+                App.store.serviceRecords.reduce((s,r)=>s+(Number(r.parts_cost)||0)+(Number(r.work_cost)||0),0) +
+                App.store.fuelLog.reduce((s,f)=>s+(Number(f.liters)||0)*(Number(f.pricePerLiter)||0),0) +
+                App.store.parts.reduce((s,p)=>s+(Number(p.price)||0),0) +
+                App.store.tireLog.reduce((s,t)=>s+(Number(t.purchaseCost)||0)+(Number(t.mountCost)||0),0);
+            var perKm = App.store.settings.currentMileage ? (totalCostAll / App.store.settings.currentMileage).toFixed(2) : 0;
+            tableHtml += '<tr><th>Стоимость 1 км всего</th><td>' + perKm + ' ₽/км</td></tr>';
+        } else if (chartId === 10) {
+            var avgSpeed = App.logic.getDrivingMode().text;
+            tableHtml += '<tr><th>Средняя скорость (текущий режим)</th><td>' + avgSpeed + '</td></tr>';
+        } else if (chartId === 11) {
+            var lastMileage = App.store.mileageHistory.slice(-5);
+            lastMileage.forEach(function(m) {
+                tableHtml += '<tr><td>' + m.date + '</td><td>' + m.mileage + ' км</td><td>' + (m.motohours || 0) + ' ч</td></tr>';
+            });
+        } else if (chartId === 12) {
+            var structure = App.logic.calculateExpenseStructure(period);
+            for (var idx2 = 0; idx2 < structure.labels.length; idx2++) {
+                tableHtml += '<tr><th>' + structure.labels[idx2] + '</th><td>' + structure.values[idx2].toLocaleString() + ' ₽</td></tr>';
+            }
         }
         
         tableHtml += '</tbody></table>';
