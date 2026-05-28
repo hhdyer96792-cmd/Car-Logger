@@ -136,8 +136,10 @@ function getIntervalStart(period) {
     }
 }
 
+// ========== ИСПРАВЛЕННАЯ ФУНКЦИЯ generateIntervals ==========
 function generateIntervals(period) {
     var start = getIntervalStart(period);
+    if (!start) return { labels: [], intervals: [] };
     var now = new Date();
     var intervals = [];
     var labels = [];
@@ -491,7 +493,7 @@ App.ui.pages.renderFuelTable = function() {
     App.ui.pages.renderFuelTab();
 };
 
-// ======== УПРАВЛЕНИЕ ЗАПРАВКАМИ (восстановлено) ========
+// ======== УПРАВЛЕНИЕ ЗАПРАВКАМИ ========
 App.ui.pages.checkFuelOrderConflicts = function(dateISO, mileage, excludeRowIndex) {
     var sorted = App.store.fuelLog.filter(function(_, idx) {
         return (idx + 2) !== excludeRowIndex;
