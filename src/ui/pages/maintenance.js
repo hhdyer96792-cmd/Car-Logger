@@ -24,6 +24,9 @@ App.ui.pages.renderTOTable = function() {
     originalRenderTOTable();
 };
 
+// Хранилище количества показанных операций на категорию (виртуализация)
+let categoryVisibleCounts = {};
+
 // 0. Карточка «Всего затрат на ТО»
 App.ui.pages.renderTotalCost = function() {
     var total = App.store.serviceRecords.reduce(function(sum, r) {
@@ -222,7 +225,7 @@ App.ui.pages.renderOilResourceCard = function() {
     }
 };
 
-// 5. Карточки операций (аккордеоны по категориям)
+// 5. Карточки операций (аккордеоны по категориям) с виртуализацией
 App.ui.pages.renderTOTable = function() {
     var container = document.getElementById('to-cards-container');
     if (!container) return;
@@ -259,12 +262,23 @@ App.ui.pages.renderTOTable = function() {
         'Прочее': 'more-horizontal'
     };
 
+    // Константа: количество операций, отображаемых изначально на категорию
+    const ITEMS_PER_CATEGORY = 15;
+
     var html = '';
     categories.forEach(function(cat) {
         var ops = grouped[cat].sort(function(a, b) {
             return App.logic.calculatePlan(a).daysLeft - App.logic.calculatePlan(b).daysLeft;
         });
-        html += '<div class="accordion-group">';
+        // Инициализируем счётчик видимости, если его нет
+        if (typeof categoryVisibleCounts[cat] !== 'number') {
+            categoryVisibleCounts[cat] = ITEMS_PER_CATEGORY;
+        }
+        var visibleCount = categoryVisibleCounts[cat];
+        var visibleOps = ops.slice(0, visibleCount);
+        var hasMore = visibleOps.length < ops.length;
+
+        html += '<div class="accordion-group" data-category="' + App.utils.escapeHtml(cat) + '">';
         html += '<div class="accordion-header">';
         html += '<i data-lucide="' + (categoryIcons[cat] || 'folder') + '"></i>';
         html += '<span>' + App.utils.escapeHtml(cat) + ' (' + ops.length + ')</span>';
@@ -272,7 +286,7 @@ App.ui.pages.renderTOTable = function() {
         html += '</div>';
         html += '<div class="accordion-body">';
 
-        ops.forEach(function(op) {
+        visibleOps.forEach(function(op) {
             var plan = App.logic.calculatePlan(op);
             var motoFresh = true;
             if (op.name.indexOf('Масло') !== -1 && op.category.indexOf('ДВС') !== -1 && App.store.mileageHistory.length >= 1) {
@@ -333,6 +347,12 @@ App.ui.pages.renderTOTable = function() {
             html += '</div>';
         });
 
+        if (hasMore) {
+            html += '<div class="show-more-container" style="text-align:center; margin-top:12px;">';
+            html += '<button class="secondary-btn show-more-btn" data-category="' + App.utils.escapeHtml(cat) + '">Показать ещё (' + (ops.length - visibleCount) + ')</button>';
+            html += '</div>';
+        }
+
         html += '</div></div>';
     });
 
@@ -373,6 +393,18 @@ App.ui.pages.renderTOTable = function() {
                     icon.setAttribute('data-lucide', card.classList.contains('expanded') ? 'more-horizontal' : 'more-vertical');
                     App.initIcons();
                 }
+            }
+        });
+    });
+
+    // Обработчики кнопок "Показать ещё"
+    container.querySelectorAll('.show-more-btn').forEach(function(btn) {
+        btn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            var category = this.dataset.category;
+            if (category && categoryVisibleCounts[category]) {
+                categoryVisibleCounts[category] += ITEMS_PER_CATEGORY;
+                App.ui.pages.renderTOTable(); // перерисовываем всю таблицу
             }
         });
     });
