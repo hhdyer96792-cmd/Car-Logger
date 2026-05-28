@@ -29,7 +29,7 @@ async function resetPinAttempts() {
     localStorage.removeItem(PIN_ATTEMPTS_KEY);
 }
 
-// ========== Вспомогательные функции (без изменений) ==========
+// ========== Вспомогательные функции ==========
 async function deriveKeyFromPin(pin, salt, iterations = 100000) {
     const encoder = new TextEncoder();
     const keyMaterial = await crypto.subtle.importKey(
@@ -161,3 +161,6 @@ App.localAuth.resetPin = async function() {
     // Также сбрасываем счётчик попыток
     await resetPinAttempts();
 };
+
+// ========== ЭКСПОРТ ВСПОМОГАТЕЛЬНЫХ ФУНКЦИЙ ДЛЯ ВНЕШНЕГО ВЫЗОВА ==========
+App.localAuth.resetPinAttempts = resetPinAttempts;
