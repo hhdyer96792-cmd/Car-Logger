@@ -1,4 +1,4 @@
-// src/main.js (финальная версия с делегированием кликов)
+// src/main.js
 // ===== Полифил crypto.randomUUID для старых браузеров =====
 (function() {
     if (typeof crypto === 'undefined' || typeof crypto.randomUUID !== 'function') {
@@ -14,11 +14,11 @@
 
 (function() {
     let isLoggedIn = false;
-let deferredPrompt = null;
-let authSubscribed = false;
-let isDemoMode = false;
-let demoModeInitialized = false;
-let dbInitialized = false;
+    let deferredPrompt = null;
+    let authSubscribed = false;
+    let isDemoMode = false;
+    let demoModeInitialized = false;
+    let dbInitialized = false;
 
     const sidebarLoginBtn = document.getElementById('sidebar-login');
     const drawerLoginBtn = document.getElementById('drawer-login');
@@ -293,57 +293,56 @@ let dbInitialized = false;
     }
 
     async function doLogout() {
-    console.log('[DEBUG] doLogout вызвана');
+        console.log('[DEBUG] doLogout вызвана');
 
-    // Очищаем пользовательские данные из памяти
-    App.store.operations = [];
-    App.store.fuelLog = [];
-    App.store.tireLog = [];
-    App.store.parts = [];
-    App.store.serviceRecords = [];
-    App.store.mileageHistory = [];
-    App.store.cars = [];
-    App.store.activeCarId = null;
-    localStorage.removeItem('vesta_active_car_id');
-    localStorage.removeItem('vesta_username');
+        // Очищаем пользовательские данные из памяти
+        App.store.operations = [];
+        App.store.fuelLog = [];
+        App.store.tireLog = [];
+        App.store.parts = [];
+        App.store.serviceRecords = [];
+        App.store.mileageHistory = [];
+        App.store.cars = [];
+        App.store.activeCarId = null;
+        localStorage.removeItem('vesta_active_car_id');
+        localStorage.removeItem('vesta_username');
 
-    // Принудительная очистка IndexedDB (оставляем только криптографические данные)
-    if (App.db && App.db._db) {
-        const stores = ['operations', 'fuel_log', 'tires', 'parts', 'service_records', 'mileage_log', 'cars'];
-        for (const store of stores) {
-            try {
-                await App.db.clear(store);
-            } catch (e) {}
+        // Принудительная очистка IndexedDB (оставляем только криптографические данные)
+        if (App.db && App.db._db) {
+            const stores = ['operations', 'fuel_log', 'tires', 'parts', 'service_records', 'mileage_log', 'cars'];
+            for (const store of stores) {
+                try {
+                    await App.db.clear(store);
+                } catch (e) {
+                    console.warn(`[DEBUG] Ошибка очистки ${store}:`, e);
+                }
+            }
         }
+
+        console.log('[DEBUG] doLogout: вызываем signOut()');
+        try {
+            const signOutPromise = App.supabase.auth.signOut();
+            const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('signOut timeout')), 3000));
+            await Promise.race([signOutPromise, timeoutPromise]);
+            console.log('[DEBUG] signOut() выполнен успешно');
+        } catch (err) {
+            console.error('[DEBUG] Ошибка signOut:', err);
+        }
+
+        isLoggedIn = false;
+        setInstallButtonVisible(false);
+        if (sidebarLoginBtn) sidebarLoginBtn.style.display = '';
+        if (drawerLoginBtn) drawerLoginBtn.style.display = '';
+        if (typeof App.events.closeDrawer === 'function') App.events.closeDrawer();
+        if (typeof App.supa !== 'undefined' && App.supa.clearUserIdCache) App.supa.clearUserIdCache();
+
+        localStorage.removeItem('supabase.auth.token');
+        localStorage.removeItem('sb-auth-token');
+        sessionStorage.clear();
+
+        console.log('[DEBUG] doLogout: перезагрузка страницы');
+        window.location.reload();
     }
-
-    console.log('[DEBUG] doLogout: вызываем signOut()');
-    try {
-        // Таймаут на signOut, чтобы не ждать вечно
-        const signOutPromise = App.supabase.auth.signOut();
-        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('signOut timeout')), 3000));
-        await Promise.race([signOutPromise, timeoutPromise]);
-        console.log('[DEBUG] signOut() выполнен успешно');
-    } catch (err) {
-        console.error('[DEBUG] Ошибка signOut:', err);
-        // Даже при ошибке продолжаем выход
-    }
-
-    isLoggedIn = false;
-    setInstallButtonVisible(false);
-    if (sidebarLoginBtn) sidebarLoginBtn.style.display = '';
-    if (drawerLoginBtn) drawerLoginBtn.style.display = '';
-    if (typeof App.events.closeDrawer === 'function') App.events.closeDrawer();
-    if (typeof App.supa !== 'undefined' && App.supa.clearUserIdCache) App.supa.clearUserIdCache();
-
-    // Принудительно удаляем все токены, чтобы Supabase не пытался восстановить сессию
-    localStorage.removeItem('supabase.auth.token');
-    localStorage.removeItem('sb-auth-token');
-    sessionStorage.clear();
-
-    console.log('[DEBUG] doLogout: перезагрузка страницы');
-    window.location.reload();
-}
 
     async function forceLoadDataFromSupabase() {
         console.log('[DEBUG] forceLoadDataFromSupabase: загрузка данных напрямую из Supabase');
@@ -419,30 +418,28 @@ let dbInitialized = false;
                     let masterPassword = null;
                     const hasPin = App.localAuth && await App.localAuth.isPinSet();
                     console.log('[DEBUG] hasPin =', hasPin);
-                   if (hasPin) {
-    await new Promise(r => setTimeout(r, 100));
-    try {
-        const pin = await App.ui.promptModalAsync('Быстрый доступ', 'Введите PIN-код', true);
-        if (pin) {
-            masterPassword = await App.localAuth.verifyPin(pin);
-            console.log('[DEBUG] verifyPin вернул', !!masterPassword);
-            if (masterPassword) {
-                const salt = App.db.encryption.getStoredSalt();
-                const { key } = await App.db.encryption.initMasterKey(masterPassword, salt);
-                App.db.encryption.setMasterKey(key, salt);
-                await App.store.loadFromIndexedDB();
-                if (typeof App.renderAll === 'function') App.renderAll();
-                App.toast('Расшифровка по PIN успешна', 'success');
-            }
-        }
-    } catch (pinError) {
-        // Обработка ошибок verifyPin (неверный PIN, блокировка)
-        console.warn('[DEBUG] PIN error:', pinError.message);
-        App.toast(pinError.message, 'error');
-        // При ошибке PIN не сбрасываем, просто продолжаем к мастер-паролю
-        masterPassword = null;
-    }
-}
+                    if (hasPin) {
+                        await new Promise(r => setTimeout(r, 100));
+                        try {
+                            const pin = await App.ui.promptModalAsync('Быстрый доступ', 'Введите PIN-код', true);
+                            if (pin) {
+                                masterPassword = await App.localAuth.verifyPin(pin);
+                                console.log('[DEBUG] verifyPin вернул', !!masterPassword);
+                                if (masterPassword) {
+                                    const salt = App.db.encryption.getStoredSalt();
+                                    const { key } = await App.db.encryption.initMasterKey(masterPassword, salt);
+                                    App.db.encryption.setMasterKey(key, salt);
+                                    await App.store.loadFromIndexedDB();
+                                    if (typeof App.renderAll === 'function') App.renderAll();
+                                    App.toast('Расшифровка по PIN успешна', 'success');
+                                }
+                            }
+                        } catch (pinError) {
+                            console.warn('[DEBUG] PIN error:', pinError.message);
+                            App.toast(pinError.message, 'error');
+                            masterPassword = null;
+                        }
+                    }
                     if (!masterPassword) {
                         const hasMasterPassword = localStorage.getItem('vesta_master_password_set') === 'true';
                         console.log('[DEBUG] hasMasterPassword =', hasMasterPassword);
@@ -908,3 +905,26 @@ let dbInitialized = false;
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', onReady);
     else onReady();
 })();
+
+importScripts('https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js');
+importScripts('https://www.gstatic.com/firebasejs/9.22.0/firebase-messaging-compat.js');
+
+firebase.initializeApp({
+  apiKey: "AIzaSyCKz1GKDdqxtK6NyLQAZ84QqUUCaqTQDWQ",
+  authDomain: "car-k3eeper.firebaseapp.com",
+  projectId: "car-k3eeper",
+  storageBucket: "car-k3eeper.firebasestorage.app",
+  messagingSenderId: "826833638199",
+  appId: "1:826833638199:web:647fedbe3eae5b605240b2"
+});
+
+const messaging = firebase.messaging();
+
+messaging.onBackgroundMessage(function(payload) {
+  const notificationTitle = payload.notification.title || 'Напоминание о ТО';
+  const notificationOptions = {
+    body: payload.notification.body || '',
+    icon: 'icon-192.png'
+  };
+  self.registration.showNotification(notificationTitle, notificationOptions);
+});
