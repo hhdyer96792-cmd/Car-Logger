@@ -6,6 +6,11 @@ App.ui.pages = App.ui.pages || {};
 // Период по умолчанию
 App.ui.pages.financePeriod = 'month';
 
+// Проверка доступности Chart.js
+function isChartAvailable() {
+    return typeof Chart !== 'undefined';
+}
+
 // Главный вход при открытии вкладки
 App.ui.pages.renderFinanceTab = function() {
     App.ui.pages.populateFinancePeriodSwitch();
@@ -69,19 +74,15 @@ function getPeriodDateRange(period) {
 // ---------- Получение всех затрат за период ----------
 function getTotalCostsInPeriod(start, end) {
     var fuelCost = 0, toCost = 0, partsCost = 0, tiresCost = 0;
-    // Топливо
     (App.store.fuelLog || []).forEach(function(f) {
         var d = new Date(f.date);
         if (d >= start && d <= end) fuelCost += (parseFloat(f.liters)||0) * (parseFloat(f.pricePerLiter)||0);
     });
-    // ТО
     (App.store.serviceRecords || []).forEach(function(r) {
         var d = new Date(r.date);
         if (d >= start && d <= end) toCost += (parseFloat(r.parts_cost)||0) + (parseFloat(r.work_cost)||0);
     });
-    // Запчасти (цена всех запчастей в периоде)
-    (App.store.parts || []).forEach(function(p) { partsCost += parseFloat(p.price)||0; }); // упрощённо – нет даты покупки, берём все
-    // Шины
+    (App.store.parts || []).forEach(function(p) { partsCost += parseFloat(p.price)||0; });
     (App.store.tireLog || []).forEach(function(t) {
         var d = new Date(t.date);
         if (d >= start && d <= end) tiresCost += (parseFloat(t.purchaseCost)||0) + (parseFloat(t.mountCost)||0);
@@ -92,7 +93,6 @@ function getTotalCostsInPeriod(start, end) {
 // ---------- Агрегация общих затрат по месяцам ----------
 function aggregateMonthlyCosts() {
     var monthly = {};
-    // Топливо
     (App.store.fuelLog || []).forEach(function(f) {
         if (!f.date) return;
         var d = new Date(f.date);
@@ -100,7 +100,6 @@ function aggregateMonthlyCosts() {
         if (!monthly[key]) monthly[key] = 0;
         monthly[key] += (parseFloat(f.liters)||0) * (parseFloat(f.pricePerLiter)||0);
     });
-    // ТО
     (App.store.serviceRecords || []).forEach(function(r) {
         if (!r.date) return;
         var d = new Date(r.date);
@@ -108,8 +107,6 @@ function aggregateMonthlyCosts() {
         if (!monthly[key]) monthly[key] = 0;
         monthly[key] += (parseFloat(r.parts_cost)||0) + (parseFloat(r.work_cost)||0);
     });
-    // Запчасти (без даты, распределяем равномерно? Лучше игнорировать, т.к. нет даты)
-    // Шины
     (App.store.tireLog || []).forEach(function(t) {
         if (!t.date) return;
         var d = new Date(t.date);
@@ -128,12 +125,10 @@ App.ui.pages.updateFinanceMetrics = function() {
     var total = costs.fuel + costs.to + costs.parts + costs.tires;
     document.getElementById('finance-total').textContent = total.toLocaleString() + ' ₽';
 
-    // Дни в периоде (минимум 1, чтобы избежать деления на 0)
     var days = Math.ceil((range.end - range.start) / (1000 * 60 * 60 * 24)) || 1;
     var dailyAvg = total / days;
     document.getElementById('finance-daily-avg').textContent = dailyAvg.toFixed(0) + ' ₽';
 
-    // Самый дорогой/дешёвый месяц внутри выбранного периода
     var monthly = aggregateMonthlyCosts();
     var best  = { monthKey: '', cost:  Infinity };
     var worst = { monthKey: '', cost: -Infinity };
@@ -153,7 +148,6 @@ App.ui.pages.updateFinanceMetrics = function() {
         }
     }
 
-    // Отображаем самый дорогой месяц
     if (worst.monthKey) {
         document.getElementById('finance-expensive-month').textContent = worst.monthKey;
         document.getElementById('finance-expensive-amount').textContent = worst.cost.toLocaleString() + ' ₽';
@@ -162,7 +156,6 @@ App.ui.pages.updateFinanceMetrics = function() {
         document.getElementById('finance-expensive-amount').textContent = '';
     }
 
-    // Отображаем самый дешёвый месяц
     if (best.monthKey) {
         document.getElementById('finance-cheap-month').textContent = best.monthKey;
         document.getElementById('finance-cheap-amount').textContent = best.cost.toLocaleString() + ' ₽';
@@ -171,6 +164,7 @@ App.ui.pages.updateFinanceMetrics = function() {
         document.getElementById('finance-cheap-amount').textContent = '';
     }
 };
+
 // ---------- Прогноз ----------
 App.ui.pages.updateFinanceForecast = function() {
     var monthly = aggregateMonthlyCosts();
@@ -182,37 +176,36 @@ App.ui.pages.updateFinanceForecast = function() {
         lastThree.push(monthly[key] || 0);
     }
     if (lastThree.length < 3 || lastThree.every(function(v){ return v === 0; })) {
-    document.getElementById('finance-forecast-value').innerHTML = '<span class="hint">Недостаточно данных</span>';
-    return;
-}
-var avg = lastThree.reduce(function(a,b){return a+b;},0) / 3;
-var forecast = avg;
-var maxDiff = 0;
-lastThree.forEach(function(v) { maxDiff = Math.max(maxDiff, Math.abs(v - avg)); });
-var rangeText = avg ? (maxDiff / avg * 100).toFixed(0) : 0;
-document.getElementById('finance-forecast-value').innerHTML =
-    '<span style="font-size:1.8rem; font-weight:700;">' + forecast.toFixed(0) + ' ₽</span>' +
-    ' <span style="opacity:0.8;">±' + rangeText + '%</span>' +
-    '<div class="hint">(на основе среднего за последние 3 месяца)</div>';
+        document.getElementById('finance-forecast-value').innerHTML = '<span class="hint">Недостаточно данных</span>';
+        return;
+    }
+    var avg = lastThree.reduce(function(a,b){return a+b;},0) / 3;
+    var forecast = avg;
+    var maxDiff = 0;
+    lastThree.forEach(function(v) { maxDiff = Math.max(maxDiff, Math.abs(v - avg)); });
+    var rangeText = avg ? (maxDiff / avg * 100).toFixed(0) : 0;
+    document.getElementById('finance-forecast-value').innerHTML =
+        '<span style="font-size:1.8rem; font-weight:700;">' + forecast.toFixed(0) + ' ₽</span>' +
+        ' <span style="opacity:0.8;">±' + rangeText + '%</span>' +
+        '<div class="hint">(на основе среднего за последние 3 месяца)</div>';
 };
 
 // ---------- Линейный график динамики с прогнозом ----------
 App.ui.pages.renderDynamicsChart = function() {
+    if (!isChartAvailable()) return;
+    App.charts.destroyChart('financeDynamicsChart');
     var canvas = document.getElementById('financeDynamicsChart');
     if (!canvas) return;
-    if (App.charts._financeDyn) App.charts._financeDyn.destroy();
     var monthly = aggregateMonthlyCosts();
     var now = new Date();
     var labels = [];
     var factData = [];
-    // Выводим последние 12 месяцев факта
     for (var i = 11; i >= 0; i--) {
         var d = new Date(now.getFullYear(), now.getMonth() - i, 1);
         var key = getMonthKey(d);
         labels.push(key);
         factData.push(monthly[key] || 0);
     }
-    // Прогноз на 3 месяца
     var last3 = factData.slice(-3);
     var avgLast3 = last3.reduce(function(a,b){return a+b;},0) / 3;
     var forecastData = [];
@@ -251,32 +244,30 @@ App.ui.pages.renderDynamicsChart = function() {
             responsive: true,
             maintainAspectRatio: false,
             plugins: { legend: { position: 'bottom' } },
-            scales: {
-                y: { beginAtZero: true }
-            }
+            scales: { y: { beginAtZero: true } }
         }
     });
 };
 
 // ---------- Гистограмма общих затрат ----------
 App.ui.pages.renderCostHistogram = function() {
+    if (!isChartAvailable()) return;
+    App.charts.destroyChart('financeCostHistogram');
     var canvas = document.getElementById('financeCostHistogram');
     if (!canvas) return;
-    if (App.charts._financeCostHist) App.charts._financeCostHist.destroy();
     var period = App.ui.pages.financePeriod;
     var labels, data;
     var monthly = aggregateMonthlyCosts();
     var now = new Date();
 
     if (period === 'month') {
-        // 4 недели
         labels = ['1','2','3','4'];
         data = [0,0,0,0];
         var start = new Date(now.getFullYear(), now.getMonth(), 1);
         var end = new Date(now.getFullYear(), now.getMonth()+1, 0);
         for (var key in monthly) {
             var d = parseMonthKey(key);
-            var date = new Date(d.year, d.month, 15); // середина месяца
+            var date = new Date(d.year, d.month, 15);
             if (date >= start && date <= end) {
                 var week = Math.ceil(date.getDate() / 7);
                 data[week-1] += monthly[key];
@@ -299,7 +290,7 @@ App.ui.pages.renderCostHistogram = function() {
             labels.push(monthDate.toLocaleString('ru',{month:'short'}));
             data.push(monthly[getMonthKey(monthDate)] || 0);
         }
-    } else { // all
+    } else {
         labels = [];
         data = [];
         var years = {};
@@ -337,9 +328,10 @@ App.ui.pages.renderCostHistogram = function() {
 
 // ---------- Круговая диаграмма распределения ----------
 App.ui.pages.renderFinancePie = function() {
+    if (!isChartAvailable()) return;
+    App.charts.destroyChart('financePieChart');
     var canvas = document.getElementById('financePieChart');
     if (!canvas) return;
-    if (App.charts._financePie) App.charts._financePie.destroy();
     var period = App.ui.pages.financePeriod;
     var range = getPeriodDateRange(period);
     var costs = getTotalCostsInPeriod(range.start, range.end);
@@ -368,7 +360,6 @@ App.ui.pages.renderComparison = function() {
     var select1 = document.getElementById('compare-period-1');
     var select2 = document.getElementById('compare-period-2');
     if (!select1 || !select2) return;
-    // Заполняем селекторы последними 12 месяцами
     var now = new Date();
     select1.innerHTML = ''; select2.innerHTML = '';
     for (var i = 11; i >= 0; i--) {
@@ -380,7 +371,6 @@ App.ui.pages.renderComparison = function() {
         select1.appendChild(option.cloneNode(true));
         select2.appendChild(option);
     }
-    // Выбираем текущий и предыдущий месяц
     select1.value = getMonthKey(new Date(now.getFullYear(), now.getMonth()-1, 1));
     select2.value = getMonthKey(now);
 
@@ -401,7 +391,7 @@ App.ui.pages.renderComparison = function() {
             '<div>Изменение: ' + (diff>=0?'+':'') + diffPercent + '%</div>';
 
         var canvas = document.getElementById('financeComparisonChart');
-        if (canvas) {
+        if (canvas && isChartAvailable()) {
             if (App.charts._financeComp) App.charts._financeComp.destroy();
             var ctx = canvas.getContext('2d');
             App.charts._financeComp = new Chart(ctx, {
