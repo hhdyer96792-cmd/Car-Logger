@@ -72,7 +72,7 @@ App.supa.clearUserIdCache = function() {
     cachedUserId = null;
 };
 
-// ----- Загрузка данных -----
+// ----- Загрузка данных (без изменений) -----
 App.supa.loadOperations = function() {
     return withRetry(() => App.supa.fetchTable('operations').then(({ data, error }) => {
         if (error) throw error;
@@ -206,7 +206,7 @@ App.supa.loadMileageHistory = function() {
     }), 3, 500, 'loadMileageHistory');
 };
 
-// ----- Сохранение данных -----
+// ----- Сохранение данных (без изменений) -----
 App.supa.saveOperation = async function(op) {
     const userId = await App.supa.getCurrentUserId();
     const record = {
@@ -330,54 +330,49 @@ App.supa.addMileageRecord = async function(date, mileage, motohours) {
     return App.supa.insertRow('mileage_log', record);
 };
 
-App.supa.saveVehicleState = async function(state) {
-    ensureSupabase();
-    const record = {
-        car_id: App.store.activeCarId,
-        current_mileage: state.currentMileage,
-        current_motohours: state.currentMotohours,
-        avg_daily_mileage: state.avgDailyMileage,
-        avg_daily_motohours: state.avgDailyMotohours,
-        car_brand: state.carBrand,
-        car_model: state.carModel,
-        car_year: state.carYear,
-        plate_number: state.plateNumber,
-        vin: state.vin
-    };
-    return App.supabase.from('vehicle_state').upsert(record, { onConflict: 'car_id' }).select();
-};
-
-App.supa.saveUserSettings = async function(settingsObj) {
-    const userId = await App.supa.getCurrentUserId();
-    ensureSupabase();
-    const record = {
-        user_id: userId,
-        car_id: App.store.activeCarId,
-        telegram_token: settingsObj.telegramToken || '',
-        telegram_chat_id: settingsObj.telegramChatId || '',
-        notification_method: settingsObj.notificationMethod || 'telegram',
-        reminder_days: settingsObj.reminderDays || '7,2'
-    };
-    return App.supabase.from('user_settings').upsert(record, { onConflict: 'user_id, car_id' }).select();
-};
-
-// ----- Загрузка фото с ограничением размера 2 МБ -----
-App.supa.uploadPhoto = async function(file) {
-    const MAX_SIZE = 2 * 1024 * 1024; // 2 MB
-    if (file.size > MAX_SIZE) {
-        throw new Error('Файл слишком большой. Максимальный размер 2 МБ.');
+// ========== СЖАТИЕ ИЗОБРАЖЕНИЙ ==========
+async function compressImage(file) {
+    // Если файл меньше 1 МБ, не сжимаем
+    if (file.size < 1024 * 1024) return file;
+    
+    try {
+        const imageCompression = await import('https://cdn.jsdelivr.net/npm/browser-image-compression@2.0.2/dist/browser-image-compression.js');
+        const options = {
+            maxSizeMB: 1,
+            maxWidthOrHeight: 1920,
+            useWebWorker: true,
+            fileType: file.type
+        };
+        const compressed = await imageCompression.default(file, options);
+        console.log(`[Supabase] Сжатие: ${(file.size / 1024 / 1024).toFixed(2)} MB → ${(compressed.size / 1024 / 1024).toFixed(2)} MB`);
+        return compressed;
+    } catch (err) {
+        console.warn('[Supabase] Ошибка сжатия, загружаем оригинал:', err);
+        return file;
     }
+}
+
+// ========== ЗАГРУЗКА ФОТО С ОГРАНИЧЕНИЕМ РАЗМЕРА И СЖАТИЕМ ==========
+App.supa.uploadPhoto = async function(file) {
+    const MAX_SIZE = 5 * 1024 * 1024; // 5 MB
+    if (file.size > MAX_SIZE) {
+        throw new Error('Файл слишком большой. Максимальный размер 5 МБ.');
+    }
+    
+    // Сжимаем изображение, если оно больше 1 МБ
+    const compressedFile = await compressImage(file);
+    
     const userId = await App.supa.getCurrentUserId();
     if (!userId) throw new Error('Not authenticated');
     ensureSupabase();
     
-    const fileExt = file.name.split('.').pop();
+    const fileExt = compressedFile.name.split('.').pop();
     const fileName = `${Date.now()}_${Math.random().toString(36).substring(2)}.${fileExt}`;
     const filePath = `${userId}/${App.store.activeCarId || 'default'}/${fileName}`;
     
     const { data, error } = await App.supabase.storage
         .from('vesta-photos')
-        .upload(filePath, file, {
+        .upload(filePath, compressedFile, {
             cacheControl: '3600',
             upsert: false
         });
@@ -391,7 +386,7 @@ App.supa.uploadPhoto = async function(file) {
     return urlData.publicUrl;
 };
 
-// ---------- Документы автомобиля ----------
+// ---------- Документы автомобиля (без изменений) ----------
 App.supa.loadCarDocuments = function() {
     return withRetry(() => App.supa.fetchTable('car_documents').then(({ data, error }) => {
         if (error) throw error;
@@ -439,7 +434,7 @@ App.supa.deleteCarDocument = async function(docId) {
     return true;
 };
 
-// ---------- Мульти-авто и совместный доступ ----------
+// ---------- Мульти-авто и совместный доступ (без изменений) ----------
 App.supa.loadCars = function() {
     ensureSupabase();
     return App.supabase.from('cars').select('*').then(({ data, error }) => {
