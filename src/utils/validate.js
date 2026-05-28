@@ -7,9 +7,10 @@ App.utils = App.utils || {};
  * @param {HTMLInputElement} input - элемент ввода
  * @param {boolean} [allowFloat=true] - разрешены ли дробные числа
  * @param {boolean} [allowEmpty=false] - разрешено ли пустое значение
+ * @param {boolean} [allowNegative=false] - разрешены ли отрицательные числа
  * @returns {number|null} числовое значение или null при ошибке
  */
-App.utils.validateNumberInput = function(input, allowFloat, allowEmpty) {
+App.utils.validateNumberInput = function(input, allowFloat, allowEmpty, allowNegative = false) {
     allowFloat = (allowFloat !== false);
     allowEmpty = (allowEmpty === true);
     var raw = input.value.trim();
@@ -22,6 +23,12 @@ App.utils.validateNumberInput = function(input, allowFloat, allowEmpty) {
         input.style.borderColor = 'var(--danger)';
         input.focus();
         App.toast('Проверьте правильность числа', 'error');
+        return null;
+    }
+    // Проверка на отрицательные значения
+    if (num < 0 && !allowNegative) {
+        input.style.borderColor = 'var(--danger)';
+        App.toast('Значение не может быть отрицательным', 'error');
         return null;
     }
     input.style.borderColor = '';
