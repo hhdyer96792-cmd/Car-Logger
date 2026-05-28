@@ -23,14 +23,31 @@ export async function close() {
     if (decoder) await decoder.close()
 }
 
+// Валидация VIN (формат, запрещённые символы I, O, Q)
+function validateVin(vin) {
+    if (!vin || typeof vin !== 'string') {
+        throw new Error('VIN не указан')
+    }
+    const cleanVin = vin.trim().toUpperCase()
+    if (cleanVin.length !== 17) {
+        throw new Error('VIN должен содержать ровно 17 символов')
+    }
+    // Допустимые символы: A-H, J-N, P, R-Z, 0-9 (исключая I, O, Q)
+    const validPattern = /^[A-HJ-NPR-Z0-9]{17}$/i
+    if (!validPattern.test(cleanVin)) {
+        throw new Error('VIN содержит недопустимые символы (допустимы буквы A-H J-N P R-Z и цифры, запрещены I, O, Q)')
+    }
+    return cleanVin
+}
+
 // Получение характеристик по VIN (локально + NHTSA)
 export async function getVehicleInfo(vin) {
-    if (!vin || vin.length !== 17) throw new Error('Неверный VIN')
+    const cleanVin = validateVin(vin)
     
-    if (vinInfoCache.has(vin)) return vinInfoCache.get(vin)
-    const cached = await App.db.getById('vin_info', vin)
+    if (vinInfoCache.has(cleanVin)) return vinInfoCache.get(cleanVin)
+    const cached = await App.db.getById('vin_info', cleanVin)
     if (cached && (Date.now() - cached.timestamp < 30 * 24 * 60 * 60 * 1000)) {
-        vinInfoCache.set(vin, cached.data)
+        vinInfoCache.set(cleanVin, cached.data)
         return cached.data
     }
 
@@ -38,7 +55,7 @@ export async function getVehicleInfo(vin) {
     let localData = null
     if (decoder) {
         try {
-            const result = await decoder.decode(vin)
+            const result = await decoder.decode(cleanVin)
             if (result.valid && result.components.vehicle) {
                 localData = result.components.vehicle
             }
@@ -50,15 +67,15 @@ export async function getVehicleInfo(vin) {
     const timeout = setTimeout(() => controller.abort(), 15000)
     try {
         const { data, error } = await App.supabase.functions.invoke('vin-lookup', {
-            body: { vin },
+            body: { vin: cleanVin },
             signal: controller.signal
         })
         clearTimeout(timeout)
         if (error) throw new Error(error.message)
         // Объединяем с локальными данными (локальные могут быть точнее для некоторых полей)
         const combined = { ...data, ...localData }
-        await App.db.put('vin_info', { id: vin, data: combined, timestamp: Date.now() })
-        vinInfoCache.set(vin, combined)
+        await App.db.put('vin_info', { id: cleanVin, data: combined, timestamp: Date.now() })
+        vinInfoCache.set(cleanVin, combined)
         return combined
     } catch (err) {
         clearTimeout(timeout)
@@ -101,18 +118,18 @@ export async function getVehicleInfoByPlate(plate, country) {
 // Поиск запчастей через платное API (только для премиум)
 export async function searchPartsByVIN(vin, options = {}) {
     if (!App.store.isPremium) throw new Error('Доступно только в Premium')
-    if (!vin || vin.length !== 17) throw new Error('Неверный VIN')
-    if (partsCache.has(vin) && !options.force) return partsCache.get(vin)
+    const cleanVin = validateVin(vin)
+    if (partsCache.has(cleanVin) && !options.force) return partsCache.get(cleanVin)
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), 15000)
     try {
         const { data, error } = await App.supabase.functions.invoke('parts-search', {
-            body: { vin },
+            body: { vin: cleanVin },
             signal: controller.signal
         })
         clearTimeout(timeout)
         if (error) throw new Error(error.message)
-        partsCache.set(vin, data)
+        partsCache.set(cleanVin, data)
         return data
     } catch (err) {
         clearTimeout(timeout)
@@ -148,8 +165,10 @@ export async function showVehicleInfoModal(query, type = 'vin') {
     const modal = App.ui.createModal('Информация об автомобиле', '<div class="spinner"></div><p class="hint">Загрузка...</p>')
     try {
         let info
-        if (type === 'vin') info = await getVehicleInfo(query)
-        else if (type === 'plate') {
+        if (type === 'vin') {
+            // Валидация VIN произойдёт внутри getVehicleInfo
+            info = await getVehicleInfo(query)
+        } else if (type === 'plate') {
             const parts = query.split(':')
             if (parts.length !== 2) throw new Error('Формат: страна:номер (uk:TE57VRN или nl:12ABC3)')
             info = await getVehicleInfoByPlate(parts[1], parts[0])
