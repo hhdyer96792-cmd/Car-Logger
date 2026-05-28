@@ -65,12 +65,9 @@ App.db.sync._executeDelete = async function(action) {
         case 'history': tableName = 'history'; break;
         default: throw new Error(`Unknown entityType for delete: ${entityType}`);
     }
-    // Прямое удаление через Supabase
     const { error } = await App.supabase.from(tableName).delete().eq('id', entityId);
     if (error) throw error;
-    // Удаляем локальную запись
     await App.db.delete(tableName, entityId);
-    // Обновляем соответствующий массив в store
     let storeKey;
     switch (entityType) {
         case 'operation': storeKey = 'operations'; break;
@@ -110,7 +107,6 @@ App.db.sync._updateLocalId = async function(entityType, oldId, newId) {
     }
 };
 
-// ========== ИСПРАВЛЕННАЯ ФУНКЦИЯ _resolveConflict ==========
 App.db.sync._resolveConflict = async function(action) {
     const { entityType, entityId } = action;
     let tableName;
@@ -127,7 +123,6 @@ App.db.sync._resolveConflict = async function(action) {
         const { data, error } = await App.supabase.from(tableName).select('*').eq('id', entityId).single();
         if (error) {
             if (error.status === 404) {
-                // Запись удалена на сервере – удаляем локально
                 await App.db.delete(tableName, entityId);
                 const storeKey = {
                     'operations': 'operations',
@@ -144,7 +139,6 @@ App.db.sync._resolveConflict = async function(action) {
             }
             throw error;
         }
-        // Обновляем локальную запись данными с сервера
         await App.db.sync._updateLocalFromServer(entityType, data);
     } catch (err) {
         console.error('[Sync] Не удалось разрешить конфликт:', err);
@@ -175,28 +169,72 @@ App.db.sync.processSyncQueue = async function() {
     }
     if (App.db.sync._isRunning) return;
     App.db.sync._isRunning = true;
+    
+    // Индикатор синхронизации
+    if (typeof App.setSyncStatus === 'function') {
+        App.setSyncStatus('syncing');
+    }
+    
+    let successCount = 0;
+    let errorCount = 0;
+    let hasPermanentErrors = false;
+    
     try {
         const pending = await App.db.getAll('pending_actions');
-        if (!pending.length) return;
+        if (!pending.length) {
+            if (typeof App.setSyncStatus === 'function') {
+                App.setSyncStatus('synced');
+            }
+            return;
+        }
         console.log(`[Sync] Начинаем синхронизацию ${pending.length} действий`);
+        
         for (const action of pending) {
             try {
                 await App.db.sync._executeAction(action);
                 await App.db.delete('pending_actions', action.id);
                 const idx = App.store.pendingActions.findIndex(a => a.id === action.id);
                 if (idx !== -1) App.store.pendingActions.splice(idx, 1);
+                successCount++;
             } catch (err) {
                 console.error(`[Sync] Ошибка действия ${action.id}:`, err);
+                errorCount++;
                 const newRetryCount = (action.retryCount || 0) + 1;
                 await App.db.sync._updatePendingAction(action, newRetryCount, err.message);
                 if (newRetryCount < SYNC_MAX_RETRIES) {
+                    hasPermanentErrors = false;
                     const delay = App.db.sync._getDelay(newRetryCount);
-                    setTimeout(() => { if (navigator.onLine) App.db.sync.processSyncQueue(); }, delay);
+                    setTimeout(() => {
+                        if (navigator.onLine && App.db.sync && !App.db.sync._isRunning) {
+                            App.db.sync.processSyncQueue();
+                        }
+                    }, delay);
+                } else {
+                    hasPermanentErrors = true;
                 }
             }
         }
+        
+        // Улучшенный тост с детализацией
+        if (typeof App.toast === 'function') {
+            if (errorCount === 0 && successCount > 0) {
+                App.toast(`Синхронизировано ${successCount} записей`, 'success');
+            } else if (errorCount > 0 && successCount > 0) {
+                App.toast(`Синхронизировано ${successCount} из ${pending.length} записей. Ошибок: ${errorCount}.`, 'warning');
+            } else if (errorCount > 0 && successCount === 0) {
+                App.toast(`Не удалось синхронизировать ${errorCount} записей. Повторная попытка через несколько секунд.`, 'error');
+            }
+        }
+        
         if (typeof App.renderAll === 'function') App.renderAll();
-        if (typeof App.toast === 'function') App.toast('Данные синхронизированы', 'success');
+        
+        // Финальный статус
+        if (typeof App.setSyncStatus === 'function') {
+            if (errorCount === 0) App.setSyncStatus('synced');
+            else if (hasPermanentErrors) App.setSyncStatus('error');
+            else App.setSyncStatus('synced'); // временные ошибки, статус всё равно synced, так как будут повторы
+        }
+        
     } finally {
         App.db.sync._isRunning = false;
     }
