@@ -1,4 +1,4 @@
-// src/ui/pages/cars.js (исправленный: кнопки VIN/номер под полем, экспортные функции перенесены, исправлена проверка getVehicleState)
+// src/ui/pages/cars.js
 window.App = window.App || {};
 App.ui.pages = App.ui.pages || {};
 
@@ -11,7 +11,7 @@ App.ui.pages._getUserIdSafe = async function() {
     return session?.user?.id || null;
 };
 
-/* ========== ФУНКЦИИ РАБОТЫ С ДОКУМЕНТАМИ (через DAL) ========== */
+/* ========== ФУНКЦИИ РАБОТЫ С ДОКУМЕНТАМИ ========== */
 App.ui.pages.loadCarDocuments = async function() {
     if (!App.store.activeCarId) return [];
     try {
@@ -437,17 +437,24 @@ App.ui.pages.renderCarTab = function() {
             btnContainer.style.gap = '8px';
             btnContainer.style.flexWrap = 'wrap';
             
-            var vinBtn = document.createElement('button');
-            vinBtn.id = 'vin-info-btn';
-            vinBtn.className = 'secondary-btn';
-            vinBtn.innerHTML = '<i data-lucide="info"></i> Инфо по VIN';
-            btnContainer.appendChild(vinBtn);
-            
-            var plateBtn = document.createElement('button');
-            plateBtn.id = 'plate-info-btn';
-            plateBtn.className = 'secondary-btn';
-            plateBtn.innerHTML = '<i data-lucide="flag"></i> Инфо по номеру';
-            btnContainer.appendChild(plateBtn);
+            if (App.store.isPremium) {
+                var vinBtn = document.createElement('button');
+                vinBtn.id = 'vin-info-btn';
+                vinBtn.className = 'secondary-btn';
+                vinBtn.innerHTML = '<i data-lucide="info"></i> Инфо по VIN';
+                btnContainer.appendChild(vinBtn);
+                
+                var plateBtn = document.createElement('button');
+                plateBtn.id = 'plate-info-btn';
+                plateBtn.className = 'secondary-btn';
+                plateBtn.innerHTML = '<i data-lucide="flag"></i> Инфо по номеру';
+                btnContainer.appendChild(plateBtn);
+            } else {
+                var hintSpan = document.createElement('span');
+                hintSpan.className = 'hint';
+                hintSpan.innerHTML = '<i data-lucide="lock"></i> Поиск по VIN/номеру доступен в Premium';
+                btnContainer.appendChild(hintSpan);
+            }
             
             wrapper.appendChild(btnContainer);
             App.initIcons();
@@ -1267,9 +1274,9 @@ App.ui.pages.renderSharingListForCarTab = function() {
         var totalCost = totalMaintenance + totalFuel;
         var avgCostPerKm = App.store.settings.currentMileage ? totalCost / App.store.settings.currentMileage : 0;
         var reportHtml = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Сервисная история</title><style>body{font-family:sans-serif;margin:20px}h1{color:#3498db}h2{border-bottom:1px solid #ccc}table{width:100%;border-collapse:collapse;margin-bottom:20px}td,th{border:1px solid #ddd;padding:8px}th{background:#f2f2f2}.stat-card{display:inline-block;background:#f9f9f9;padding:10px;margin:5px;border-radius:8px}</style></head><body><h1>Сервисная история</h1><p><strong>Дата:</strong>' + new Date().toLocaleDateString('ru-RU') + '</p><p><strong>Пробег:</strong>' + App.store.settings.currentMileage.toLocaleString() + ' км</p><h2>Расходы</h2><div>' +
-            '<div class="stat-card">ТО: ' + totalMaintenance.toFixed(2) + ' ₽</div><div class="stat-card">Топливо: ' + totalFuel.toFixed(2) + ' ₽</div><div class="stat-card">Всего: ' + totalCost.toFixed(2) + ' ₽</div><div class="stat-card">1 км: ' + avgCostPerKm.toFixed(2) + ' ₽</div></div><h2>Операции</h2><tr><thead><tr><th>Категория</th><th>Операция</th><th>Интервал км</th><th>Интервал мес</th><th>Последнее ТО</th><th>Последний пробег</th></tr></thead><tbody>';
+            '<div class="stat-card">ТО: ' + totalMaintenance.toFixed(2) + ' ₽</div><div class="stat-card">Топливо: ' + totalFuel.toFixed(2) + ' ₽</div><div class="stat-card">Всего: ' + totalCost.toFixed(2) + ' ₽</div><div class="stat-card">1 км: ' + avgCostPerKm.toFixed(2) + ' ₽</div></div><h2>Операции</h2></table><thead><tr><th>Категория</th><th>Операция</th><th>Интервал км</th><th>Интервал мес</th><th>Последнее ТО</th><th>Последний пробег</th></tr></thead><tbody>';
         App.store.operations.forEach(function(op) { reportHtml += '<tr><td>' + App.utils.escapeHtml(op.category) + '</td><td>' + App.utils.escapeHtml(op.name) + '</td><td>' + (op.intervalKm || '—') + '</td><td>' + (op.intervalMonths || '—') + '</td><td>' + (op.lastDate || '—') + '</td><td>' + (op.lastMileage || '—') + '</td></tr>'; });
-        reportHtml += '</tbody></table><h2>История ТО</h2><table><thead><tr><th>Дата</th><th>Операция</th><th>Пробег</th><th>Запчасти</th><th>Работа</th><th>DIY</th><th>Прим.</th><tr></thead><tbody>';
+        reportHtml += '</tbody></table><h2>История ТО</h2><table><thead><tr><th>Дата</th><th>Операция</th><th>Пробег</th><th>Запчасти</th><th>Работа</th><th>DIY</th><th>Прим.</th></tr></thead><tbody>';
         App.store.serviceRecords.sort(function(a,b){return new Date(b.date)-new Date(a.date);}).forEach(function(rec){ var op=App.store.operations.find(function(o){return o.id==rec.operation_id;}); reportHtml+='<tr><td>'+ (rec.date||'')+'</td><td>'+ App.utils.escapeHtml(op?op.name:'Неизвестно')+'</td><td>'+ (rec.mileage||'')+'</td><td>'+ (rec.parts_cost||'0')+'</td><td>'+ (rec.work_cost||'0')+'</td><td>'+ (rec.is_diy===true?'Да':'Нет')+'</td><td>'+ (rec.notes||'')+'</td></tr>'; });
         reportHtml += '</tbody></table></body></html>';
         var element = document.createElement('div');
@@ -1305,7 +1312,6 @@ App.ui.pages.renderSharingListForCarTab = function() {
         });
         selector.innerHTML = html;
         
-        // Удаляем старый обработчик, чтобы не дублировать
         const newSelector = selector.cloneNode(true);
         selector.parentNode.replaceChild(newSelector, selector);
         newSelector.addEventListener('change', (e) => {
