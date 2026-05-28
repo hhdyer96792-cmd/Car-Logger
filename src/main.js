@@ -1,4 +1,4 @@
-// src/main.js – финальная версия с выделенной аутентификацией
+// src/main.js
 // ===== Полифил crypto.randomUUID для старых браузеров =====
 (function() {
     if (typeof crypto === 'undefined' || typeof crypto.randomUUID !== 'function') {
@@ -19,6 +19,10 @@
     let isDemoMode = false;
     let demoModeInitialized = false;
     let dbInitialized = false;
+
+    // ========== ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ДЛЯ ИНТЕРВАЛОВ ==========
+    let syncInterval = null;
+    let premiumCheckInterval = null;
 
     const sidebarLoginBtn = document.getElementById('sidebar-login');
     const drawerLoginBtn = document.getElementById('drawer-login');
@@ -317,6 +321,24 @@
             }
         }
 
+        // ========== ОЧИСТКА ИНТЕРВАЛОВ ==========
+        if (syncInterval) {
+            clearInterval(syncInterval);
+            syncInterval = null;
+        }
+        if (premiumCheckInterval) {
+            clearInterval(premiumCheckInterval);
+            premiumCheckInterval = null;
+        }
+        if (App.premium && App.premium._checkInterval) {
+            clearInterval(App.premium._checkInterval);
+            App.premium._checkInterval = null;
+        }
+        if (App.db.killSwitch && App.db.killSwitch._interval) {
+            clearInterval(App.db.killSwitch._interval);
+            App.db.killSwitch._interval = null;
+        }
+
         console.log('[DEBUG] doLogout: вызываем signOut()');
         try {
             const signOutPromise = App.supabase.auth.signOut();
@@ -342,84 +364,38 @@
         window.location.reload();
     }
 
-    async function initDatabase() {
-        console.log('[DEBUG] initDatabase: начало инициализации IndexedDB');
+    async function forceLoadDataFromSupabase() {
+        console.log('[DEBUG] forceLoadDataFromSupabase: загрузка данных напрямую из Supabase');
         try {
-            await App.db.init();
-            console.log('[DEBUG] App.db.init() завершён');
-            const migrated = localStorage.getItem('vesta_migrated_to_indexeddb');
-            const { data: { session } } = await App.supabase.auth.getSession();
-            if (!migrated && session) {
-                const confirmMigration = await App.ui.confirmModalAsync('Перенести существующие данные в новую базу? (рекомендуется)');
-                if (confirmMigration) {
-                    await App.db.migrateFromLocalStorage();
-                    localStorage.setItem('vesta_migrated_to_indexeddb', 'true');
-                }
-            }
-            await App.store.loadFromIndexedDB();
-            console.log('[DEBUG] App.store.loadFromIndexedDB() завершён, operations:', App.store.operations.length);
-            if (session) {
-                const isKilled = await App.db.killSwitch.check();
-                if (isKilled) {
-                    await App.db.killSwitch.destroyLocalDB();
-                    return;
-                }
-                if (typeof App.db.killSwitch.startPeriodicCheck === 'function') App.db.killSwitch.startPeriodicCheck();
-            }
-            if (navigator.onLine && App.db.sync && typeof App.db.sync.processSyncQueue === 'function') {
-                await App.db.sync.processSyncQueue();
-            } else if (navigator.onLine && !App.db.sync) {
-                console.warn('[DEBUG] Sync module not loaded yet, skipping sync');
-            } else {
-                console.log('[DEBUG] Офлайн-режим, синхронизация отложена');
-            }
-            setInterval(() => {
-                if (navigator.onLine && App.db.sync && !App.db.sync._isRunning) {
-                    App.db.sync.processSyncQueue().catch(console.error);
-                }
-            }, 60000);
-            dbInitialized = true;
-            console.log('[DEBUG] dbInitialized = true');
+            const [operations, fuelLog, tireLog, parts, history, mileageHistory] = await Promise.all([
+                App.supa.loadOperations(),
+                App.supa.loadFuelLog(),
+                App.supa.loadTires(),
+                App.supa.loadParts(),
+                App.supa.loadHistory(),
+                App.supa.loadMileageHistory()
+            ]);
+            App.store.operations = operations;
+            App.store.fuelLog = fuelLog;
+            App.store.tireLog = tireLog;
+            App.store.parts = parts;
+            App.store.serviceRecords = history;
+            App.store.mileageHistory = mileageHistory;
+            console.log('[DEBUG] Данные загружены напрямую. operations:', App.store.operations.length);
+            for (const op of operations) await App.store.saveOperationToDB(op);
+            for (const f of fuelLog) await App.store.saveFuelRecordToDB(f);
+            for (const t of tireLog) await App.store.saveTireRecordToDB(t);
+            for (const p of parts) await App.store.savePartToDB(p);
+            for (const h of history) await App.store.saveHistoryRecordToDB(h);
+            for (const m of mileageHistory) await App.store.saveMileageRecordToDB(m);
+            if (typeof App.renderAll === 'function') App.renderAll();
+            App.toast('Данные загружены (режим без шифрования)', 'info');
         } catch (err) {
-            console.error('[DEBUG] Ошибка инициализации IndexedDB:', err);
-            if (typeof App.toast === 'function') {
-                App.toast('Не удалось открыть базу данных.', 'error');
-            }
-            App.store.initFromLocalStorage();
-            dbInitialized = true;
+            console.error('[DEBUG] Ошибка принудительной загрузки:', err);
+            App.toast('Не удалось загрузить данные', 'error');
         }
     }
 
-    async function handleOnlineSession() {
-        if (!navigator.onLine) {
-            isLoggedIn = true;
-            setInstallButtonVisible(true);
-            const dataPanel = document.getElementById('data-panel');
-            if (dataPanel) dataPanel.style.display = 'block';
-            const syncIndicatorOffline = document.getElementById('sync-indicator');
-            if (syncIndicatorOffline) syncIndicatorOffline.style.display = '';
-            const mobileRowOffline = document.getElementById('mobile-header-row2');
-            if (mobileRowOffline) mobileRowOffline.style.display = 'flex';
-
-            const cachedUsername = localStorage.getItem('vesta_username') || '';
-            updateUsernameDisplay(cachedUsername);
-
-            if (typeof App.store !== 'undefined' && typeof App.store.loadCars === 'function') {
-                try {
-                    await App.store.loadCars();
-                } catch (e) { console.warn('Офлайн: ошибка загрузки машин', e); }
-                if (typeof App.ui.pages.renderCarSelector === 'function') App.ui.pages.renderCarSelector();
-                if (typeof App.renderAll === 'function') App.renderAll();
-            }
-            return;
-        }
-
-        if (!authSubscribed) {
-            setupAuthSubscription();
-        }
-    }
-
-    // ========== ИСПРАВЛЕННАЯ ФУНКЦИЯ setupAuthSubscription ==========
     function setupAuthSubscription() {
         if (authSubscribed) return;
         authSubscribed = true;
@@ -459,12 +435,107 @@
                     const mobileRowOnline = document.getElementById('mobile-header-row2');
                     if (mobileRowOnline) mobileRowOnline.style.display = 'flex';
 
-                    // ===== ВЫДЕЛЕННАЯ АУТЕНТИФИКАЦИЯ =====
-                    if (typeof App.auth.initializeMasterPassword === 'function') {
-                        await App.auth.initializeMasterPassword();
-                    } else {
-                        console.warn('[DEBUG] App.auth не загружен, пропускаем шифрование');
-                        await App.store.loadFromIndexedDB();
+                    let masterPassword = null;
+                    const hasPin = App.localAuth && await App.localAuth.isPinSet();
+                    console.log('[DEBUG] hasPin =', hasPin);
+                    if (hasPin) {
+                        await new Promise(r => setTimeout(r, 100));
+                        try {
+                            const pin = await App.ui.promptModalAsync('Быстрый доступ', 'Введите PIN-код', true);
+                            if (pin) {
+                                masterPassword = await App.localAuth.verifyPin(pin);
+                                console.log('[DEBUG] verifyPin вернул', !!masterPassword);
+                                if (masterPassword) {
+                                    const salt = App.db.encryption.getStoredSalt();
+                                    const { key } = await App.db.encryption.initMasterKey(masterPassword, salt);
+                                    App.db.encryption.setMasterKey(key, salt);
+                                    await App.store.loadFromIndexedDB();
+                                    if (typeof App.renderAll === 'function') App.renderAll();
+                                    App.toast('Расшифровка по PIN успешна', 'success');
+                                }
+                            }
+                        } catch (pinError) {
+                            console.warn('[DEBUG] PIN error:', pinError.message);
+                            App.toast(pinError.message, 'error');
+                            masterPassword = null;
+                        }
+                    }
+                    if (!masterPassword) {
+                        const hasMasterPassword = localStorage.getItem('vesta_master_password_set') === 'true';
+                        console.log('[DEBUG] hasMasterPassword =', hasMasterPassword);
+                        const message = hasMasterPassword ? 'Введите мастер-пароль' : 'Установите мастер-пароль для шифрования данных (запомните его!)';
+                        let password = null;
+                        try {
+                            await new Promise(r => setTimeout(r, 100));
+                            password = await App.ui.promptModalAsync('Мастер-пароль', message, true);
+                            console.log('[DEBUG] Результат promptModalAsync:', password);
+                        } catch (err) {
+                            console.error('[DEBUG] Ошибка при вызове promptModalAsync:', err);
+                        }
+                        if (password) {
+                            const salt = App.db.encryption.getStoredSalt();
+                            let isValid = false;
+                            let key, finalSalt;
+                            if (hasMasterPassword) {
+                                isValid = await App.db.encryption.verifyMasterKey(password, salt);
+                                console.log('[DEBUG] verifyMasterKey =', isValid);
+                                if (isValid) {
+                                    const res = await App.db.encryption.initMasterKey(password, salt);
+                                    key = res.key;
+                                    finalSalt = res.salt;
+                                    App.db.encryption.setMasterKey(key, finalSalt);
+                                }
+                            } else {
+                                console.log('[DEBUG] Первая установка мастер-пароля');
+                                const res = await App.db.encryption.initMasterKey(password, null);
+                                key = res.key;
+                                finalSalt = res.salt;
+                                App.db.encryption.setMasterKey(key, finalSalt);
+                                await App.db.encryption.saveVerificationString(key);
+                                localStorage.setItem('vesta_master_password_set', 'true');
+                                isValid = true;
+                            }
+                            if (isValid) {
+                                await App.store.loadFromIndexedDB();
+                                if (typeof App.renderAll === 'function') App.renderAll();
+                                App.toast(hasMasterPassword ? 'Расшифровка успешна' : 'Мастер-пароль сохранён', 'success');
+                                masterPassword = password;
+                                if (App.localAuth && App.localAuth.resetPinAttempts) {
+                                    App.localAuth.resetPinAttempts();
+                                }
+                            } else {
+                                App.toast('Неверный мастер-пароль', 'error');
+                            }
+                        } else {
+                            App.toast('Без мастер-пароля чувствительные данные будут недоступны', 'warning');
+                            await forceLoadDataFromSupabase();
+                        }
+                    }
+                    if (masterPassword && !await App.localAuth.isPinSet() && App.localAuth && App.localAuth.isPinSupported()) {
+                        const wantPin = await App.ui.confirmModalAsync('Настроить быстрый вход по PIN-коду?');
+                        if (wantPin) {
+                            let pinSet = false;
+                            while (!pinSet) {
+                                await new Promise(r => setTimeout(r, 100));
+                                const pin = await App.ui.promptModalAsync('PIN-код', 'Введите 4+ цифры', true);
+                                if (pin && pin.length >= 4 && /^\d+$/.test(pin)) {
+                                    const confirmPin = await App.ui.promptModalAsync('Подтвердите PIN', 'Повторите PIN', true);
+                                    if (confirmPin === pin) {
+                                        try {
+                                            await App.localAuth.setPin(pin, masterPassword);
+                                            App.toast('PIN сохранён', 'success');
+                                            pinSet = true;
+                                        } catch (err) {
+                                            App.toast('Ошибка: ' + err.message, 'error');
+                                        }
+                                    } else {
+                                        App.toast('PIN не совпадают', 'error');
+                                    }
+                                } else {
+                                    App.toast('PIN должен быть 4+ цифры', 'error');
+                                }
+                            }
+                        }
                     }
 
                     const { data: { user } } = await App.supabase.auth.getUser();
@@ -477,6 +548,7 @@
                     }
 
                     if (event === 'PASSWORD_RECOVERY') {
+                        await new Promise(r => setTimeout(r, 100));
                         const newPassword = await App.ui.promptModalAsync('Новый пароль', 'Введите новый пароль (минимум 6 символов)', true);
                         if (newPassword && newPassword.length >= 6) {
                             const { error } = await App.supabase.auth.updateUser({ password: newPassword });
@@ -490,7 +562,7 @@
                     }
 
                     console.log('[DEBUG] Вызов App.storage.loadAllData()');
-                    if (typeof App.storage.loadAllData === 'function') {
+                    if (typeof App.storage !== 'undefined' && typeof App.storage.loadAllData === 'function') {
                         await App.storage.loadAllData();
                         console.log('[DEBUG] App.storage.loadAllData() завершён');
                     } else {
@@ -499,7 +571,6 @@
 
                     if (App.store.operations.length === 0) {
                         console.log('[DEBUG] Данные не загрузились, выполняем принудительную загрузку');
-                        // forceLoadDataFromSupabase определена чуть ниже (оставлена из предыдущей версии)
                         await forceLoadDataFromSupabase();
                     }
 
@@ -583,35 +654,82 @@
         });
     }
 
-    async function forceLoadDataFromSupabase() {
-        console.log('[DEBUG] forceLoadDataFromSupabase: загрузка данных напрямую из Supabase');
+    async function initDatabase() {
+        console.log('[DEBUG] initDatabase: начало инициализации IndexedDB');
         try {
-            const [operations, fuelLog, tireLog, parts, history, mileageHistory] = await Promise.all([
-                App.supa.loadOperations(),
-                App.supa.loadFuelLog(),
-                App.supa.loadTires(),
-                App.supa.loadParts(),
-                App.supa.loadHistory(),
-                App.supa.loadMileageHistory()
-            ]);
-            App.store.operations = operations;
-            App.store.fuelLog = fuelLog;
-            App.store.tireLog = tireLog;
-            App.store.parts = parts;
-            App.store.serviceRecords = history;
-            App.store.mileageHistory = mileageHistory;
-            console.log('[DEBUG] Данные загружены напрямую. operations:', App.store.operations.length);
-            for (const op of operations) await App.store.saveOperationToDB(op);
-            for (const f of fuelLog) await App.store.saveFuelRecordToDB(f);
-            for (const t of tireLog) await App.store.saveTireRecordToDB(t);
-            for (const p of parts) await App.store.savePartToDB(p);
-            for (const h of history) await App.store.saveHistoryRecordToDB(h);
-            for (const m of mileageHistory) await App.store.saveMileageRecordToDB(m);
-            if (typeof App.renderAll === 'function') App.renderAll();
-            App.toast('Данные загружены (режим без шифрования)', 'info');
+            await App.db.init();
+            console.log('[DEBUG] App.db.init() завершён');
+            const migrated = localStorage.getItem('vesta_migrated_to_indexeddb');
+            const { data: { session } } = await App.supabase.auth.getSession();
+            if (!migrated && session) {
+                const confirmMigration = await App.ui.confirmModalAsync('Перенести существующие данные в новую базу? (рекомендуется)');
+                if (confirmMigration) {
+                    await App.db.migrateFromLocalStorage();
+                    localStorage.setItem('vesta_migrated_to_indexeddb', 'true');
+                }
+            }
+            await App.store.loadFromIndexedDB();
+            console.log('[DEBUG] App.store.loadFromIndexedDB() завершён, operations:', App.store.operations.length);
+            if (session) {
+                const isKilled = await App.db.killSwitch.check();
+                if (isKilled) {
+                    await App.db.killSwitch.destroyLocalDB();
+                    return;
+                }
+                if (typeof App.db.killSwitch.startPeriodicCheck === 'function') App.db.killSwitch.startPeriodicCheck();
+            }
+            if (navigator.onLine && App.db.sync && typeof App.db.sync.processSyncQueue === 'function') {
+                await App.db.sync.processSyncQueue();
+            } else if (navigator.onLine && !App.db.sync) {
+                console.warn('[DEBUG] Sync module not loaded yet, skipping sync');
+            } else {
+                console.log('[DEBUG] Офлайн-режим, синхронизация отложена');
+            }
+            // ========== СОХРАНЯЕМ ИНТЕРВАЛ СИНХРОНИЗАЦИИ ==========
+            if (syncInterval) clearInterval(syncInterval);
+            syncInterval = setInterval(() => {
+                if (navigator.onLine && App.db.sync && !App.db.sync._isRunning) {
+                    App.db.sync.processSyncQueue().catch(console.error);
+                }
+            }, 60000);
+            dbInitialized = true;
+            console.log('[DEBUG] dbInitialized = true');
         } catch (err) {
-            console.error('[DEBUG] Ошибка принудительной загрузки:', err);
-            App.toast('Не удалось загрузить данные', 'error');
+            console.error('[DEBUG] Ошибка инициализации IndexedDB:', err);
+            if (typeof App.toast === 'function') {
+                App.toast('Не удалось открыть базу данных.', 'error');
+            }
+            App.store.initFromLocalStorage();
+            dbInitialized = true;
+        }
+    }
+
+    async function handleOnlineSession() {
+        if (!navigator.onLine) {
+            isLoggedIn = true;
+            setInstallButtonVisible(true);
+            const dataPanel = document.getElementById('data-panel');
+            if (dataPanel) dataPanel.style.display = 'block';
+            const syncIndicatorOffline = document.getElementById('sync-indicator');
+            if (syncIndicatorOffline) syncIndicatorOffline.style.display = '';
+            const mobileRowOffline = document.getElementById('mobile-header-row2');
+            if (mobileRowOffline) mobileRowOffline.style.display = 'flex';
+
+            const cachedUsername = localStorage.getItem('vesta_username') || '';
+            updateUsernameDisplay(cachedUsername);
+
+            if (typeof App.store !== 'undefined' && typeof App.store.loadCars === 'function') {
+                try {
+                    await App.store.loadCars();
+                } catch (e) { console.warn('Офлайн: ошибка загрузки машин', e); }
+                if (typeof App.ui.pages.renderCarSelector === 'function') App.ui.pages.renderCarSelector();
+                if (typeof App.renderAll === 'function') App.renderAll();
+            }
+            return;
+        }
+
+        if (!authSubscribed) {
+            setupAuthSubscription();
         }
     }
 
@@ -731,7 +849,7 @@
 
         window.addEventListener('load', () => setTimeout(() => { if (typeof App.initIcons === 'function') App.initIcons(); }, 200));
 
-        // FAB-меню (без изменений)
+        // ===== ПЛАВАЮЩАЯ FAB-КНОПКА =====
         (function() {
             const fab = document.createElement('div');
             fab.id = 'fab-menu';
@@ -796,7 +914,6 @@
         })();
     }
 
-    // Глобальные функции восстановления (заглушки)
     window.recoverViaTelegram = async function() {
         console.log('recoverViaTelegram placeholder');
         await App.ui.alertModal('Восстановление через Telegram временно недоступно. Пожалуйста, свяжитесь с администратором.');
