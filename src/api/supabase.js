@@ -361,7 +361,12 @@ App.supa.saveUserSettings = async function(settingsObj) {
     return App.supabase.from('user_settings').upsert(record, { onConflict: 'user_id, car_id' }).select();
 };
 
+// ----- Загрузка фото с ограничением размера 2 МБ -----
 App.supa.uploadPhoto = async function(file) {
+    const MAX_SIZE = 2 * 1024 * 1024; // 2 MB
+    if (file.size > MAX_SIZE) {
+        throw new Error('Файл слишком большой. Максимальный размер 2 МБ.');
+    }
     const userId = await App.supa.getCurrentUserId();
     if (!userId) throw new Error('Not authenticated');
     ensureSupabase();
