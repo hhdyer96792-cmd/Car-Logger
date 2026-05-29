@@ -1,9 +1,12 @@
-// src/ui/pages/fuel.js – полная исправленная версия с иконкой синхронизации
+// src/ui/pages/fuel.js
 window.App = window.App || {};
 App.ui = App.ui || {};
 App.ui.pages = App.ui.pages || {};
 
-function getSyncIconFuel(recordId) {
+App.ui.pages._fuelPeriod = 'month';
+
+// Вспомогательная функция для иконки синхронизации
+function getSyncIcon(recordId) {
     if (!recordId) return '';
     if (App.store.isRecordPending && App.store.isRecordPending(recordId)) {
         return '<i data-lucide="clock" class="sync-pending-icon" style="color: var(--warning); width: 16px; height: 16px; margin-left: 8px;" title="Ожидает синхронизации"></i>';
@@ -11,8 +14,7 @@ function getSyncIconFuel(recordId) {
     return '';
 }
 
-App.ui.pages._fuelPeriod = 'month';
-
+// ---------- Главная точка входа ----------
 App.ui.pages.renderFuelTab = function() {
     if (!App.store.fuelLog || App.store.fuelLog.length === 0) {
         ['fuel-summary-card', 'fuel-period-switch'].forEach(function(id) {
@@ -49,6 +51,7 @@ App.ui.pages.renderFuelTab = function() {
     App.ui.pages.renderFuelCards();
 };
 
+// ---------- Сводка 2x2 ----------
 App.ui.pages.renderFuelSummary = function() {
     var logs = App.store.fuelLog || [];
     if (logs.length === 0) {
@@ -90,6 +93,7 @@ App.ui.pages.renderFuelSummary = function() {
     document.getElementById('fuel-cost-per-km').textContent = costPerKm;
 };
 
+// ---------- Переключатель периода ----------
 App.ui.pages.renderFuelPeriodSwitch = function() {
     var container = document.getElementById('fuel-period-switch');
     if (!container) return;
@@ -107,6 +111,7 @@ App.ui.pages.renderFuelPeriodSwitch = function() {
     });
 };
 
+// ---------- Все графики ----------
 App.ui.pages.renderFuelCharts = function(period) {
     App.ui.pages.renderFuelPriceHistogram(period);
     App.ui.pages.renderFuelConsumptionHistogram(period);
@@ -114,6 +119,7 @@ App.ui.pages.renderFuelCharts = function(period) {
     App.ui.pages.renderFuelVolumePie(period);
 };
 
+// ---------- Вспомогательные функции для периодов ----------
 function getIntervalStart(period) {
     var now = new Date();
     switch (period) {
@@ -194,6 +200,7 @@ function generateIntervals(period) {
     return { labels: labels, intervals: intervals };
 }
 
+// ---------- Гистограмма средней цены ----------
 App.ui.pages.renderFuelPriceHistogram = function(period) {
     var canvas = document.getElementById('fuelPriceHistogram');
     if (!canvas) return;
@@ -259,6 +266,7 @@ App.ui.pages.renderFuelPriceHistogram = function(period) {
     });
 };
 
+// ---------- Гистограмма расхода ----------
 App.ui.pages.renderFuelConsumptionHistogram = function(period) {
     var canvas = document.getElementById('fuelConsumptionHistogram');
     if (!canvas) return;
@@ -331,6 +339,7 @@ App.ui.pages.renderFuelConsumptionHistogram = function(period) {
     });
 };
 
+// Круговая: затраты по типу топлива
 App.ui.pages.renderFuelCostPie = function(period) {
     var canvas = document.getElementById('fuelCostPieChart');
     if (!canvas) return;
@@ -370,6 +379,7 @@ App.ui.pages.renderFuelCostPie = function(period) {
     });
 };
 
+// Круговая: расход (литры) по типу топлива
 App.ui.pages.renderFuelVolumePie = function(period) {
     var canvas = document.getElementById('fuelVolumePieChart');
     if (!canvas) return;
@@ -409,6 +419,7 @@ App.ui.pages.renderFuelVolumePie = function(period) {
     });
 };
 
+// ---------- Карточки заправок (аккордеоны по годам) с иконкой синхронизации ----------
 App.ui.pages.renderFuelCards = function() {
     var container = document.getElementById('fuel-cards-container');
     if (!container) return;
@@ -446,10 +457,7 @@ App.ui.pages.renderFuelCards = function() {
             else if (fuelType === 'Электричество') typeClass = 'electric';
             var total = (Number(f.liters) || 0) * (Number(f.pricePerLiter) || 0);
             var fullTank = (f.fullTank === 'TRUE' || f.fullTank === true);
-            
-            // Иконка статуса синхронизации
-            var syncIcon = getSyncIconFuel(f.id);
-            
+            var syncIcon = getSyncIcon(f.id);
             html += '<div class="card-item">';
             html += '<div class="card-header">';
             html += '<div class="card-summary">';
@@ -489,10 +497,12 @@ App.ui.pages.renderFuelCards = function() {
     App.initIcons();
 };
 
+// ---------- Старая точка входа ----------
 App.ui.pages.renderFuelTable = function() {
     App.ui.pages.renderFuelTab();
 };
 
+// ======== УПРАВЛЕНИЕ ЗАПРАВКАМИ ========
 App.ui.pages.checkFuelOrderConflicts = function(dateISO, mileage, excludeRowIndex) {
     var sorted = App.store.fuelLog.filter(function(_, idx) {
         return (idx + 2) !== excludeRowIndex;
