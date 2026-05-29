@@ -833,18 +833,28 @@
         }
 
         window.addEventListener('online', () => {
-            if (typeof App.toast === 'function') App.toast('Сеть восстановлена', 'success');
-            if (App.db.sync && typeof App.db.sync.processSyncQueue === 'function') {
-                App.db.sync.processSyncQueue().catch(console.error);
-            }
-            if (App.store.pendingActions && App.store.pendingActions.length > 0) {
-                if (typeof App.ui.pages.renderFuelTab === 'function') App.ui.pages.renderFuelTab();
-                if (typeof App.ui.pages.renderPartsTab === 'function') App.ui.pages.renderPartsTab();
-                if (typeof App.ui.pages.renderTOTable === 'function') App.ui.pages.renderTOTable();
-                if (typeof App.ui.pages.renderDashboard === 'function') App.ui.pages.renderDashboard();
-            }
-            handleOnlineSession();
-        });
+    if (typeof App.toast === 'function') App.toast('Сеть восстановлена', 'success');
+    
+    // 1. Синхронизация очереди pending_actions
+    if (App.db.sync && typeof App.db.sync.processSyncQueue === 'function') {
+        App.db.sync.processSyncQueue().catch(console.error);
+    }
+    
+    // 2. Принудительная перезагрузка данных текущего автомобиля с сервера
+    if (App.store.activeCarId && typeof App.storage.loadAllData === 'function') {
+        App.storage.loadAllData().catch(console.error);
+    }
+    
+    // 3. Обновление UI, если остались несинхронизированные записи
+    if (App.store.pendingActions && App.store.pendingActions.length > 0) {
+        if (typeof App.ui.pages.renderFuelTab === 'function') App.ui.pages.renderFuelTab();
+        if (typeof App.ui.pages.renderPartsTab === 'function') App.ui.pages.renderPartsTab();
+        if (typeof App.ui.pages.renderTOTable === 'function') App.ui.pages.renderTOTable();
+        if (typeof App.ui.pages.renderDashboard === 'function') App.ui.pages.renderDashboard();
+    }
+    
+    handleOnlineSession();
+});
 
         window.addEventListener('offline', () => {
             if (typeof App.toast === 'function') App.toast('Вы офлайн', 'warning');
