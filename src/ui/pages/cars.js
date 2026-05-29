@@ -1,3 +1,4 @@
+
 // src/ui/pages/cars.js
 window.App = window.App || {};
 App.ui.pages = App.ui.pages || {};
@@ -376,7 +377,6 @@ App.ui.pages.renderCarTab = function() {
                     App.realtime.subscribeToCar(carId);
                 }
                 App.storage.loadAllData().then(function() {
-                    // Загружаем детали, используя отложенный вызов с повторными попытками
                     App.ui.pages.loadCarDetailsWithRetry(carId);
                     App.ui.pages.renderCarSelector();
                     App.ui.pages.updateCurrentCarName();
@@ -412,11 +412,9 @@ App.ui.pages.renderCarTab = function() {
         });
     };
 
-    // Используем отложенную загрузку с повторными попытками, если активный автомобиль есть
     if (App.store.activeCarId) {
         App.ui.pages.loadCarDetailsWithRetry(App.store.activeCarId);
     } else {
-        // Если нет активного авто, очищаем поля (только если они существуют)
         var brandField = document.getElementById('car-brand');
         if (brandField) brandField.value = '';
         var modelField = document.getElementById('car-model');
@@ -442,7 +440,7 @@ App.ui.pages.renderCarTab = function() {
         App.ui.pages.initCsvImport();
     }
     
-    // Удаляем старый блок кнопок VIN, если он есть, чтобы не дублировать
+    // Удаляем старый блок кнопок VIN, если он есть
     var existingVinWrapper = document.getElementById('vin-buttons-wrapper');
     if (existingVinWrapper) {
         existingVinWrapper.remove();
@@ -451,14 +449,12 @@ App.ui.pages.renderCarTab = function() {
     var vinContainer = document.querySelector('.car-fields-grid');
     if (vinContainer) {
         var oldVinInput = document.getElementById('car-vin');
-        // Если поле car-vin отсутствует, создадим его
         if (!oldVinInput) {
             console.warn('[Cars] Поле car-vin не найдено, создаём динамически');
             var newVinInput = document.createElement('input');
             newVinInput.type = 'text';
             newVinInput.id = 'car-vin';
             newVinInput.placeholder = 'VIN';
-            // Добавляем в конец grid
             vinContainer.appendChild(newVinInput);
             oldVinInput = newVinInput;
         }
@@ -498,7 +494,6 @@ App.ui.pages.renderCarTab = function() {
             
             wrapper.appendChild(btnContainer);
             
-            // Обработчики кнопок
             var vinInfoBtn = document.getElementById('vin-info-btn');
             if (vinInfoBtn) {
                 vinInfoBtn.addEventListener('click', async () => {
@@ -553,7 +548,7 @@ App.ui.pages.renderCarTab = function() {
     App.initIcons();
 };
 
-/* ========== УЛУЧШЕННАЯ ФУНКЦИЯ ЗАГРУЗКИ ДЕТАЛЕЙ (не требует car-vin) ========== */
+/* ========== УЛУЧШЕННАЯ ФУНКЦИЯ ЗАГРУЗКИ ДЕТАЛЕЙ ========== */
 App.ui.pages.loadCarDetailsWithRetry = function(carId, maxAttempts = 20, delayMs = 200) {
     let attempts = 0;
     const tryLoad = () => {
@@ -561,15 +556,13 @@ App.ui.pages.loadCarDetailsWithRetry = function(carId, maxAttempts = 20, delayMs
         const modelField = document.getElementById('car-model');
         const yearField = document.getElementById('car-year');
         const plateField = document.getElementById('car-plate');
-        // car-vin не обязателен для загрузки основных данных
         if (brandField && modelField && yearField && plateField) {
             App.ui.pages.loadCarDetails(carId);
         } else if (attempts < maxAttempts) {
             attempts++;
-            console.log(`[Cars] Поля ввода ещё не готовы (${attempts}/${maxAttempts}), повторная попытка через ${delayMs}ms...`);
             setTimeout(tryLoad, delayMs);
         } else {
-            console.error('[Cars] Не удалось найти обязательные поля ввода автомобиля после нескольких попыток.');
+            console.error('[Cars] Не удалось найти поля ввода автомобиля');
             App.toast('Не удалось загрузить данные автомобиля. Пожалуйста, перезагрузите страницу.', 'error');
         }
     };
@@ -584,7 +577,6 @@ App.ui.pages.loadCarDetails = function(carId) {
     var vinField = document.getElementById('car-vin');
     
     if (!brandField || !modelField || !yearField || !plateField) {
-        console.warn('[Cars] loadCarDetails: не все поля ввода найдены, пропускаем');
         return;
     }
     
@@ -595,6 +587,22 @@ App.ui.pages.loadCarDetails = function(carId) {
     plateField.value = s.plateNumber || '';
     if (vinField) vinField.value = s.vin || '';
 };
+
+/* ========== ПРИВЯЗКА КНОПКИ ПРИГЛАШЕНИЯ ========== */
+function bindInviteButton() {
+    var inviteBtn = document.getElementById('invite-btn');
+    if (inviteBtn && !inviteBtn._inviteBound) {
+        inviteBtn.addEventListener('click', App.ui.pages.inviteUser);
+        inviteBtn._inviteBound = true;
+        console.log('[Cars] Обработчик кнопки приглашения привязан');
+    }
+}
+
+// Вызываем привязку после каждого рендера вкладки
+// Также добавим MutationObserver на случай, если кнопка появится позже
+setTimeout(bindInviteButton, 500);
+setInterval(bindInviteButton, 2000);
+
 
 /* ========== ОСНОВНЫЕ ПАРАМЕТРЫ (без изменений, с защитой от null) ========== */
 App.ui.pages.renderBasicParams = async function() {
