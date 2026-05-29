@@ -762,16 +762,17 @@
             navigator.storage.persist().then(isPersisted => console.log('Persistent storage:', isPersisted ? 'granted' : 'denied'));
         }
 
-        // Регистрация Service Worker
-        if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('/service-worker.js').then(reg => {
-                console.log('[SW] Зарегистрирован:', reg);
-            }).catch(err => console.error('[SW] Ошибка регистрации:', err));
-            
-            navigator.serviceWorker.register('/firebase-messaging-sw.js').then(reg => {
-                console.log('[Firebase SW] зарегистрирован');
-            }).catch(err => console.warn('[Firebase SW] ошибка:', err));
-        }
+        // Регистрация Service Worker (правильные пути для поддиректории /Car-Logger/)
+if ('serviceWorker' in navigator) {
+    // Используем относительный путь или абсолютный с учётом поддиректории
+    navigator.serviceWorker.register('./service-worker.js').then(reg => {
+        console.log('[SW] Зарегистрирован:', reg);
+    }).catch(err => console.error('[SW] Ошибка регистрации:', err));
+    
+    navigator.serviceWorker.register('./firebase-messaging-sw.js').then(reg => {
+        console.log('[Firebase SW] зарегистрирован');
+    }).catch(err => console.warn('[Firebase SW] ошибка:', err));
+}
 
         initDatabase().then(() => {
             console.log('[DEBUG] initDatabase завершён, проверяем сессию');
