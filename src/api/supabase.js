@@ -416,7 +416,10 @@ App.supa.uploadPhoto = async function(file) {
             upsert: false
         });
     
-    if (error) throw error;
+    if (error) {
+    console.error('[Supabase] Storage upload error details:', error);
+    throw new Error('Ошибка загрузки фото: ' + (error.message || 'неизвестная ошибка'));
+}
     
     const { data: urlData } = App.supabase.storage
         .from('vesta-photos')
@@ -600,30 +603,33 @@ App.supa.createCalendarToken = async function(carId) {
 };
 
 App.supa.createInviteLink = async function(carId) {
-    // Проверяем, что пользователь авторизован
-    const userId = await App.supa.getCurrentUserId();
-    if (!userId) {
-        throw new Error('Пользователь не авторизован');
-    }
-    try {
-        const { data, error } = await App.supabase
-            .from('car_shares')
-            .insert({ 
-                car_id: carId, 
-                invited_email: null,
-                user_id: userId  // важно: добавляем user_id, чтобы RLS пропустил
-            })
-            .select('invite_code')
-            .single();
-        if (error) throw error;
-        const inviteCode = data.invite_code;
-        const link = window.location.origin + '/Car-K3eper/?invite=' + inviteCode;
-        console.log('[Supabase] Invite link created:', link);
-        return link;
-    } catch (err) {
-        console.error('[Supabase] createInviteLink error:', err);
-        throw err;
-    }
+ // Проверяем авторизацию (но user_id не передаём, так как его нет в таблице)
+ const userId = await App.supa.getCurrentUserId();
+ if (!userId) {
+ throw new Error('Пользователь не авторизован');
+ }
+ try {
+ // Вставляем только car_id, invited_email = null (остальное через RLS)
+ const { data, error } = await App.supabase
+ .from('car_shares')
+ .insert({ 
+ car_id: carId, 
+ invited_email: null
+ })
+ .select('invite_code')
+ .single();
+ if (error) throw error;
+ if (!data || !data.invite_code) {
+ throw new Error('Не удалось получить invite_code');
+ }
+ const inviteCode = data.invite_code;
+ const link = window.location.origin + '/Car-K3eper/?invite=' + inviteCode;
+ console.log('[Supabase] Invite link created:', link);
+ return link;
+ } catch (err) {
+ console.error('[Supabase] createInviteLink error:', err);
+ throw err;
+ }
 };
 
 // Страховка
