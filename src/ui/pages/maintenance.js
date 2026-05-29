@@ -3,6 +3,15 @@ window.App = window.App || {};
 App.ui = App.ui || {};
 App.ui.pages = App.ui.pages || {};
 
+// Вспомогательная функция для иконки синхронизации
+function getSyncIcon(recordId) {
+    if (!recordId) return '';
+    if (App.store.isRecordPending && App.store.isRecordPending(recordId)) {
+        return '<i data-lucide="clock" class="sync-pending-icon" style="color: var(--warning); width: 16px; height: 16px; margin-left: 8px;" title="Ожидает синхронизации"></i>';
+    }
+    return '';
+}
+
 // Флаг для однократного закрытия аккордеонов при первом рендере
 App.ui.pages._toAccordionsInitialized = false;
 
@@ -36,7 +45,7 @@ App.ui.pages.renderTotalCost = function() {
     if (el) el.textContent = total.toLocaleString() + ' ₽';
 };
 
-// 1. Объединённая статистика 2×2
+// 1. Объединённая статистика 2x2
 App.ui.pages.renderTOStats = function() {
     document.getElementById('to-mileage').textContent = App.store.settings.currentMileage.toLocaleString();
     document.getElementById('to-motohours').textContent = App.store.settings.currentMotohours.toLocaleString();
@@ -225,7 +234,7 @@ App.ui.pages.renderOilResourceCard = function() {
     }
 };
 
-// 5. Карточки операций (аккордеоны по категориям) с виртуализацией
+// 5. Карточки операций (аккордеоны по категориям) с виртуализацией и иконкой синхронизации
 App.ui.pages.renderTOTable = function() {
     var container = document.getElementById('to-cards-container');
     if (!container) return;
@@ -262,7 +271,6 @@ App.ui.pages.renderTOTable = function() {
         'Прочее': 'more-horizontal'
     };
 
-    // Константа: количество операций, отображаемых изначально на категорию
     const ITEMS_PER_CATEGORY = 15;
 
     var html = '';
@@ -270,7 +278,6 @@ App.ui.pages.renderTOTable = function() {
         var ops = grouped[cat].sort(function(a, b) {
             return App.logic.calculatePlan(a).daysLeft - App.logic.calculatePlan(b).daysLeft;
         });
-        // Инициализируем счётчик видимости, если его нет
         if (typeof categoryVisibleCounts[cat] !== 'number') {
             categoryVisibleCounts[cat] = ITEMS_PER_CATEGORY;
         }
@@ -314,11 +321,13 @@ App.ui.pages.renderTOTable = function() {
                 percent = Math.min(100, Math.round((elapsed / totalDays) * 100));
             }
             var progressColor = percent > 70 ? 'var(--danger)' : (percent > 30 ? 'var(--warning)' : 'var(--success)');
+            
+            var syncIcon = getSyncIcon(op.id);
             html += '<div class="card-item expandable" data-op-id="' + op.id + '">';
             html += '<div class="card-header">';
             html += '<span class="status-dot ' + statusClass + '"></span>';
             html += '<div class="card-summary">';
-            html += '<strong>' + App.utils.escapeHtml(op.name) + '</strong>';
+            html += '<strong>' + App.utils.escapeHtml(op.name) + syncIcon + '</strong>';
             html += '<div class="card-meta">' +
                 (op.lastDate ? App.utils.isoToDDMMYYYY(op.lastDate) : '—') + ' · ' +
                 (op.lastMileage || '—') + ' км · ' +
@@ -358,7 +367,6 @@ App.ui.pages.renderTOTable = function() {
 
     container.innerHTML = html;
 
-    // При первом рендере закрываем все аккордеоны, при повторных – оставляем как есть
     if (!App.ui.pages._toAccordionsInitialized) {
         container.querySelectorAll('.accordion-body').forEach(function(body) {
             body.classList.remove('open');
@@ -369,7 +377,6 @@ App.ui.pages.renderTOTable = function() {
         App.ui.pages._toAccordionsInitialized = true;
     }
 
-    // Обработчики аккордеонов
     container.querySelectorAll('.accordion-header').forEach(function(header) {
         header.addEventListener('click', function() {
             var body = header.nextElementSibling;
@@ -397,14 +404,13 @@ App.ui.pages.renderTOTable = function() {
         });
     });
 
-    // Обработчики кнопок "Показать ещё"
     container.querySelectorAll('.show-more-btn').forEach(function(btn) {
         btn.addEventListener('click', function(e) {
             e.stopPropagation();
             var category = this.dataset.category;
             if (category && categoryVisibleCounts[category]) {
                 categoryVisibleCounts[category] += ITEMS_PER_CATEGORY;
-                App.ui.pages.renderTOTable(); // перерисовываем всю таблицу
+                App.ui.pages.renderTOTable();
             }
         });
     });
