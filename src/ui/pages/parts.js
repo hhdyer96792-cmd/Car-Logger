@@ -285,10 +285,9 @@ App.ui.pages.openPartForm = function(part) {
     var modal = App.ui.createModal(isEdit ? '<i data-lucide="pencil"></i> Запчасть' : '<i data-lucide="plus"></i> Запчасть', content);
     var form = modal.querySelector('#part-form');
 
-    form.onsubmit = function(e) {
+    form.onsubmit = async function(e) {
         e.preventDefault();
         var d = Object.fromEntries(new FormData(form));
-        // Преобразование даты
         var dateAdded = d.dateAdded ? App.utils.ddmmYYYYtoISO(d.dateAdded) : null;
         var rowData = {
             id: d.id || null,
@@ -317,21 +316,22 @@ App.ui.pages.openPartForm = function(part) {
         modal.remove();
 
         if (App.config.USE_SUPABASE) {
-            App.storage.savePart(rowData).then(function(res) {
-                if (res && res.data && res.data.length > 0) rowData.id = res.data[0].id;
+            // Добавляем purchase_date для API
+            rowData.purchaseDate = dateAdded;
+            try {
+                await App.storage.savePart(rowData);
+                // storage.js сам вызовет refreshUIToParts()
                 var existingIdx = App.store.parts.findIndex(function(p) { return p.id == rowData.id; });
                 if (existingIdx !== -1) {
                     App.store.parts[existingIdx] = rowData;
                 } else {
                     App.store.parts.push(rowData);
                 }
-                App.store.saveToLocalStorage();
-                // Убираем вызов renderPartsTab() – он уже вызывается в storage.js через refreshUIToParts()
                 App.toast(isEdit ? 'Запчасть обновлена' : 'Запчасть добавлена', 'success');
-            }).catch(function(err) {
+            } catch (err) {
                 console.error(err);
                 App.toast('Ошибка сохранения', 'error');
-            });
+            }
         } else {
             if (isEdit) {
                 var idx = App.store.parts.findIndex(function(p) { return p.id == part.id; });
