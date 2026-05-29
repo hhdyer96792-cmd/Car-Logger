@@ -319,9 +319,19 @@ App.store = {
     saveCalendarCache: function() {},
 
     setActiveCar: function(carId) {
+        if (this.activeCarId === carId) return;
         this.activeCarId = carId;
         localStorage.setItem('vesta_active_car_id', carId);
+        // Загружаем данные для нового автомобиля
         this.loadFromIndexedDB().catch(console.error);
+        // Загружаем настройки для нового автомобиля
+        if (typeof App.storage.loadSettingsForCar === 'function') {
+            App.storage.loadSettingsForCar(carId).catch(console.error);
+        }
+        // Обновляем UI
+        if (typeof App.ui.pages.renderDashboard === 'function') App.ui.pages.renderDashboard();
+        if (typeof App.ui.pages.renderTOStats === 'function') App.ui.pages.renderTOStats();
+        if (typeof App.ui.pages.renderTOTable === 'function') App.ui.pages.renderTOTable();
     },
     loadCars: function() {
         const self = this;
