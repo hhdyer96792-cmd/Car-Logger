@@ -1,4 +1,3 @@
-
 // src/ui/pages/cars.js
 window.App = window.App || {};
 App.ui.pages = App.ui.pages || {};
@@ -218,7 +217,7 @@ App.ui.pages.deleteCar = async function() {
     });
 };
 
-/* ========== ПРИГЛАШЕНИЯ (ИСПРАВЛЕНА) ========== */
+/* ========== ПРИГЛАШЕНИЯ (ИСПРАВЛЕНА: однократная привязка через делегирование) ========== */
 App.ui.pages.inviteUser = async function() {
     var carId = App.store.activeCarId;
     if (!carId) {
@@ -360,7 +359,7 @@ App.ui.pages.checkPendingInvites = function() {
     });
 };
 
-/* ========== НОВАЯ ВКЛАДКА «АВТОМОБИЛЬ» (ИСПРАВЛЕНА) ========== */
+/* ========== НОВАЯ ВКЛАДКА «АВТОМОБИЛЬ» ========== */
 App.ui.pages.renderCarTab = function() {
     var selector = document.getElementById('car-page-selector');
     if (selector) {
@@ -588,20 +587,26 @@ App.ui.pages.loadCarDetails = function(carId) {
     if (vinField) vinField.value = s.vin || '';
 };
 
-/* ========== ПРИВЯЗКА КНОПКИ ПРИГЛАШЕНИЯ ========== */
-function bindInviteButton() {
-    var inviteBtn = document.getElementById('invite-btn');
-    if (inviteBtn && !inviteBtn._inviteBound) {
-        inviteBtn.addEventListener('click', App.ui.pages.inviteUser);
-        inviteBtn._inviteBound = true;
-        console.log('[Cars] Обработчик кнопки приглашения привязан');
-    }
+/* ========== ДЕЛЕГИРОВАНИЕ СОБЫТИЙ ДЛЯ КНОПКИ ПРИГЛАШЕНИЯ ========== */
+// Привязываем обработчик один раз через делегирование
+function setupInviteDelegation() {
+    document.body.addEventListener('click', function(e) {
+        var target = e.target.closest('#invite-btn');
+        if (target && target.id === 'invite-btn') {
+            e.preventDefault();
+            e.stopPropagation();
+            App.ui.pages.inviteUser();
+        }
+    });
+    console.log('[Cars] Делегирование для кнопки приглашения настроено');
 }
 
-// Вызываем привязку после каждого рендера вкладки
-// Также добавим MutationObserver на случай, если кнопка появится позже
-setTimeout(bindInviteButton, 500);
-setInterval(bindInviteButton, 2000);
+// Вызываем однократно
+if (!window._inviteDelegationSet) {
+    setupInviteDelegation();
+    window._inviteDelegationSet = true;
+}
+
 
 
 /* ========== ОСНОВНЫЕ ПАРАМЕТРЫ (без изменений, с защитой от null) ========== */
