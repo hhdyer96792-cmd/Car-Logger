@@ -51,7 +51,7 @@ App.ui.pages.renderFuelTab = function() {
     App.ui.pages.renderFuelCards();
 };
 
-// ---------- Сводка 2x2 ----------
+// ---------- Сводка 2×2 ----------
 App.ui.pages.renderFuelSummary = function() {
     var logs = App.store.fuelLog || [];
     if (logs.length === 0) {
