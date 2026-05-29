@@ -814,19 +814,22 @@
         }
 
         window.addEventListener('online', () => {
-            if (typeof App.toast === 'function') App.toast('Сеть восстановлена', 'success');
-            if (App.store && App.store.pendingActions && App.store.pendingActions.length > 0) {
-                App.toast('Синхронизация офлайн-изменений...', 'info');
-                App.store.pendingActions.forEach(action => {
-                    if (action.type === 'service' && typeof App.logic.addServiceRecord === 'function') {
-                        App.logic.addServiceRecord(action.opId, action.date, action.mileage, action.motohours,
-                            action.partsCost, action.workCost, action.isDIY, action.notes, action.photoUrl);
-                    }
-                });
-                if (typeof App.store.clearPendingActions === 'function') App.store.clearPendingActions();
-            }
-            handleOnlineSession();
-        });
+    if (typeof App.toast === 'function') App.toast('Сеть восстановлена', 'success');
+    
+    // Принудительная синхронизация очереди pending_actions
+    if (App.db.sync && typeof App.db.sync.processSyncQueue === 'function') {
+        App.db.sync.processSyncQueue().catch(console.error);
+    }
+    
+    // Обновляем UI для отображения иконок синхронизации (если остались)
+    if (App.store.pendingActions && App.store.pendingActions.length > 0) {
+        if (typeof App.ui.pages.renderFuelTab === 'function') App.ui.pages.renderFuelTab();
+        if (typeof App.ui.pages.renderPartsTab === 'function') App.ui.pages.renderPartsTab();
+        if (typeof App.ui.pages.renderTOTable === 'function') App.ui.pages.renderTOTable();
+        if (typeof App.ui.pages.renderDashboard === 'function') App.ui.pages.renderDashboard();
+    }
+    handleOnlineSession();
+});
         window.addEventListener('offline', () => {
             if (typeof App.toast === 'function') App.toast('Вы офлайн', 'warning');
         });
