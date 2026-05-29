@@ -40,7 +40,10 @@
     function updateUsernameDisplay(username) {
         const displayEl = document.getElementById('username-display');
         const sidebarUsernameEl = document.getElementById('sidebar-username');
-        const name = username || '';
+        let name = username || '';
+        if (!name) {
+            name = localStorage.getItem('vesta_username') || '';
+        }
         if (displayEl) displayEl.innerHTML = name ? `<i data-lucide="user"></i> ${name}` : '';
         if (sidebarUsernameEl) sidebarUsernameEl.innerHTML = name ? `<i data-lucide="user"></i> ${name}` : '';
         App.initIcons();
@@ -544,26 +547,31 @@
                     }
 
                     // ===== СИНХРОНИЗАЦИЯ ОЧЕРЕДИ ПЕРЕД ЗАГРУЗКОЙ =====
-if (typeof App.db.sync !== 'undefined' && typeof App.db.sync.processSyncQueue === 'function') {
-    console.log('[DEBUG] Запускаем синхронизацию очереди перед загрузкой');
-    await App.db.sync.processSyncQueue();
-}
+                    if (typeof App.db.sync !== 'undefined' && typeof App.db.sync.processSyncQueue === 'function') {
+                        console.log('[DEBUG] Запускаем синхронизацию очереди перед загрузкой');
+                        await App.db.sync.processSyncQueue();
+                    }
 
-console.log('[DEBUG] Вызов App.storage.loadAllData()');
-if (typeof App.storage !== 'undefined' && typeof App.storage.loadAllData === 'function') {
-    await App.storage.loadAllData();
-    console.log('[DEBUG] App.storage.loadAllData() завершён');
-} else {
-    console.warn('[DEBUG] App.storage.loadAllData не определён');
-}
+                    console.log('[DEBUG] Вызов App.storage.loadAllData()');
+                    if (typeof App.storage !== 'undefined' && typeof App.storage.loadAllData === 'function') {
+                        await App.storage.loadAllData();
+                        console.log('[DEBUG] App.storage.loadAllData() завершён');
+                    } else {
+                        console.warn('[DEBUG] App.storage.loadAllData не определён');
+                    }
 
                     if (App.store.operations.length === 0) {
                         console.log('[DEBUG] Данные не загрузились, выполняем принудительную загрузку');
                         await forceLoadDataFromSupabase();
                     }
 
+                    // Сохраняем имя пользователя
+                    const { data: { user } } = await App.supabase.auth.getUser();
+                    const username = user?.user_metadata?.username || user?.email?.split('@')[0] || '';
+                    if (username) localStorage.setItem('vesta_username', username);
+                    updateUsernameDisplay(username);
+
                     try {
-                        const { data: { user } } = await App.supabase.auth.getUser();
                         if (user) {
                             console.log('[DEBUG] Загрузка автомобилей для user', user.id);
                             if (App.db && App.db._db) {
@@ -762,19 +770,30 @@ if (typeof App.storage !== 'undefined' && typeof App.storage.loadAllData === 'fu
 
         initDatabase().then(() => {
             console.log('[DEBUG] initDatabase завершён, проверяем сессию');
-            const savedSession = localStorage.getItem('supabase.auth.token');
-            if (!savedSession) {
-                console.log('[DEBUG] Нет сохранённой сессии, запускаем демо-режим');
+            // Более надёжная проверка сессии (с учётом офлайн-режима)
+            let hasSession = false;
+            try {
+                // Сначала проверяем локальный токен (для офлайн)
+                const localToken = localStorage.getItem('sb-auth-token');
+                if (localToken) {
+                    hasSession = true;
+                    console.log('[DEBUG] Найден локальный токен, считаем сессию активной');
+                } else {
+                    const { data: { session } } = await App.supabase.auth.getSession();
+                    hasSession = !!session;
+                }
+            } catch (err) {
+                console.warn('[DEBUG] Ошибка получения сессии:', err);
+                hasSession = localStorage.getItem('sb-auth-token') !== null;
+            }
+            if (!hasSession) {
+                console.log('[DEBUG] Нет активной сессии, запускаем демо-режим');
                 enterDemoMode();
             } else {
-                App.supabase.auth.getSession().then(({ data: { session } }) => {
-                    if (!session) {
-                        console.log('[DEBUG] Сессия не активна, запускаем демо-режим');
-                        enterDemoMode();
-                    } else {
-                        console.log('[DEBUG] Сессия активна, не запускаем демо');
-                    }
-                });
+                console.log('[DEBUG] Сессия активна, не запускаем демо');
+                // Восстанавливаем имя пользователя из localStorage
+                const savedUsername = localStorage.getItem('vesta_username');
+                if (savedUsername) updateUsernameDisplay(savedUsername);
             }
             handleOnlineSession();
         });
@@ -814,22 +833,19 @@ if (typeof App.storage !== 'undefined' && typeof App.storage.loadAllData === 'fu
         }
 
         window.addEventListener('online', () => {
-    if (typeof App.toast === 'function') App.toast('Сеть восстановлена', 'success');
-    
-    // Принудительная синхронизация очереди pending_actions
-    if (App.db.sync && typeof App.db.sync.processSyncQueue === 'function') {
-        App.db.sync.processSyncQueue().catch(console.error);
-    }
-    
-    // Обновляем UI для отображения иконок синхронизации (если остались)
-    if (App.store.pendingActions && App.store.pendingActions.length > 0) {
-        if (typeof App.ui.pages.renderFuelTab === 'function') App.ui.pages.renderFuelTab();
-        if (typeof App.ui.pages.renderPartsTab === 'function') App.ui.pages.renderPartsTab();
-        if (typeof App.ui.pages.renderTOTable === 'function') App.ui.pages.renderTOTable();
-        if (typeof App.ui.pages.renderDashboard === 'function') App.ui.pages.renderDashboard();
-    }
-    handleOnlineSession();
-});
+            if (typeof App.toast === 'function') App.toast('Сеть восстановлена', 'success');
+            if (App.db.sync && typeof App.db.sync.processSyncQueue === 'function') {
+                App.db.sync.processSyncQueue().catch(console.error);
+            }
+            if (App.store.pendingActions && App.store.pendingActions.length > 0) {
+                if (typeof App.ui.pages.renderFuelTab === 'function') App.ui.pages.renderFuelTab();
+                if (typeof App.ui.pages.renderPartsTab === 'function') App.ui.pages.renderPartsTab();
+                if (typeof App.ui.pages.renderTOTable === 'function') App.ui.pages.renderTOTable();
+                if (typeof App.ui.pages.renderDashboard === 'function') App.ui.pages.renderDashboard();
+            }
+            handleOnlineSession();
+        });
+
         window.addEventListener('offline', () => {
             if (typeof App.toast === 'function') App.toast('Вы офлайн', 'warning');
         });
