@@ -401,13 +401,41 @@ App.storage.loadAllData = async function() {
             App.supa.loadMileageHistory()
         ]);
 
+        // src/api/storage.js (внутри App.storage.loadAllData, после получения данных)
+
         const carId = App.store.activeCarId;
-        const opsWithCar = operations.map(op => ({ ...op, car_id: carId }));
-        const fuelWithCar = fuelLog.map(f => ({ ...f, car_id: carId }));
-        const tiresWithCar = tireLog.map(t => ({ ...t, car_id: carId }));
-        const partsWithCar = parts.map(p => ({ ...p, car_id: carId }));
-        const historyWithCar = history.map(h => ({ ...h, car_id: carId }));
-        const mileageWithCar = mileageHistory.map(m => ({ ...m, car_id: carId }));
+        
+        // Гарантируем наличие id и car_id у каждой записи
+        const opsWithCar = operations.map(op => ({ 
+            ...op, 
+            id: op.id || crypto.randomUUID(), 
+            car_id: carId 
+        }));
+        const fuelWithCar = fuelLog.map(f => ({ 
+            ...f, 
+            id: f.id || crypto.randomUUID(), 
+            car_id: carId 
+        }));
+        const tiresWithCar = tireLog.map(t => ({ 
+            ...t, 
+            id: t.id || crypto.randomUUID(), 
+            car_id: carId 
+        }));
+        const partsWithCar = parts.map(p => ({ 
+            ...p, 
+            id: p.id || crypto.randomUUID(), 
+            car_id: carId 
+        }));
+        const historyWithCar = history.map(h => ({ 
+            ...h, 
+            id: h.id || crypto.randomUUID(), 
+            car_id: carId 
+        }));
+        const mileageWithCar = mileageHistory.map(m => ({ 
+            ...m, 
+            id: m.id || crypto.randomUUID(), 
+            car_id: carId 
+        }));
 
         await App.db.putMany('operations', opsWithCar);
         await App.db.putMany('fuel_log', fuelWithCar);
