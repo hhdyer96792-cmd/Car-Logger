@@ -217,7 +217,7 @@ App.ui.pages.deleteCar = async function() {
     });
 };
 
-/* ========== ПРИГЛАШЕНИЯ ========== */
+/* ========== ПРИГЛАШЕНИЯ (ИСПРАВЛЕНА) ========== */
 App.ui.pages.inviteUser = async function() {
     var carId = App.store.activeCarId;
     if (!carId) {
@@ -225,7 +225,14 @@ App.ui.pages.inviteUser = async function() {
         return;
     }
     try {
+        console.log('[Invite] Вызов App.supa.createInviteLink для carId:', carId);
+        if (!App.supa.createInviteLink) {
+            console.error('[Invite] App.supa.createInviteLink не определён');
+            App.toast('Функция приглашения временно недоступна', 'error');
+            return;
+        }
         const inviteLink = await App.supa.createInviteLink(carId);
+        console.log('[Invite] Ссылка получена:', inviteLink);
         if (!inviteLink) {
             throw new Error('Не удалось создать ссылку');
         }
@@ -242,7 +249,7 @@ App.ui.pages.inviteUser = async function() {
             App.toast('Ссылка скопирована в буфер обмена', 'success');
         });
     } catch (err) {
-        console.error(err);
+        console.error('[Invite] Ошибка создания приглашения:', err);
         App.toast('Ошибка создания приглашения: ' + (err.message || err), 'error');
     }
 };
@@ -444,6 +451,17 @@ App.ui.pages.renderCarTab = function() {
     var vinContainer = document.querySelector('.car-fields-grid');
     if (vinContainer) {
         var oldVinInput = document.getElementById('car-vin');
+        // Если поле car-vin отсутствует, создадим его
+        if (!oldVinInput) {
+            console.warn('[Cars] Поле car-vin не найдено, создаём динамически');
+            var newVinInput = document.createElement('input');
+            newVinInput.type = 'text';
+            newVinInput.id = 'car-vin';
+            newVinInput.placeholder = 'VIN';
+            // Добавляем в конец grid
+            vinContainer.appendChild(newVinInput);
+            oldVinInput = newVinInput;
+        }
         if (oldVinInput) {
             var wrapper = document.createElement('div');
             wrapper.id = 'vin-buttons-wrapper';
@@ -535,59 +553,24 @@ App.ui.pages.renderCarTab = function() {
     App.initIcons();
 };
 
-/* ========== УЛУЧШЕННАЯ ФУНКЦИЯ ЗАГРУЗКИ ДЕТАЛЕЙ С ПОВТОРОМ И ДИАГНОСТИКОЙ ========== */
-App.ui.pages.loadCarDetailsWithRetry = function(carId, maxAttempts = 30, delayMs = 200) {
+/* ========== УЛУЧШЕННАЯ ФУНКЦИЯ ЗАГРУЗКИ ДЕТАЛЕЙ (не требует car-vin) ========== */
+App.ui.pages.loadCarDetailsWithRetry = function(carId, maxAttempts = 20, delayMs = 200) {
     let attempts = 0;
     const tryLoad = () => {
         const brandField = document.getElementById('car-brand');
         const modelField = document.getElementById('car-model');
         const yearField = document.getElementById('car-year');
         const plateField = document.getElementById('car-plate');
-        const vinField = document.getElementById('car-vin');
-        
-        const missing = [];
-        if (!brandField) missing.push('car-brand');
-        if (!modelField) missing.push('car-model');
-        if (!yearField) missing.push('car-year');
-        if (!plateField) missing.push('car-plate');
-        if (!vinField) missing.push('car-vin');
-        
-        if (missing.length === 0) {
-            // Все поля на месте – загружаем данные
+        // car-vin не обязателен для загрузки основных данных
+        if (brandField && modelField && yearField && plateField) {
             App.ui.pages.loadCarDetails(carId);
         } else if (attempts < maxAttempts) {
             attempts++;
-            console.log(`[Cars] Поля ввода ещё не готовы (${attempts}/${maxAttempts}), отсутствуют: ${missing.join(', ')}. Повторная попытка через ${delayMs}ms...`);
+            console.log(`[Cars] Поля ввода ещё не готовы (${attempts}/${maxAttempts}), повторная попытка через ${delayMs}ms...`);
             setTimeout(tryLoad, delayMs);
         } else {
-            console.error('[Cars] Не удалось найти поля ввода автомобиля после нескольких попыток. Попробуем принудительно перерисовать вкладку.');
-            // Принудительная перерисовка вкладки (может помочь, если поля были удалены динамически)
-            if (typeof App.ui.pages.renderCarTab === 'function') {
-                // Удаляем текущее содержимое контейнера car-fields-grid, чтобы пересоздать заново (если оно было испорчено)
-                const grid = document.querySelector('.car-fields-grid');
-                if (grid) {
-                    // Не удаляем, а просто обновляем через ререндер
-                    console.log('[Cars] Принудительная перерисовка блока car-fields-grid');
-                    // Восстанавливаем HTML из оригинального шаблона? Просто вызовем renderCarTab снова, но это может вызвать рекурсию.
-                    // Вместо этого попробуем один раз пересоздать поля вручную
-                    const parent = grid.parentNode;
-                    const newGrid = document.createElement('div');
-                    newGrid.className = 'car-fields-grid';
-                    newGrid.innerHTML = `
-                        <input type="text" id="car-brand" placeholder="Марка">
-                        <input type="text" id="car-model" placeholder="Модель">
-                        <input type="number" id="car-year" placeholder="Год выпуска">
-                        <input type="text" id="car-plate" placeholder="Гос. номер">
-                        <input type="text" id="car-vin" placeholder="VIN">
-                    `;
-                    parent.replaceChild(newGrid, grid);
-                    // Повторяем попытку загрузки через 100 мс
-                    setTimeout(() => App.ui.pages.loadCarDetailsWithRetry(carId, 5, 300), 100);
-                } else {
-                    // Если и контейнера нет, просто выводим сообщение
-                    App.toast('Не удалось загрузить данные автомобиля. Пожалуйста, перезагрузите страницу.', 'error');
-                }
-            }
+            console.error('[Cars] Не удалось найти обязательные поля ввода автомобиля после нескольких попыток.');
+            App.toast('Не удалось загрузить данные автомобиля. Пожалуйста, перезагрузите страницу.', 'error');
         }
     };
     tryLoad();
@@ -600,7 +583,7 @@ App.ui.pages.loadCarDetails = function(carId) {
     var plateField = document.getElementById('car-plate');
     var vinField = document.getElementById('car-vin');
     
-    if (!brandField || !modelField || !yearField || !plateField || !vinField) {
+    if (!brandField || !modelField || !yearField || !plateField) {
         console.warn('[Cars] loadCarDetails: не все поля ввода найдены, пропускаем');
         return;
     }
@@ -610,10 +593,10 @@ App.ui.pages.loadCarDetails = function(carId) {
     modelField.value = s.carModel || '';
     yearField.value = s.carYear || '';
     plateField.value = s.plateNumber || '';
-    vinField.value = s.vin || '';
+    if (vinField) vinField.value = s.vin || '';
 };
 
-/* ========== ОСНОВНЫЕ ПАРАМЕТРЫ (без изменений, но с защитой от null) ========== */
+/* ========== ОСНОВНЫЕ ПАРАМЕТРЫ (без изменений, с защитой от null) ========== */
 App.ui.pages.renderBasicParams = async function() {
     let baseMileage = 0, baseMotohours = 0, purchaseDate = '', purchaseCost = 0;
     if (App.store.activeCarId && App.supa && typeof App.supa.getVehicleState === 'function') {
@@ -1398,10 +1381,10 @@ App.ui.pages.renderSharingListForCarTab = function() {
         var totalCost = totalMaintenance + totalFuel;
         var avgCostPerKm = App.store.settings.currentMileage ? totalCost / App.store.settings.currentMileage : 0;
         var reportHtml = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Сервисная история</title><style>body{font-family:sans-serif;margin:20px}h1{color:#3498db}h2{border-bottom:1px solid #ccc}table{width:100%;border-collapse:collapse;margin-bottom:20px}td,th{border:1px solid #ddd;padding:8px}th{background:#f2f2f2}.stat-card{display:inline-block;background:#f9f9f9;padding:10px;margin:5px;border-radius:8px}</style></head><body><h1>Сервисная история</h1><p><strong>Дата:</strong>' + new Date().toLocaleDateString('ru-RU') + '</p><p><strong>Пробег:</strong>' + App.store.settings.currentMileage.toLocaleString() + ' км</p><h2>Расходы</h2><div>' +
-            '<div class="stat-card">ТО: ' + totalMaintenance.toFixed(2) + ' ₽</div><div class="stat-card">Топливо: ' + totalFuel.toFixed(2) + ' ₽</div><div class="stat-card">Всего: ' + totalCost.toFixed(2) + ' ₽</div><div class="stat-card">1 км: ' + avgCostPerKm.toFixed(2) + ' ₽</div></div><h2>Операции</h2><table><thead><tr><th>Категория</th><th>Операция</th><th>Интервал км</th><th>Интервал мес</th><th>Последнее ТО</th><th>Последний пробег</th><tr></thead><tbody>';
+            '<div class="stat-card">ТО: ' + totalMaintenance.toFixed(2) + ' ₽</div><div class="stat-card">Топливо: ' + totalFuel.toFixed(2) + ' ₽</div><div class="stat-card">Всего: ' + totalCost.toFixed(2) + ' ₽</div><div class="stat-card">1 км: ' + avgCostPerKm.toFixed(2) + ' ₽</div></div><h2>Операции</h2><tr><thead><tr><th>Категория</th><th>Операция</th><th>Интервал км</th><th>Интервал мес</th><th>Последнее ТО</th><th>Последний пробег</th></tr></thead><tbody>';
         App.store.operations.forEach(function(op) { reportHtml += '<tr><td>' + App.utils.escapeHtml(op.category) + '</td><td>' + App.utils.escapeHtml(op.name) + '</td><td>' + (op.intervalKm || '—') + '</td><td>' + (op.intervalMonths || '—') + '</td><td>' + (op.lastDate || '—') + '</td><td>' + (op.lastMileage || '—') + '</td></tr>'; });
         reportHtml += '</tbody></table><h2>История ТО</h2><table><thead><tr><th>Дата</th><th>Операция</th><th>Пробег</th><th>Запчасти</th><th>Работа</th><th>DIY</th><th>Прим.</th></tr></thead><tbody>';
-        App.store.serviceRecords.sort(function(a,b){return new Date(b.date)-new Date(a.date);}).forEach(function(rec){ var op=App.store.operations.find(function(o){return o.id==rec.operation_id;}); reportHtml+='<tr><td>'+ (rec.date||'')+'</td><td>'+ App.utils.escapeHtml(op?op.name:'Неизвестно')+'</td><td>'+ (rec.mileage||'')+'</td><td>'+ (rec.parts_cost||'0')+'</td><td>'+ (rec.work_cost||'0')+'</td><td>'+ (rec.is_diy===true?'Да':'Нет')+'</td><td>'+ (rec.notes||'')+'</td></tr>'; });
+        App.store.serviceRecords.sort(function(a,b){return new Date(b.date)-new Date(a.date);}).forEach(function(rec){ var op=App.store.operations.find(function(o){return o.id==rec.operation_id;}); reportHtml+='<tr><td>'+ (rec.date||'')+'</td><td>'+ App.utils.escapeHtml(op?op.name:'Неизвестно')+'</td><td>'+ (rec.mileage||'')+'</td><td>'+ (rec.parts_cost||'0')+'</td><td>'+ (rec.work_cost||'0')+'</td><td>'+ (rec.is_diy===true?'Да':'Нет')+'<tr><td>'+ (rec.notes||'')+'</td></tr>'; });
         reportHtml += '</tbody></table></body></html>';
         var element = document.createElement('div');
         element.innerHTML = reportHtml;
