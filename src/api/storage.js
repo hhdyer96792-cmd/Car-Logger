@@ -341,21 +341,30 @@ App.storage.addMileageRecord = async function(date, mileage, motohours) {
     refreshUIToMileage();
 };
 
-// ========== НАСТРОЙКИ ==========
+// ========== НАСТРОЙКИ (с привязкой к автомобилю) ==========
 App.storage.saveSettings = async function(settings) {
+    const carId = App.store.activeCarId;
+    if (!carId) {
+        App.toast('Нет активного автомобиля', 'error');
+        return;
+    }
+    const settingsWithCar = { ...settings, car_id: carId };
+    
     if (!navigator.onLine) {
         await queueAction({
             type: 'save',
-            entityType: 'settings',
-            entityId: 1,
-            data: settings
+            entityType: 'car_settings',
+            entityId: carId,
+            data: settingsWithCar
         });
         Object.assign(App.store.settings, settings);
-        await App.store.saveSettingsToDB();
+        await App.db.put('car_settings', settingsWithCar);
         App.toast('Настройки сохранены локально', 'warning');
         refreshUIToSettings();
         return;
     }
+    
+    // Онлайн: сохраняем в Supabase
     await App.supa.saveVehicleState({
         currentMileage: settings.currentMileage,
         currentMotohours: settings.currentMotohours,
@@ -374,9 +383,34 @@ App.storage.saveSettings = async function(settings) {
         reminderDays: settings.reminderDays || '7,2'
     });
     Object.assign(App.store.settings, settings);
-    await App.store.saveSettingsToDB();
+    await App.db.put('car_settings', settingsWithCar);
     App.toast('Настройки сохранены', 'success');
     refreshUIToSettings();
+};
+
+App.storage.loadSettingsForCar = async function(carId) {
+    if (!carId) return null;
+    // Сначала пробуем из кэша
+    let cached = await App.db.getById('car_settings', carId);
+    if (cached) {
+        Object.assign(App.store.settings, cached);
+        return cached;
+    }
+    // Если нет в кэше и есть сеть – загружаем с сервера
+    if (navigator.onLine) {
+        try {
+            const settings = await App.supa.loadSettings();
+            if (settings) {
+                const settingsWithCar = { ...settings, car_id: carId };
+                await App.db.put('car_settings', settingsWithCar);
+                Object.assign(App.store.settings, settings);
+                return settingsWithCar;
+            }
+        } catch (err) {
+            console.warn('Не удалось загрузить настройки с сервера:', err);
+        }
+    }
+    return null;
 };
 
 // ========== ЗАГРУЗКА ВСЕХ ДАННЫХ (ОНЛАЙН) ==========
