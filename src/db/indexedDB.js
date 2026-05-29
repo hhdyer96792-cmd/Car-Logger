@@ -13,6 +13,7 @@ const STORES = {
     service_records: { keyPath: 'id', indexes: ['car_id', 'operation_id', 'date'] },
     mileage_log: { keyPath: 'id', indexes: ['car_id', 'date'] },
     settings: { keyPath: 'id', autoIncrement: true },
+    car_settings: { keyPath: 'car_id' },  // НОВОЕ: настройки по car_id
     cars: { keyPath: 'id', indexes: ['user_id'] },
     car_documents: { keyPath: 'id', indexes: ['car_id', 'type'] },
     pending_actions: { keyPath: 'id', autoIncrement: true, indexes: ['timestamp'] },
