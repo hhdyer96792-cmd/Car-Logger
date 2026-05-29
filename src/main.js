@@ -543,19 +543,19 @@
                         }
                     }
 
-                    // ===== НОВОЕ: СИНХРОНИЗАЦИЯ ОЧЕРЕДИ ПЕРЕД ЗАГРУЗКОЙ =====
-                    if (typeof App.db.sync !== 'undefined' && typeof App.db.sync.processSyncQueue === 'function') {
-                        console.log('[DEBUG] Запускаем синхронизацию очереди перед загрузкой');
-                        await App.db.sync.processSyncQueue();
-                    }
+                    // ===== СИНХРОНИЗАЦИЯ ОЧЕРЕДИ ПЕРЕД ЗАГРУЗКОЙ =====
+if (typeof App.db.sync !== 'undefined' && typeof App.db.sync.processSyncQueue === 'function') {
+    console.log('[DEBUG] Запускаем синхронизацию очереди перед загрузкой');
+    await App.db.sync.processSyncQueue();
+}
 
-                    console.log('[DEBUG] Вызов App.storage.loadAllData()');
-                    if (typeof App.storage !== 'undefined' && typeof App.storage.loadAllData === 'function') {
-                        await App.storage.loadAllData();
-                        console.log('[DEBUG] App.storage.loadAllData() завершён');
-                    } else {
-                        console.warn('[DEBUG] App.storage.loadAllData не определён');
-                    }
+console.log('[DEBUG] Вызов App.storage.loadAllData()');
+if (typeof App.storage !== 'undefined' && typeof App.storage.loadAllData === 'function') {
+    await App.storage.loadAllData();
+    console.log('[DEBUG] App.storage.loadAllData() завершён');
+} else {
+    console.warn('[DEBUG] App.storage.loadAllData не определён');
+}
 
                     if (App.store.operations.length === 0) {
                         console.log('[DEBUG] Данные не загрузились, выполняем принудительную загрузку');
