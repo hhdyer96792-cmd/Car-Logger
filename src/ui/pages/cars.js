@@ -363,7 +363,8 @@ App.ui.pages.renderCarTab = function() {
                     App.realtime.subscribeToCar(carId);
                 }
                 App.storage.loadAllData().then(function() {
-                    App.ui.pages.loadCarDetails(carId);
+                    // Загружаем детали, используя отложенный вызов с повторными попытками
+                    App.ui.pages.loadCarDetailsWithRetry(carId);
                     App.ui.pages.renderCarSelector();
                     App.ui.pages.updateCurrentCarName();
                     App.ui.pages.renderSharingListForCarTab();
@@ -395,9 +396,8 @@ App.ui.pages.renderCarTab = function() {
         });
     };
 
-    // Загружаем детали, только если есть активный автомобиль
+    // Используем отложенную загрузку с повторными попытками, если активный автомобиль есть
     if (App.store.activeCarId) {
-        // Используем улучшенную функцию с ожиданием появления полей
         App.ui.pages.loadCarDetailsWithRetry(App.store.activeCarId);
     } else {
         // Если нет активного авто, очищаем поля (только если они существуют)
@@ -527,7 +527,7 @@ App.ui.pages.renderCarTab = function() {
 };
 
 /* ========== УЛУЧШЕННАЯ ФУНКЦИЯ ЗАГРУЗКИ ДЕТАЛЕЙ С ПОВТОРОМ ========== */
-App.ui.pages.loadCarDetailsWithRetry = function(carId, maxAttempts = 10, delayMs = 100) {
+App.ui.pages.loadCarDetailsWithRetry = function(carId, maxAttempts = 20, delayMs = 150) {
     let attempts = 0;
     const tryLoad = () => {
         const brandField = document.getElementById('car-brand');
@@ -541,10 +541,20 @@ App.ui.pages.loadCarDetailsWithRetry = function(carId, maxAttempts = 10, delayMs
             App.ui.pages.loadCarDetails(carId);
         } else if (attempts < maxAttempts) {
             attempts++;
-            console.log(`[Cars] Поля ввода ещё не готовы, повторная попытка ${attempts}/${maxAttempts}...`);
+            console.log(`[Cars] Поля ввода ещё не готовы (${attempts}/${maxAttempts}), повторная попытка через ${delayMs}ms...`);
             setTimeout(tryLoad, delayMs);
         } else {
-            console.warn('[Cars] Не удалось найти поля ввода автомобиля после нескольких попыток');
+            console.warn('[Cars] Не удалось найти поля ввода автомобиля после нескольких попыток. Возможно, страница не полностью загружена.');
+            // Пробуем ещё раз через более долгий интервал (например, 1 секунду) на случай очень медленной загрузки
+            setTimeout(() => {
+                const brandField2 = document.getElementById('car-brand');
+                if (brandField2) {
+                    console.log('[Cars] Повторная попытка через 1 секунду...');
+                    App.ui.pages.loadCarDetails(carId);
+                } else {
+                    console.error('[Cars] Критическая ошибка: поля ввода автомобиля отсутствуют в DOM.');
+                }
+            }, 1000);
         }
     };
     tryLoad();
@@ -587,10 +597,14 @@ App.ui.pages.renderBasicParams = async function() {
         }
     }
 
-    document.getElementById('set-base-mileage').value = baseMileage;
-    document.getElementById('set-base-motohours').value = baseMotohours;
-    document.getElementById('purchase-date').value = purchaseDate ? App.utils.isoToDDMMYYYY(purchaseDate) : '';
-    document.getElementById('purchase-cost').value = purchaseCost;
+    var elBaseMileage = document.getElementById('set-base-mileage');
+    var elBaseMotohours = document.getElementById('set-base-motohours');
+    var elPurchaseDate = document.getElementById('purchase-date');
+    var elPurchaseCost = document.getElementById('purchase-cost');
+    if (elBaseMileage) elBaseMileage.value = baseMileage;
+    if (elBaseMotohours) elBaseMotohours.value = baseMotohours;
+    if (elPurchaseDate) elPurchaseDate.value = purchaseDate ? App.utils.isoToDDMMYYYY(purchaseDate) : '';
+    if (elPurchaseCost) elPurchaseCost.value = purchaseCost;
 
     if (purchaseDate) {
         App.store.purchaseDate = purchaseDate;
@@ -602,35 +616,39 @@ App.ui.pages.renderBasicParams = async function() {
     if (currentMode === 'months') display = (days / 30).toFixed(1);
     else if (currentMode === 'years') display = (days / 365).toFixed(1);
     var unit = currentMode === 'days' ? 'дн' : (currentMode === 'months' ? 'мес' : 'лет');
-    document.getElementById('ownership-days').value = display + ' ' + unit;
+    var ownershipDaysEl = document.getElementById('ownership-days');
+    if (ownershipDaysEl) ownershipDaysEl.value = display + ' ' + unit;
 
     App.store.purchaseCost = purchaseCost;
     App.ui.pages.updateOwnershipCost();
 
-    document.getElementById('save-params-btn').onclick = async function() {
-        var newBaseMileage = parseInt(document.getElementById('set-base-mileage').value) || 0;
-        var newBaseMotohours = parseInt(document.getElementById('set-base-motohours').value) || 0;
-        var dateStr = document.getElementById('purchase-date').value;
-        var newPurchaseDate = dateStr ? App.utils.ddmmYYYYtoISO(dateStr) : null;
-        var newPurchaseCost = parseFloat(document.getElementById('purchase-cost').value) || 0;
+    var saveParamsBtn = document.getElementById('save-params-btn');
+    if (saveParamsBtn) {
+        saveParamsBtn.onclick = async function() {
+            var newBaseMileage = parseInt(document.getElementById('set-base-mileage')?.value) || 0;
+            var newBaseMotohours = parseInt(document.getElementById('set-base-motohours')?.value) || 0;
+            var dateStr = document.getElementById('purchase-date')?.value || '';
+            var newPurchaseDate = dateStr ? App.utils.ddmmYYYYtoISO(dateStr) : null;
+            var newPurchaseCost = parseFloat(document.getElementById('purchase-cost')?.value) || 0;
 
-        if (App.store.activeCarId && App.supa && typeof App.supa.updateVehicleState === 'function') {
-            await App.supa.updateVehicleState(App.store.activeCarId, {
-                baseMileage: newBaseMileage,
-                baseMotohours: newBaseMotohours,
-                purchaseDate: newPurchaseDate,
-                purchaseCost: newPurchaseCost
-            });
-        }
+            if (App.store.activeCarId && App.supa && typeof App.supa.updateVehicleState === 'function') {
+                await App.supa.updateVehicleState(App.store.activeCarId, {
+                    baseMileage: newBaseMileage,
+                    baseMotohours: newBaseMotohours,
+                    purchaseDate: newPurchaseDate,
+                    purchaseCost: newPurchaseCost
+                });
+            }
 
-        App.store.baseMileage = newBaseMileage;
-        App.store.baseMotohours = newBaseMotohours;
-        App.store.purchaseDate = newPurchaseDate;
-        App.store.purchaseCost = newPurchaseCost;
-        App.store.calculateOwnershipDays();
-        App.ui.pages.updateOwnershipCost();
-        App.toast('Параметры сохранены', 'success');
-    };
+            App.store.baseMileage = newBaseMileage;
+            App.store.baseMotohours = newBaseMotohours;
+            App.store.purchaseDate = newPurchaseDate;
+            App.store.purchaseCost = newPurchaseCost;
+            App.store.calculateOwnershipDays();
+            App.ui.pages.updateOwnershipCost();
+            App.toast('Параметры сохранены', 'success');
+        };
+    }
 
     var fields = [
         document.getElementById('set-base-mileage'),
@@ -640,42 +658,56 @@ App.ui.pages.renderBasicParams = async function() {
     ];
     fields.forEach(function(f) { if (f) f.disabled = true; });
 
-    document.getElementById('edit-params-btn').onclick = function() {
-        fields.forEach(function(f) { if (f) f.disabled = false; });
-        document.getElementById('set-base-mileage').focus();
-    };
+    var editParamsBtn = document.getElementById('edit-params-btn');
+    if (editParamsBtn) {
+        editParamsBtn.onclick = function() {
+            fields.forEach(function(f) { if (f) f.disabled = false; });
+            var baseMileageField = document.getElementById('set-base-mileage');
+            if (baseMileageField) baseMileageField.focus();
+        };
+    }
 
-    var originalSave = document.getElementById('save-params-btn').onclick;
-    document.getElementById('save-params-btn').onclick = async function() {
-        if (originalSave) await originalSave();
-        fields.forEach(function(f) { if (f) f.disabled = true; });
-    };
-
-    document.getElementById('clear-params-btn').onclick = function() {
-        App.ui.confirmModal('Удалить все основные параметры? Это действие нельзя отменить.', function() {
-            document.getElementById('set-base-mileage').value = '';
-            document.getElementById('set-base-motohours').value = '';
-            document.getElementById('purchase-date').value = '';
-            document.getElementById('purchase-cost').value = '';
-            if (App.store.activeCarId && App.supa && typeof App.supa.updateVehicleState === 'function') {
-                App.supa.updateVehicleState(App.store.activeCarId, {
-                    baseMileage: null,
-                    baseMotohours: null,
-                    purchaseDate: null,
-                    purchaseCost: null
-                }).catch(err => console.error('Ошибка очистки параметров:', err));
-            }
-            App.store.baseMileage = 0;
-            App.store.baseMotohours = 0;
-            App.store.purchaseDate = '';
-            App.store.purchaseCost = 0;
-            App.store.ownershipDays = 0;
-            document.getElementById('ownership-days').value = '0 дн';
-            App.ui.pages.updateOwnershipCost();
+    var originalSave = saveParamsBtn ? saveParamsBtn.onclick : null;
+    if (saveParamsBtn) {
+        saveParamsBtn.onclick = async function() {
+            if (originalSave) await originalSave();
             fields.forEach(function(f) { if (f) f.disabled = true; });
-            App.toast('Параметры очищены', 'success');
-        });
-    };
+        };
+    }
+
+    var clearParamsBtn = document.getElementById('clear-params-btn');
+    if (clearParamsBtn) {
+        clearParamsBtn.onclick = function() {
+            App.ui.confirmModal('Удалить все основные параметры? Это действие нельзя отменить.', function() {
+                var baseMileageField = document.getElementById('set-base-mileage');
+                if (baseMileageField) baseMileageField.value = '';
+                var baseMotohoursField = document.getElementById('set-base-motohours');
+                if (baseMotohoursField) baseMotohoursField.value = '';
+                var purchaseDateField = document.getElementById('purchase-date');
+                if (purchaseDateField) purchaseDateField.value = '';
+                var purchaseCostField = document.getElementById('purchase-cost');
+                if (purchaseCostField) purchaseCostField.value = '';
+                if (App.store.activeCarId && App.supa && typeof App.supa.updateVehicleState === 'function') {
+                    App.supa.updateVehicleState(App.store.activeCarId, {
+                        baseMileage: null,
+                        baseMotohours: null,
+                        purchaseDate: null,
+                        purchaseCost: null
+                    }).catch(err => console.error('Ошибка очистки параметров:', err));
+                }
+                App.store.baseMileage = 0;
+                App.store.baseMotohours = 0;
+                App.store.purchaseDate = '';
+                App.store.purchaseCost = 0;
+                App.store.ownershipDays = 0;
+                var ownershipDaysEl = document.getElementById('ownership-days');
+                if (ownershipDaysEl) ownershipDaysEl.value = '0 дн';
+                App.ui.pages.updateOwnershipCost();
+                fields.forEach(function(f) { if (f) f.disabled = true; });
+                App.toast('Параметры очищены', 'success');
+            });
+        };
+    }
 
     var toggleUnitBtn = document.getElementById('toggle-ownership-unit');
     if (toggleUnitBtn) {
@@ -726,24 +758,28 @@ App.ui.pages.updateOwnershipCost = function() {
     var perKm = mileage > 0 ? (totalCost / mileage).toFixed(2) : '0';
     var displayMode = App.store._costDisplayMode || 'total';
     var displayValue = (displayMode === 'perKm') ? perKm + ' ₽/км' : totalCost.toLocaleString() + ' ₽';
-    document.getElementById('ownership-cost').value = displayValue;
+    var costEl = document.getElementById('ownership-cost');
+    if (costEl) costEl.value = displayValue;
 };
 
 /* ========== ЭКСПОРТ ДАННЫХ ========== */
 App.ui.pages.renderExportBlock = function() {
-    document.getElementById('export-data-btn-car').onclick = function() {
-        var type = document.getElementById('export-type-select-car').value;
-        var format = document.getElementById('export-format-select-car').value;
-        if (format === 'csv') {
-            var exportData = App.ui.pages.getExportData(type);
-            if (exportData && exportData.data) {
-                App.ui.pages.exportToCSV(exportData.data, exportData.filename, exportData.headers);
+    var exportBtn = document.getElementById('export-data-btn-car');
+    if (exportBtn) {
+        exportBtn.onclick = function() {
+            var type = document.getElementById('export-type-select-car')?.value || 'to';
+            var format = document.getElementById('export-format-select-car')?.value || 'csv';
+            if (format === 'csv') {
+                var exportData = App.ui.pages.getExportData(type);
+                if (exportData && exportData.data) {
+                    App.ui.pages.exportToCSV(exportData.data, exportData.filename, exportData.headers);
+                }
+            } else if (format === 'xlsx') {
+                if (type === 'all') App.ui.pages.exportToExcelAll();
+                else App.ui.pages.exportToExcelForType(type);
             }
-        } else if (format === 'xlsx') {
-            if (type === 'all') App.ui.pages.exportToExcelAll();
-            else App.ui.pages.exportToExcelForType(type);
-        }
-    };
+        };
+    }
 };
 
 /* ========== ДОКУМЕНТЫ (ФОТО + OCR + АККОРДЕОНЫ) ========== */
@@ -810,65 +846,70 @@ App.ui.pages.renderDocuments = function() {
         });
     });
 
-    document.getElementById('add-document-btn').onclick = function() {
-        document.getElementById('doc-file-input').click();
+    var addDocBtn = document.getElementById('add-document-btn');
+    if (addDocBtn) addDocBtn.onclick = function() {
+        var fileInput = document.getElementById('doc-file-input');
+        if (fileInput) fileInput.click();
     };
 
-    document.getElementById('upload-document-btn').onclick = function() {
-        var fileInput = document.getElementById('doc-file-upload');
-        if (!fileInput) {
-            fileInput = document.createElement('input');
-            fileInput.type = 'file';
-            fileInput.id = 'doc-file-upload';
-            fileInput.accept = 'image/*,.pdf';
-            fileInput.style.display = 'none';
-            document.body.appendChild(fileInput);
-        }
-        fileInput.click();
-
-        fileInput.onchange = async function(e) {
-            var file = e.target.files[0];
-            if (!file) return;
-            try {
-                var url = await App.supa.uploadPhoto(file);
-                var extension = file.name.split('.').pop().toLowerCase();
-                var docType = (extension === 'pdf') ? 'PDF' : 'Чек';
-
-                if (docType === 'Чек') {
-                    try {
-                        var rawText = await recognizeWithTesseract(url);
-                        var ocrData = parseRawText(rawText);
-                        var newDoc = {
-                            type: ocrData.type || 'Чек',
-                            date: ocrData.date || new Date().toISOString().split('T')[0],
-                            photoUrl: url,
-                            amount: ocrData.amount || 0,
-                            notes: ''
-                        };
-                        await App.ui.pages.addCarDocument(newDoc);
-                        App.ui.pages.renderDocuments();
-                        App.toast('Документ добавлен и распознан', 'success');
-                        return;
-                    } catch (ocrErr) {}
-                }
-
-                var newDoc = {
-                    type: docType,
-                    date: new Date().toISOString().split('T')[0],
-                    photoUrl: url,
-                    amount: 0,
-                    notes: ''
-                };
-                await App.ui.pages.addCarDocument(newDoc);
-                App.ui.pages.renderDocuments();
-                App.toast('Файл загружен', 'success');
-            } catch (err) {
-                console.error('Upload failed:', err);
-                App.toast('Ошибка загрузки файла', 'error');
+    var uploadDocBtn = document.getElementById('upload-document-btn');
+    if (uploadDocBtn) {
+        uploadDocBtn.onclick = function() {
+            var fileInput = document.getElementById('doc-file-upload');
+            if (!fileInput) {
+                fileInput = document.createElement('input');
+                fileInput.type = 'file';
+                fileInput.id = 'doc-file-upload';
+                fileInput.accept = 'image/*,.pdf';
+                fileInput.style.display = 'none';
+                document.body.appendChild(fileInput);
             }
-            e.target.value = '';
+            fileInput.click();
+
+            fileInput.onchange = async function(e) {
+                var file = e.target.files[0];
+                if (!file) return;
+                try {
+                    var url = await App.supa.uploadPhoto(file);
+                    var extension = file.name.split('.').pop().toLowerCase();
+                    var docType = (extension === 'pdf') ? 'PDF' : 'Чек';
+
+                    if (docType === 'Чек') {
+                        try {
+                            var rawText = await recognizeWithTesseract(url);
+                            var ocrData = parseRawText(rawText);
+                            var newDoc = {
+                                type: ocrData.type || 'Чек',
+                                date: ocrData.date || new Date().toISOString().split('T')[0],
+                                photoUrl: url,
+                                amount: ocrData.amount || 0,
+                                notes: ''
+                            };
+                            await App.ui.pages.addCarDocument(newDoc);
+                            App.ui.pages.renderDocuments();
+                            App.toast('Документ добавлен и распознан', 'success');
+                            return;
+                        } catch (ocrErr) {}
+                    }
+
+                    var newDoc = {
+                        type: docType,
+                        date: new Date().toISOString().split('T')[0],
+                        photoUrl: url,
+                        amount: 0,
+                        notes: ''
+                    };
+                    await App.ui.pages.addCarDocument(newDoc);
+                    App.ui.pages.renderDocuments();
+                    App.toast('Файл загружен', 'success');
+                } catch (err) {
+                    console.error('Upload failed:', err);
+                    App.toast('Ошибка загрузки файла', 'error');
+                }
+                e.target.value = '';
+            };
         };
-    };
+    }
 
     async function recognizeWithTesseract(imageUrl) {
         try {
@@ -908,29 +949,32 @@ App.ui.pages.renderDocuments = function() {
         return { type, amount, date, rawText: text.substring(0, 500) };
     }
 
-    document.getElementById('doc-file-input').onchange = async function(e) {
-        var file = e.target.files[0];
-        if (!file) return;
-        try {
-            var url = await App.supa.uploadPhoto(file);
-            var rawText = await recognizeWithTesseract(url);
-            var ocrData = parseRawText(rawText);
-            var newDoc = {
-                type: ocrData.type || 'Чек',
-                date: ocrData.date || new Date().toISOString().split('T')[0],
-                photoUrl: url,
-                amount: ocrData.amount || 0,
-                notes: ''
-            };
-            await App.ui.pages.addCarDocument(newDoc);
-            App.ui.pages.renderDocuments();
-            App.toast('Документ добавлен и распознан', 'success');
-        } catch (uploadError) {
-            console.error('Upload failed:', uploadError);
-            App.toast('Ошибка загрузки фото', 'error');
-        }
-        e.target.value = '';
-    };
+    var docFileInput = document.getElementById('doc-file-input');
+    if (docFileInput) {
+        docFileInput.onchange = async function(e) {
+            var file = e.target.files[0];
+            if (!file) return;
+            try {
+                var url = await App.supa.uploadPhoto(file);
+                var rawText = await recognizeWithTesseract(url);
+                var ocrData = parseRawText(rawText);
+                var newDoc = {
+                    type: ocrData.type || 'Чек',
+                    date: ocrData.date || new Date().toISOString().split('T')[0],
+                    photoUrl: url,
+                    amount: ocrData.amount || 0,
+                    notes: ''
+                };
+                await App.ui.pages.addCarDocument(newDoc);
+                App.ui.pages.renderDocuments();
+                App.toast('Документ добавлен и распознан', 'success');
+            } catch (uploadError) {
+                console.error('Upload failed:', uploadError);
+                App.toast('Ошибка загрузки фото', 'error');
+            }
+            e.target.value = '';
+        };
+    }
 
     container.addEventListener('click', async function(e) {
         var target = e.target.closest('.edit-doc-btn');
@@ -1085,7 +1129,7 @@ App.ui.pages.checkAndShowInitialParamsModal = async function() {
     }
 };
 
-/* ========== СОВМЕСТНЫЙ ДОСТУП (экспортные функции оставлены для совместимости) ========== */
+/* ========== СОВМЕСТНЫЙ ДОСТУП ========== */
 App.ui.pages.renderSharingListForCarTab = function() {
     var container = document.getElementById('sharing-container');
     if (!container) return;
@@ -1144,7 +1188,7 @@ App.ui.pages.renderSharingListForCarTab = function() {
         container.innerHTML = '<p class="hint">Ошибка загрузки</p>';
     });
     
-    // ==================== ЭКСПОРТ И ПРОЧИЕ ФУНКЦИИ (перенесены из settings.js) ====================
+    // ==================== ЭКСПОРТ И ПРОЧИЕ ФУНКЦИИ ====================
     App.ui.pages.subscribeToPush = function() {};
     App.ui.pages.openPhotoFolder = function() { App.toast('Фотографии теперь хранятся в Supabase Storage', 'info'); };
     App.ui.pages.shareTable = function() { window.open('https://docs.google.com/spreadsheets/d/' + App.store.spreadsheetId + '/edit', '_blank'); };
@@ -1321,10 +1365,10 @@ App.ui.pages.renderSharingListForCarTab = function() {
         var totalCost = totalMaintenance + totalFuel;
         var avgCostPerKm = App.store.settings.currentMileage ? totalCost / App.store.settings.currentMileage : 0;
         var reportHtml = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Сервисная история</title><style>body{font-family:sans-serif;margin:20px}h1{color:#3498db}h2{border-bottom:1px solid #ccc}table{width:100%;border-collapse:collapse;margin-bottom:20px}td,th{border:1px solid #ddd;padding:8px}th{background:#f2f2f2}.stat-card{display:inline-block;background:#f9f9f9;padding:10px;margin:5px;border-radius:8px}</style></head><body><h1>Сервисная история</h1><p><strong>Дата:</strong>' + new Date().toLocaleDateString('ru-RU') + '</p><p><strong>Пробег:</strong>' + App.store.settings.currentMileage.toLocaleString() + ' км</p><h2>Расходы</h2><div>' +
-            '<div class="stat-card">ТО: ' + totalMaintenance.toFixed(2) + ' ₽</div><div class="stat-card">Топливо: ' + totalFuel.toFixed(2) + ' ₽</div><div class="stat-card">Всего: ' + totalCost.toFixed(2) + ' ₽</div><div class="stat-card">1 км: ' + avgCostPerKm.toFixed(2) + ' ₽</div></div><h2>Операции</h2><table><thead><tr><th>Категория</th><th>Операция</th><th>Интервал км</th><th>Интервал мес</th><th>Последнее ТО</th><th>Последний пробег</th><tr></thead><tbody>';
-        App.store.operations.forEach(function(op) { reportHtml += '<tr><td>' + App.utils.escapeHtml(op.category) + '</td><td>' + App.utils.escapeHtml(op.name) + '<tr><td>' + (op.intervalKm || '—') + '</td><td>' + (op.intervalMonths || '—') + '</td><td>' + (op.lastDate || '—') + '</td><td>' + (op.lastMileage || '—') + '</td></tr>'; });
-        reportHtml += '</tbody></table><h2>История ТО</h2><table><thead><tr><th>Дата</th><th>Операция</th><th>Пробег</th><th>Запчасти</th><th>Работа</th><th>DIY</th><th>Прим.</th></tr></thead><tbody>';
-        App.store.serviceRecords.sort(function(a,b){return new Date(b.date)-new Date(a.date);}).forEach(function(rec){ var op=App.store.operations.find(function(o){return o.id==rec.operation_id;}); reportHtml+='<tr><td>'+ (rec.date||'')+'</td><td>'+ App.utils.escapeHtml(op?op.name:'Неизвестно')+'</td><td>'+ (rec.mileage||'')+'</td><td>'+ (rec.parts_cost||'0')+'</td><td>'+ (rec.work_cost||'0')+'</td><td>'+ (rec.is_diy===true?'Да':'Нет')+'</td><td>'+ (rec.notes||'')+'</td></td>'; });
+            '<div class="stat-card">ТО: ' + totalMaintenance.toFixed(2) + ' ₽</div><div class="stat-card">Топливо: ' + totalFuel.toFixed(2) + ' ₽</div><div class="stat-card">Всего: ' + totalCost.toFixed(2) + ' ₽</div><div class="stat-card">1 км: ' + avgCostPerKm.toFixed(2) + ' ₽</div></div><h2>Операции</h2><table><thead><tr><th>Категория</th><th>Операция</th><th>Интервал км</th><th>Интервал мес</th><th>Последнее ТО</th><th>Последний пробег</th></tr></thead><tbody>';
+        App.store.operations.forEach(function(op) { reportHtml += '<tr><td>' + App.utils.escapeHtml(op.category) + '</td><td>' + App.utils.escapeHtml(op.name) + '</td><td>' + (op.intervalKm || '—') + '</td><td>' + (op.intervalMonths || '—') + '</td><td>' + (op.lastDate || '—') + '</td><td>' + (op.lastMileage || '—') + '</td></tr>'; });
+        reportHtml += '</tbody></table><h2>История ТО</h2><table><thead><tr><th>Дата</th><th>Операция</th><th>Пробег</th><th>Запчасти</th><th>Работа</th><th>DIY</th><th>Прим.</th><tr></thead><tbody>';
+        App.store.serviceRecords.sort(function(a,b){return new Date(b.date)-new Date(a.date);}).forEach(function(rec){ var op=App.store.operations.find(function(o){return o.id==rec.operation_id;}); reportHtml+='<tr><td>'+ (rec.date||'')+'</td><td>'+ App.utils.escapeHtml(op?op.name:'Неизвестно')+'</td><td>'+ (rec.mileage||'')+'<td><td>'+ (rec.parts_cost||'0')+'</td><td>'+ (rec.work_cost||'0')+'</td><td>'+ (rec.is_diy===true?'Да':'Нет')+'</td><td>'+ (rec.notes||'')+'</td></tr>'; });
         reportHtml += '</tbody></table></body></html>';
         var element = document.createElement('div');
         element.innerHTML = reportHtml;
