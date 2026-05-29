@@ -317,8 +317,6 @@ App.ui.pages.openPartForm = function(part) {
         modal.remove();
 
         if (App.config.USE_SUPABASE) {
-            // Добавляем purchase_date для API
-            rowData.purchaseDate = dateAdded;
             App.storage.savePart(rowData).then(function(res) {
                 if (res && res.data && res.data.length > 0) rowData.id = res.data[0].id;
                 var existingIdx = App.store.parts.findIndex(function(p) { return p.id == rowData.id; });
@@ -328,7 +326,7 @@ App.ui.pages.openPartForm = function(part) {
                     App.store.parts.push(rowData);
                 }
                 App.store.saveToLocalStorage();
-                App.ui.pages.renderPartsTab();
+                // Убираем вызов renderPartsTab() – он уже вызывается в storage.js через refreshUIToParts()
                 App.toast(isEdit ? 'Запчасть обновлена' : 'Запчасть добавлена', 'success');
             }).catch(function(err) {
                 console.error(err);
