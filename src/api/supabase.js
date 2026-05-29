@@ -600,10 +600,19 @@ App.supa.createCalendarToken = async function(carId) {
 };
 
 App.supa.createInviteLink = async function(carId) {
+    // Проверяем, что пользователь авторизован
+    const userId = await App.supa.getCurrentUserId();
+    if (!userId) {
+        throw new Error('Пользователь не авторизован');
+    }
     try {
         const { data, error } = await App.supabase
             .from('car_shares')
-            .insert({ car_id: carId, invited_email: null })
+            .insert({ 
+                car_id: carId, 
+                invited_email: null,
+                user_id: userId  // важно: добавляем user_id, чтобы RLS пропустил
+            })
             .select('invite_code')
             .single();
         if (error) throw error;
