@@ -616,22 +616,16 @@ App.ui.pages.openFuelModal = function(record) {
         };
 
         if (App.config.USE_SUPABASE) {
-            // Используем await, без дополнительного then для рендера
             try {
                 await App.storage.saveFuelRecord(id, recordData);
-                // После сохранения storage.js сам вызовет refreshUIToFuel()
-                if (isEdit) {
-                    var idx = App.store.fuelLog.findIndex(function(f) { return f.id == id; });
-                    if (idx !== -1) App.store.fuelLog[idx] = recordData;
-                } else {
-                    App.store.fuelLog.push(recordData);
-                }
+                // storage.js сам обновит store и вызовет refreshUIToFuel()
                 App.toast(isEdit ? 'Заправка обновлена' : 'Заправка добавлена', 'success');
             } catch (err) {
                 console.error(err);
                 App.toast('Ошибка сохранения в Supabase', 'error');
             }
         } else {
+            // Fallback для режима без Supabase (не используется)
             if (isEdit) {
                 var idx = App.store.fuelLog.findIndex(function(f) { return f.id == id; });
                 if (idx !== -1) App.store.fuelLog[idx] = recordData;
