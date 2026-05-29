@@ -615,7 +615,7 @@ App.ui.pages.openFuelModal = function(record) {
             notes: d.notes || ''
         };
 
-        if (App.config.USE_SUPABASE) {
+          if (App.config.USE_SUPABASE) {
             App.storage.saveFuelRecord(id, recordData)
                 .then(function(res) {
                     if (res && res.data && res.data.length > 0) recordData.id = res.data[0].id;
@@ -626,7 +626,7 @@ App.ui.pages.openFuelModal = function(record) {
                         App.store.fuelLog.push(recordData);
                     }
                     App.store.saveToLocalStorage();
-                    App.ui.pages.renderFuelTab();
+                    // Убираем вызов renderFuelTab() – он уже вызывается в storage.js через refreshUIToFuel()
                     App.toast(isEdit ? 'Заправка обновлена' : 'Заправка добавлена', 'success');
                 }).catch(function(err) {
                     console.error(err);
