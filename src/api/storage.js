@@ -390,27 +390,46 @@ App.storage.saveSettings = async function(settings) {
 
 App.storage.loadSettingsForCar = async function(carId) {
     if (!carId) return null;
-    // Сначала пробуем из кэша
-    let cached = await App.db.getById('car_settings', carId);
-    if (cached) {
-        Object.assign(App.store.settings, cached);
-        return cached;
-    }
-    // Если нет в кэше и есть сеть – загружаем с сервера
-    if (navigator.onLine) {
-        try {
+    try {
+        // Сначала пробуем из кэша
+        let cached = await App.db.getById('car_settings', carId);
+        if (cached) {
+            // Если в кэше есть, расшифровываем при необходимости
+            let decrypted = cached;
+            const masterKey = App.db.encryption.getMasterKey();
+            if (masterKey && cached.telegramToken && typeof cached.telegramToken === 'object') {
+                decrypted = await App.db.encryption.decryptSettings(cached, masterKey);
+            }
+            Object.assign(App.store.settings, decrypted);
+            return decrypted;
+        }
+        // Если нет в кэше и есть сеть – загружаем с сервера
+        if (navigator.onLine) {
             const settings = await App.supa.loadSettings();
             if (settings) {
                 const settingsWithCar = { ...settings, car_id: carId };
-                await App.db.put('car_settings', settingsWithCar);
+                const masterKey = App.db.encryption.getMasterKey();
+                if (masterKey) {
+                    const encrypted = await App.db.encryption.encryptSettings(settingsWithCar, masterKey);
+                    await App.db.put('car_settings', encrypted);
+                } else {
+                    await App.db.put('car_settings', settingsWithCar);
+                }
                 Object.assign(App.store.settings, settings);
                 return settingsWithCar;
             }
-        } catch (err) {
-            console.warn('Не удалось загрузить настройки с сервера:', err);
         }
+        // Если ничего нет – используем дефолтные настройки
+        const defaultSettings = { ...App.defaults.settings, car_id: carId };
+        Object.assign(App.store.settings, defaultSettings);
+        await App.db.put('car_settings', defaultSettings);
+        return defaultSettings;
+    } catch (err) {
+        console.error('Ошибка загрузки настроек для автомобиля:', err);
+        const defaultSettings = { ...App.defaults.settings, car_id: carId };
+        Object.assign(App.store.settings, defaultSettings);
+        return defaultSettings;
     }
-    return null;
 };
 
 // ========== ЗАГРУЗКА ВСЕХ ДАННЫХ (ОНЛАЙН) ==========
@@ -435,11 +454,8 @@ App.storage.loadAllData = async function() {
             App.supa.loadMileageHistory()
         ]);
 
-        // src/api/storage.js (внутри App.storage.loadAllData, после получения данных)
-
         const carId = App.store.activeCarId;
         
-        // Гарантируем наличие id и car_id у каждой записи
         const opsWithCar = operations.map(op => ({ 
             ...op, 
             id: op.id || crypto.randomUUID(), 
@@ -478,8 +494,9 @@ App.storage.loadAllData = async function() {
         await App.db.putMany('service_records', historyWithCar);
         await App.db.putMany('mileage_log', mileageWithCar);
         if (settings) {
+            const settingsWithCar = { ...settings, car_id: carId };
+            await App.db.put('car_settings', settingsWithCar);
             Object.assign(App.store.settings, settings);
-            await App.db.put('settings', { id: 1, ...settings });
         }
 
         App.store.operations = operations;
