@@ -320,13 +320,7 @@ App.ui.pages.openPartForm = function(part) {
             rowData.purchaseDate = dateAdded;
             try {
                 await App.storage.savePart(rowData);
-                // storage.js сам вызовет refreshUIToParts()
-                var existingIdx = App.store.parts.findIndex(function(p) { return p.id == rowData.id; });
-                if (existingIdx !== -1) {
-                    App.store.parts[existingIdx] = rowData;
-                } else {
-                    App.store.parts.push(rowData);
-                }
+                // storage.js сам обновит store и вызовет refreshUIToParts()
                 App.toast(isEdit ? 'Запчасть обновлена' : 'Запчасть добавлена', 'success');
             } catch (err) {
                 console.error(err);
