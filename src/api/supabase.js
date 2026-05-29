@@ -31,7 +31,6 @@ function ensureSupabase() {
 
 // ========== СЖАТИЕ ИЗОБРАЖЕНИЙ ВРЕМЕННО ОТКЛЮЧЕНО ==========
 async function compressImage(file) {
-    // Временно отключаем сжатие, так как библиотека не загружается
     console.warn('[Supabase] Image compression temporarily disabled');
     return file;
 }
@@ -103,7 +102,7 @@ App.supa.clearUserIdCache = function() {
     cachedUserId = null;
 };
 
-// ----- Загрузка данных -----
+// ----- Загрузка данных (без изменений) -----
 App.supa.loadOperations = function() {
     return withRetry(() => App.supa.fetchTable('operations').then(({ data, error }) => {
         if (error) throw error;
@@ -393,13 +392,13 @@ App.supa.saveUserSettings = async function(settingsObj) {
     return upsertWithRetry('user_settings', record, 'user_id, car_id');
 };
 
-// ========== ЗАГРУЗКА ФОТО (БЕЗ СЖАТИЯ) ==========
+// ========== ЗАГРУЗКА ФОТО С УЛУЧШЕННОЙ ДИАГНОСТИКОЙ ==========
 App.supa.uploadPhoto = async function(file) {
     const MAX_SIZE = 5 * 1024 * 1024; // 5 MB
     if (file.size > MAX_SIZE) {
         throw new Error('Файл слишком большой. Максимальный размер 5 МБ.');
     }
-    // Временно используем оригинальный файл без сжатия
+    console.log('[Supabase] Начинаем загрузку файла:', file.name, file.size);
     const compressed = await compressImage(file);
     const userId = await App.supa.getCurrentUserId();
     if (!userId) throw new Error('Not authenticated');
@@ -409,23 +408,40 @@ App.supa.uploadPhoto = async function(file) {
     const fileName = `${Date.now()}_${Math.random().toString(36).substring(2)}.${fileExt}`;
     const filePath = `${userId}/${App.store.activeCarId || 'default'}/${fileName}`;
     
-    const { data, error } = await App.supabase.storage
-        .from('vesta-photos')
-        .upload(filePath, compressed, {
-            cacheControl: '3600',
-            upsert: false
-        });
+    console.log('[Supabase] Загружаем в Storage:', filePath);
     
-    if (error) {
-    console.error('[Supabase] Storage upload error details:', error);
-    throw new Error('Ошибка загрузки фото: ' + (error.message || 'неизвестная ошибка'));
-}
+    // Добавляем таймаут для запроса
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 секунд
     
-    const { data: urlData } = App.supabase.storage
-        .from('vesta-photos')
-        .getPublicUrl(filePath);
-    
-    return urlData.publicUrl;
+    try {
+        const { data, error } = await App.supabase.storage
+            .from('vesta-photos')
+            .upload(filePath, compressed, {
+                cacheControl: '3600',
+                upsert: false,
+                signal: controller.signal
+            });
+        
+        clearTimeout(timeoutId);
+        
+        if (error) {
+            console.error('[Supabase] Ошибка загрузки в Storage:', error);
+            throw new Error(`Ошибка загрузки фото: ${error.message}`);
+        }
+        
+        console.log('[Supabase] Файл загружен успешно, получаем публичный URL');
+        const { data: urlData } = App.supabase.storage
+            .from('vesta-photos')
+            .getPublicUrl(filePath);
+        
+        console.log('[Supabase] Публичный URL:', urlData.publicUrl);
+        return urlData.publicUrl;
+    } catch (err) {
+        clearTimeout(timeoutId);
+        console.error('[Supabase] Критическая ошибка при загрузке фото:', err);
+        throw err;
+    }
 };
 
 // ---------- Документы автомобиля ----------
@@ -603,33 +619,31 @@ App.supa.createCalendarToken = async function(carId) {
 };
 
 App.supa.createInviteLink = async function(carId) {
- // Проверяем авторизацию (но user_id не передаём, так как его нет в таблице)
- const userId = await App.supa.getCurrentUserId();
- if (!userId) {
- throw new Error('Пользователь не авторизован');
- }
- try {
- // Вставляем только car_id, invited_email = null (остальное через RLS)
- const { data, error } = await App.supabase
- .from('car_shares')
- .insert({ 
- car_id: carId, 
- invited_email: null
- })
- .select('invite_code')
- .single();
- if (error) throw error;
- if (!data || !data.invite_code) {
- throw new Error('Не удалось получить invite_code');
- }
- const inviteCode = data.invite_code;
- const link = window.location.origin + '/Car-K3eper/?invite=' + inviteCode;
- console.log('[Supabase] Invite link created:', link);
- return link;
- } catch (err) {
- console.error('[Supabase] createInviteLink error:', err);
- throw err;
- }
+    const userId = await App.supa.getCurrentUserId();
+    if (!userId) {
+        throw new Error('Пользователь не авторизован');
+    }
+    try {
+        const { data, error } = await App.supabase
+            .from('car_shares')
+            .insert({ 
+                car_id: carId, 
+                invited_email: null
+            })
+            .select('invite_code')
+            .single();
+        if (error) throw error;
+        if (!data || !data.invite_code) {
+            throw new Error('Не удалось получить invite_code');
+        }
+        const inviteCode = data.invite_code;
+        const link = window.location.origin + '/Car-K3eper/?invite=' + inviteCode;
+        console.log('[Supabase] Invite link created:', link);
+        return link;
+    } catch (err) {
+        console.error('[Supabase] createInviteLink error:', err);
+        throw err;
+    }
 };
 
 // Страховка
