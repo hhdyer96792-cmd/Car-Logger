@@ -321,7 +321,6 @@
             }
         }
 
-        // ========== ОЧИСТКА ИНТЕРВАЛОВ ==========
         if (syncInterval) {
             clearInterval(syncInterval);
             syncInterval = null;
@@ -367,13 +366,14 @@
     async function forceLoadDataFromSupabase() {
         console.log('[DEBUG] forceLoadDataFromSupabase: загрузка данных напрямую из Supabase');
         try {
-            const [operations, fuelLog, tireLog, parts, history, mileageHistory] = await Promise.all([
+            const [operations, fuelLog, tireLog, parts, history, mileageHistory, settings] = await Promise.all([
                 App.supa.loadOperations(),
                 App.supa.loadFuelLog(),
                 App.supa.loadTires(),
                 App.supa.loadParts(),
                 App.supa.loadHistory(),
-                App.supa.loadMileageHistory()
+                App.supa.loadMileageHistory(),
+                App.supa.loadSettings()
             ]);
             App.store.operations = operations;
             App.store.fuelLog = fuelLog;
@@ -381,13 +381,18 @@
             App.store.parts = parts;
             App.store.serviceRecords = history;
             App.store.mileageHistory = mileageHistory;
+            if (settings) Object.assign(App.store.settings, settings);
+            
+            const carId = App.store.activeCarId;
+            for (const op of operations) await App.store.saveOperationToDB({ ...op, car_id: carId });
+            for (const f of fuelLog) await App.store.saveFuelRecordToDB({ ...f, car_id: carId });
+            for (const t of tireLog) await App.store.saveTireRecordToDB({ ...t, car_id: carId });
+            for (const p of parts) await App.store.savePartToDB({ ...p, car_id: carId });
+            for (const h of history) await App.store.saveHistoryRecordToDB({ ...h, car_id: carId });
+            for (const m of mileageHistory) await App.store.saveMileageRecordToDB({ ...m, car_id: carId });
+            if (settings) await App.db.put('settings', { id: 1, ...settings });
+            
             console.log('[DEBUG] Данные загружены напрямую. operations:', App.store.operations.length);
-            for (const op of operations) await App.store.saveOperationToDB(op);
-            for (const f of fuelLog) await App.store.saveFuelRecordToDB(f);
-            for (const t of tireLog) await App.store.saveTireRecordToDB(t);
-            for (const p of parts) await App.store.savePartToDB(p);
-            for (const h of history) await App.store.saveHistoryRecordToDB(h);
-            for (const m of mileageHistory) await App.store.saveMileageRecordToDB(m);
             if (typeof App.renderAll === 'function') App.renderAll();
             App.toast('Данные загружены (режим без шифрования)', 'info');
         } catch (err) {
@@ -538,27 +543,10 @@
                         }
                     }
 
-                    const { data: { user } } = await App.supabase.auth.getUser();
-                    const username = user?.user_metadata?.username || user?.email?.split('@')[0] || '';
-                    if (username) localStorage.setItem('vesta_username', username);
-                    updateUsernameDisplay(username);
-
-                    if (typeof App.ui.pages.checkPushSubscriptionStatus === 'function') {
-                        App.ui.pages.checkPushSubscriptionStatus();
-                    }
-
-                    if (event === 'PASSWORD_RECOVERY') {
-                        await new Promise(r => setTimeout(r, 100));
-                        const newPassword = await App.ui.promptModalAsync('Новый пароль', 'Введите новый пароль (минимум 6 символов)', true);
-                        if (newPassword && newPassword.length >= 6) {
-                            const { error } = await App.supabase.auth.updateUser({ password: newPassword });
-                            if (error) App.toast('Ошибка смены пароля', 'error');
-                            else {
-                                App.toast('Пароль изменён', 'success');
-                                window.location.hash = '';
-                                window.location.search = '';
-                            }
-                        }
+                    // ===== НОВОЕ: СИНХРОНИЗАЦИЯ ОЧЕРЕДИ ПЕРЕД ЗАГРУЗКОЙ =====
+                    if (typeof App.db.sync !== 'undefined' && typeof App.db.sync.processSyncQueue === 'function') {
+                        console.log('[DEBUG] Запускаем синхронизацию очереди перед загрузкой');
+                        await App.db.sync.processSyncQueue();
                     }
 
                     console.log('[DEBUG] Вызов App.storage.loadAllData()');
@@ -685,7 +673,6 @@
             } else {
                 console.log('[DEBUG] Офлайн-режим, синхронизация отложена');
             }
-            // ========== СОХРАНЯЕМ ИНТЕРВАЛ СИНХРОНИЗАЦИИ ==========
             if (syncInterval) clearInterval(syncInterval);
             syncInterval = setInterval(() => {
                 if (navigator.onLine && App.db.sync && !App.db.sync._isRunning) {
@@ -762,17 +749,16 @@
             navigator.storage.persist().then(isPersisted => console.log('Persistent storage:', isPersisted ? 'granted' : 'denied'));
         }
 
-        // Регистрация Service Worker (правильные пути для поддиректории /Car-Logger/)
-if ('serviceWorker' in navigator) {
-    // Используем относительный путь или абсолютный с учётом поддиректории
-    navigator.serviceWorker.register('./service-worker.js').then(reg => {
-        console.log('[SW] Зарегистрирован:', reg);
-    }).catch(err => console.error('[SW] Ошибка регистрации:', err));
-    
-    navigator.serviceWorker.register('./firebase-messaging-sw.js').then(reg => {
-        console.log('[Firebase SW] зарегистрирован');
-    }).catch(err => console.warn('[Firebase SW] ошибка:', err));
-}
+        // Регистрация Service Worker
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('./service-worker.js').then(reg => {
+                console.log('[SW] Зарегистрирован:', reg);
+            }).catch(err => console.error('[SW] Ошибка регистрации:', err));
+            
+            navigator.serviceWorker.register('./firebase-messaging-sw.js').then(reg => {
+                console.log('[Firebase SW] зарегистрирован');
+            }).catch(err => console.warn('[Firebase SW] ошибка:', err));
+        }
 
         initDatabase().then(() => {
             console.log('[DEBUG] initDatabase завершён, проверяем сессию');
