@@ -11,7 +11,7 @@ App.ui.pages._getUserIdSafe = async function() {
     return session?.user?.id || null;
 };
 
-/* ========== ФУНКЦИИ РАБОТЫ С ДОКУМЕНТАМИ ========== */
+/* ========== ФУНКЦИИ РАБОТЫ С ДОКУМЕНТАМИ (без изменений) ========== */
 App.ui.pages.loadCarDocuments = async function() {
     if (!App.store.activeCarId) return [];
     try {
@@ -73,7 +73,7 @@ App.ui.pages.deleteCarDocument = async function(docId) {
     }
 };
 
-/* ========== РЕНДЕР СЕЛЕКТОРА АВТОМОБИЛЯ ========== */
+/* ========== РЕНДЕР СЕЛЕКТОРА АВТОМОБИЛЯ (без изменений) ========== */
 App.ui.pages.renderCarSelector = function() {
     var container = document.getElementById('car-selector-container');
     if (!container) return;
@@ -132,7 +132,7 @@ App.ui.pages.renderCarSelector = function() {
     App.initIcons();
 };
 
-/* ========== CRUD АВТОМОБИЛЕЙ ========== */
+/* ========== CRUD АВТОМОБИЛЕЙ (без изменений) ========== */
 App.ui.pages.addCar = function() {
     App.ui.promptModal('Название автомобиля', 'Мой автомобиль', function(name) {
         if (!name) return;
@@ -346,7 +346,7 @@ App.ui.pages.checkPendingInvites = function() {
     });
 };
 
-/* ========== НОВАЯ ВКЛАДКА «АВТОМОБИЛЬ» (исправлена) ========== */
+/* ========== НОВАЯ ВКЛАДКА «АВТОМОБИЛЬ» (ИСПРАВЛЕНА) ========== */
 App.ui.pages.renderCarTab = function() {
     var selector = document.getElementById('car-page-selector');
     if (selector) {
@@ -395,14 +395,37 @@ App.ui.pages.renderCarTab = function() {
         });
     };
 
+    // Загружаем детали, только если есть активный автомобиль И элементы существуют
     if (App.store.activeCarId) {
-        App.ui.pages.loadCarDetails(App.store.activeCarId);
+        // Проверяем, что поля ввода существуют перед вызовом loadCarDetails
+        var brandField = document.getElementById('car-brand');
+        var modelField = document.getElementById('car-model');
+        var yearField = document.getElementById('car-year');
+        var plateField = document.getElementById('car-plate');
+        var vinField = document.getElementById('car-vin');
+        if (brandField && modelField && yearField && plateField && vinField) {
+            App.ui.pages.loadCarDetails(App.store.activeCarId);
+        } else {
+            console.warn('[Cars] Поля ввода автомобиля не найдены, отложенная загрузка');
+            // Отложим загрузку до следующего тика, чтобы DOM успел отрисоваться
+            setTimeout(() => {
+                if (document.getElementById('car-brand')) {
+                    App.ui.pages.loadCarDetails(App.store.activeCarId);
+                }
+            }, 50);
+        }
     } else {
-        document.getElementById('car-brand').value = '';
-        document.getElementById('car-model').value = '';
-        document.getElementById('car-year').value = '';
-        document.getElementById('car-plate').value = '';
-        document.getElementById('car-vin').value = '';
+        // Если нет активного авто, очищаем поля (только если они существуют)
+        var brandField2 = document.getElementById('car-brand');
+        if (brandField2) brandField2.value = '';
+        var modelField2 = document.getElementById('car-model');
+        if (modelField2) modelField2.value = '';
+        var yearField2 = document.getElementById('car-year');
+        if (yearField2) yearField2.value = '';
+        var plateField2 = document.getElementById('car-plate');
+        if (plateField2) plateField2.value = '';
+        var vinField2 = document.getElementById('car-vin');
+        if (vinField2) vinField2.value = '';
     }
 
     App.ui.pages.renderBasicParams();
@@ -418,7 +441,7 @@ App.ui.pages.renderCarTab = function() {
         App.ui.pages.initCsvImport();
     }
     
-    // Исправление: удаляем старый блок кнопок, если он есть, чтобы не дублировать
+    // Удаляем старый блок кнопок VIN, если он есть, чтобы не дублировать
     var existingVinWrapper = document.getElementById('vin-buttons-wrapper');
     if (existingVinWrapper) {
         existingVinWrapper.remove();
@@ -427,104 +450,119 @@ App.ui.pages.renderCarTab = function() {
     var vinContainer = document.querySelector('.car-fields-grid');
     if (vinContainer) {
         var oldVinInput = document.getElementById('car-vin');
-        var wrapper = document.createElement('div');
-        wrapper.id = 'vin-buttons-wrapper';
-        wrapper.style.display = 'flex';
-        wrapper.style.flexDirection = 'column';
-        wrapper.style.gap = '8px';
-        oldVinInput.parentNode.insertBefore(wrapper, oldVinInput);
-        wrapper.appendChild(oldVinInput);
-        
-        var btnContainer = document.createElement('div');
-        btnContainer.style.display = 'flex';
-        btnContainer.style.gap = '8px';
-        btnContainer.style.flexWrap = 'wrap';
-        
-        if (App.store.isPremium) {
-            var vinBtn = document.createElement('button');
-            vinBtn.id = 'vin-info-btn';
-            vinBtn.className = 'secondary-btn';
-            vinBtn.innerHTML = '<i data-lucide="info"></i> Инфо по VIN';
-            btnContainer.appendChild(vinBtn);
+        if (oldVinInput) {
+            var wrapper = document.createElement('div');
+            wrapper.id = 'vin-buttons-wrapper';
+            wrapper.style.display = 'flex';
+            wrapper.style.flexDirection = 'column';
+            wrapper.style.gap = '8px';
+            oldVinInput.parentNode.insertBefore(wrapper, oldVinInput);
+            wrapper.appendChild(oldVinInput);
             
-            var plateBtn = document.createElement('button');
-            plateBtn.id = 'plate-info-btn';
-            plateBtn.className = 'secondary-btn';
-            plateBtn.innerHTML = '<i data-lucide="flag"></i> Инфо по номеру';
-            btnContainer.appendChild(plateBtn);
-        } else {
-            var hintSpan = document.createElement('span');
-            hintSpan.className = 'hint';
-            hintSpan.id = 'premium-hint-vin';
-            hintSpan.innerHTML = '<i data-lucide="lock"></i> Поиск по VIN/номеру доступен в Premium';
-            btnContainer.appendChild(hintSpan);
-        }
-        
-        wrapper.appendChild(btnContainer);
-        
-        // Обработчики кнопок
-        var vinInfoBtn = document.getElementById('vin-info-btn');
-        if (vinInfoBtn) {
-            vinInfoBtn.addEventListener('click', async () => {
-                const vin = document.getElementById('car-vin').value.trim();
-                if (!vin || vin.length !== 17) {
-                    App.toast('Введите корректный VIN (17 символов)', 'warning');
-                    return;
-                }
-                if (!App.store.isPremium) {
-                    App.modules.showUpgradeModal();
-                    return;
-                }
-                try {
-                    const module = await App.modules.load('premium/partsSearch', true);
-                    if (module && module.showVehicleInfoModal) {
-                        await module.showVehicleInfoModal(vin, 'vin');
+            var btnContainer = document.createElement('div');
+            btnContainer.style.display = 'flex';
+            btnContainer.style.gap = '8px';
+            btnContainer.style.flexWrap = 'wrap';
+            
+            if (App.store.isPremium) {
+                var vinBtn = document.createElement('button');
+                vinBtn.id = 'vin-info-btn';
+                vinBtn.className = 'secondary-btn';
+                vinBtn.innerHTML = '<i data-lucide="info"></i> Инфо по VIN';
+                btnContainer.appendChild(vinBtn);
+                
+                var plateBtn = document.createElement('button');
+                plateBtn.id = 'plate-info-btn';
+                plateBtn.className = 'secondary-btn';
+                plateBtn.innerHTML = '<i data-lucide="flag"></i> Инфо по номеру';
+                btnContainer.appendChild(plateBtn);
+            } else {
+                var hintSpan = document.createElement('span');
+                hintSpan.className = 'hint';
+                hintSpan.id = 'premium-hint-vin';
+                hintSpan.innerHTML = '<i data-lucide="lock"></i> Поиск по VIN/номеру доступен в Premium';
+                btnContainer.appendChild(hintSpan);
+            }
+            
+            wrapper.appendChild(btnContainer);
+            
+            // Обработчики кнопок
+            var vinInfoBtn = document.getElementById('vin-info-btn');
+            if (vinInfoBtn) {
+                vinInfoBtn.addEventListener('click', async () => {
+                    const vin = document.getElementById('car-vin').value.trim();
+                    if (!vin || vin.length !== 17) {
+                        App.toast('Введите корректный VIN (17 символов)', 'warning');
+                        return;
                     }
-                } catch (err) {
-                    console.error(err);
-                    App.toast('Не удалось загрузить модуль поиска', 'error');
-                }
-            });
-        }
-        
-        var plateInfoBtn = document.getElementById('plate-info-btn');
-        if (plateInfoBtn) {
-            plateInfoBtn.addEventListener('click', async () => {
-                const country = await App.ui.promptModalAsync('Введите страну', 'uk - Великобритания, nl - Нидерланды');
-                if (!country || !['uk', 'nl'].includes(country.toLowerCase())) {
-                    App.toast('Поддерживаемые страны: uk, nl', 'warning');
-                    return;
-                }
-                const plate = await App.ui.promptModalAsync('Регистрационный номер', '');
-                if (!plate) return;
-                if (!App.store.isPremium) {
-                    App.modules.showUpgradeModal();
-                    return;
-                }
-                try {
-                    const module = await App.modules.load('premium/partsSearch', true);
-                    if (module && module.showVehicleInfoModal) {
-                        await module.showVehicleInfoModal(`${country}:${plate.toUpperCase()}`, 'plate');
+                    if (!App.store.isPremium) {
+                        App.modules.showUpgradeModal();
+                        return;
                     }
-                } catch (err) {
-                    console.error(err);
-                    App.toast('Не удалось загрузить модуль поиска', 'error');
-                }
-            });
+                    try {
+                        const module = await App.modules.load('premium/partsSearch', true);
+                        if (module && module.showVehicleInfoModal) {
+                            await module.showVehicleInfoModal(vin, 'vin');
+                        }
+                    } catch (err) {
+                        console.error(err);
+                        App.toast('Не удалось загрузить модуль поиска', 'error');
+                    }
+                });
+            }
+            
+            var plateInfoBtn = document.getElementById('plate-info-btn');
+            if (plateInfoBtn) {
+                plateInfoBtn.addEventListener('click', async () => {
+                    const country = await App.ui.promptModalAsync('Введите страну', 'uk - Великобритания, nl - Нидерланды');
+                    if (!country || !['uk', 'nl'].includes(country.toLowerCase())) {
+                        App.toast('Поддерживаемые страны: uk, nl', 'warning');
+                        return;
+                    }
+                    const plate = await App.ui.promptModalAsync('Регистрационный номер', '');
+                    if (!plate) return;
+                    if (!App.store.isPremium) {
+                        App.modules.showUpgradeModal();
+                        return;
+                    }
+                    try {
+                        const module = await App.modules.load('premium/partsSearch', true);
+                        if (module && module.showVehicleInfoModal) {
+                            await module.showVehicleInfoModal(`${country}:${plate.toUpperCase()}`, 'plate');
+                        }
+                    } catch (err) {
+                        console.error(err);
+                        App.toast('Не удалось загрузить модуль поиска', 'error');
+                    }
+                });
+            }
         }
-        
-        App.initIcons();
     }
+    App.initIcons();
 };
 
+/* ========== ИСПРАВЛЕННАЯ ФУНКЦИЯ loadCarDetails ========== */
 App.ui.pages.loadCarDetails = function(carId) {
+    // Проверяем, что все элементы существуют, иначе выходим
+    var brandField = document.getElementById('car-brand');
+    var modelField = document.getElementById('car-model');
+    var yearField = document.getElementById('car-year');
+    var plateField = document.getElementById('car-plate');
+    var vinField = document.getElementById('car-vin');
+    
+    if (!brandField || !modelField || !yearField || !plateField || !vinField) {
+        console.warn('[Cars] loadCarDetails: не все поля ввода найдены, пропускаем');
+        return;
+    }
+    
     var s = App.store.settings;
-    document.getElementById('car-brand').value = s.carBrand || '';
-    document.getElementById('car-model').value = s.carModel || '';
-    document.getElementById('car-year').value = s.carYear || '';
-    document.getElementById('car-plate').value = s.plateNumber || '';
-    document.getElementById('car-vin').value = s.vin || '';
+    brandField.value = s.carBrand || '';
+    modelField.value = s.carModel || '';
+    yearField.value = s.carYear || '';
+    plateField.value = s.plateNumber || '';
+    vinField.value = s.vin || '';
 };
+
 
 /* ========== ОСНОВНЫЕ ПАРАМЕТРЫ (без изменений) ========== */
 App.ui.pages.renderBasicParams = async function() {
