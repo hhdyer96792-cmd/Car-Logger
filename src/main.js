@@ -768,7 +768,7 @@
             }).catch(err => console.warn('[Firebase SW] ошибка:', err));
         }
 
-        initDatabase().then(() => {
+        initDatabase().then(async () => {
             console.log('[DEBUG] initDatabase завершён, проверяем сессию');
             // Более надёжная проверка сессии (с учётом офлайн-режима)
             let hasSession = false;
@@ -795,7 +795,7 @@
                 const savedUsername = localStorage.getItem('vesta_username');
                 if (savedUsername) updateUsernameDisplay(savedUsername);
             }
-            handleOnlineSession();
+            await handleOnlineSession();
         });
 
         if (sidebarLoginBtn) sidebarLoginBtn.addEventListener('click', openAuthModal);
