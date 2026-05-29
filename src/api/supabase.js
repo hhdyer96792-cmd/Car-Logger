@@ -29,31 +29,11 @@ function ensureSupabase() {
     return App.supabase;
 }
 
-// ========== СЖАТИЕ ИЗОБРАЖЕНИЙ ==========
+// ========== СЖАТИЕ ИЗОБРАЖЕНИЙ ВРЕМЕННО ОТКЛЮЧЕНО ==========
 async function compressImage(file) {
-    // Если файл меньше 1 МБ – не сжимаем
-    if (file.size < 1024 * 1024) return file;
-    try {
-        // Динамический импорт с правильным использованием default
-        const imageCompressionModule = await import('https://cdn.jsdelivr.net/npm/browser-image-compression@2.0.2/dist/browser-image-compression.js');
-        // Библиотека экспортирует функцию как default, но в некоторых окружениях может быть в .default
-        const compressFn = imageCompressionModule.default || imageCompressionModule;
-        if (typeof compressFn !== 'function') {
-            throw new Error('browser-image-compression не загрузился корректно');
-        }
-        const options = {
-            maxSizeMB: 1,
-            maxWidthOrHeight: 1920,
-            useWebWorker: true,
-            initialQuality: 0.8
-        };
-        const compressed = await compressFn(file, options);
-        console.log(`[Supabase] Image compressed: ${(file.size / 1024).toFixed(0)}KB → ${(compressed.size / 1024).toFixed(0)}KB`);
-        return compressed;
-    } catch (err) {
-        console.warn('[Supabase] Image compression failed, using original file:', err);
-        return file;
-    }
+    // Временно отключаем сжатие, так как библиотека не загружается
+    console.warn('[Supabase] Image compression temporarily disabled');
+    return file;
 }
 
 // ========== UPSERT С ПОВТОРНЫМИ ПОПЫТКАМИ ==========
@@ -123,7 +103,7 @@ App.supa.clearUserIdCache = function() {
     cachedUserId = null;
 };
 
-// ----- Загрузка данных (без изменений) -----
+// ----- Загрузка данных -----
 App.supa.loadOperations = function() {
     return withRetry(() => App.supa.fetchTable('operations').then(({ data, error }) => {
         if (error) throw error;
@@ -257,7 +237,7 @@ App.supa.loadMileageHistory = function() {
     }), 3, 500, 'loadMileageHistory');
 };
 
-// ----- Сохранение данных (с исправленным upsert) -----
+// ----- Сохранение данных -----
 App.supa.saveOperation = async function(op) {
     const userId = await App.supa.getCurrentUserId();
     const record = {
@@ -381,7 +361,7 @@ App.supa.addMileageRecord = async function(date, mileage, motohours) {
     return App.supa.insertRow('mileage_log', record);
 };
 
-// ========== ИСПРАВЛЕННЫЙ UPSERT С ПОВТОРНЫМИ ПОПЫТКАМИ ==========
+// ========== UPSERT С ПОВТОРНЫМИ ПОПЫТКАМИ ==========
 App.supa.saveVehicleState = async function(state) {
     ensureSupabase();
     const record = {
@@ -413,12 +393,13 @@ App.supa.saveUserSettings = async function(settingsObj) {
     return upsertWithRetry('user_settings', record, 'user_id, car_id');
 };
 
-// ========== ЗАГРУЗКА ФОТО С СЖАТИЕМ ==========
+// ========== ЗАГРУЗКА ФОТО (БЕЗ СЖАТИЯ) ==========
 App.supa.uploadPhoto = async function(file) {
     const MAX_SIZE = 5 * 1024 * 1024; // 5 MB
     if (file.size > MAX_SIZE) {
         throw new Error('Файл слишком большой. Максимальный размер 5 МБ.');
     }
+    // Временно используем оригинальный файл без сжатия
     const compressed = await compressImage(file);
     const userId = await App.supa.getCurrentUserId();
     if (!userId) throw new Error('Not authenticated');
@@ -619,14 +600,21 @@ App.supa.createCalendarToken = async function(carId) {
 };
 
 App.supa.createInviteLink = async function(carId) {
-    const { data, error } = await App.supabase
-        .from('car_shares')
-        .insert({ car_id: carId, invited_email: null })
-        .select('invite_code')
-        .single();
-    if (error) throw error;
-    const inviteCode = data.invite_code;
-    return window.location.origin + '/Car-K3eper/?invite=' + inviteCode;
+    try {
+        const { data, error } = await App.supabase
+            .from('car_shares')
+            .insert({ car_id: carId, invited_email: null })
+            .select('invite_code')
+            .single();
+        if (error) throw error;
+        const inviteCode = data.invite_code;
+        const link = window.location.origin + '/Car-K3eper/?invite=' + inviteCode;
+        console.log('[Supabase] Invite link created:', link);
+        return link;
+    } catch (err) {
+        console.error('[Supabase] createInviteLink error:', err);
+        throw err;
+    }
 };
 
 // Страховка
