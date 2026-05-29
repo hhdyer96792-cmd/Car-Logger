@@ -3,16 +3,24 @@ window.App = window.App || {};
 App.ui = App.ui || {};
 App.ui.pages = App.ui.pages || {};
 
+// Вспомогательная функция для иконки синхронизации
+function getSyncIcon(partId) {
+    if (!partId) return '';
+    if (App.store.isRecordPending && App.store.isRecordPending(partId)) {
+        return '<i data-lucide="clock" class="sync-pending-icon" style="color: var(--warning); width: 16px; height: 16px; margin-left: 8px;" title="Ожидает синхронизации"></i>';
+    }
+    return '';
+}
+
 // ---------- Точка входа ----------
 App.ui.pages.renderPartsTab = function() {
     App.ui.pages.renderTotalPartsCost();
     App.ui.pages.renderPartsPeriodSwitch();
     App.ui.pages.renderPartsPieChart();
     App.ui.pages.renderWarehouseSummary();
-    App.ui.pages.renderPartsCards(); // также рендерит строку поиска
+    App.ui.pages.renderPartsCards();
 };
 
-// Поддержка старого вызова из events.js
 App.ui.pages.renderPartsTable = function() { App.ui.pages.renderPartsTab(); };
 
 // ---------- 1. Карточка «Всего затрат на запчасти» ----------
@@ -34,7 +42,7 @@ App.ui.pages.renderPartsPeriodSwitch = function() {
             App.ui.pages.partsPeriod = this.dataset.period;
             App.ui.pages.renderPartsPeriodSwitch();
             App.ui.pages.renderPartsPieChart();
-            App.ui.pages.renderPartsCards(); // обновим карточки с фильтром по периоду, если нужно
+            App.ui.pages.renderPartsCards();
         };
     });
 };
@@ -49,7 +57,6 @@ App.ui.pages.renderPartsPieChart = function() {
     var period = App.ui.pages.partsPeriod;
     var now = new Date();
 
-    // Фильтрация по периоду, если не 'all' и есть dateAdded
     if (period !== 'all') {
         parts = parts.filter(function(p) {
             if (!p.dateAdded) return false;
@@ -66,7 +73,6 @@ App.ui.pages.renderPartsPieChart = function() {
         });
     }
 
-    // Суммируем по категориям (operation)
     var catSums = {};
     parts.forEach(function(p) {
         var cat = p.operation || 'Без категории';
@@ -106,20 +112,17 @@ App.ui.pages.renderWarehouseSummary = function() {
     if (container) container.innerHTML = html;
 };
 
-// ---------- 5. Поиск и карточки запчастей ----------
+// ---------- 5. Поиск и карточки запчастей с иконкой синхронизации ----------
 App.ui.pages.renderPartsCards = function() {
     var container = document.getElementById('parts-cards-container');
     if (!container) return;
 
-    // Строка поиска
     var searchHtml = '<div class="parts-search"><i data-lucide="search"></i><input type="text" id="parts-search-input" placeholder="Введите OEM или аналог..."></div>';
     container.innerHTML = searchHtml + '<div id="parts-accordions"></div>';
 
-    // Функция фильтрации и рендера аккордеонов
     function filterAndRender() {
         var query = (document.getElementById('parts-search-input')?.value || '').toLowerCase();
         var allParts = App.store.parts || [];
-        // Дополнительно фильтруем по периоду, если задан (только для дат)
         var period = App.ui.pages.partsPeriod;
         var now = new Date();
         var filtered = allParts.filter(function(p) {
@@ -138,7 +141,6 @@ App.ui.pages.renderPartsCards = function() {
             return true;
         });
 
-        // Группировка по категориям
         var grouped = {};
         filtered.forEach(function(p) {
             var cat = p.operation || 'Без категории';
@@ -154,25 +156,24 @@ App.ui.pages.renderPartsCards = function() {
         var html = '';
         cats.forEach(function(cat, idx) {
             var parts = grouped[cat];
-            var openClass = '';
             html += '<div class="accordion-group">';
-            html += '<div class="accordion-header' + openClass + '">';
+            html += '<div class="accordion-header">';
             html += '<i data-lucide="tag"></i> ' + App.utils.escapeHtml(cat) + ' (' + parts.length + ')';
             html += '<i data-lucide="chevron-down" class="accordion-arrow" style="margin-left:auto;"></i>';
             html += '</div>';
-            html += '<div class="accordion-body' + openClass + '">';
+            html += '<div class="accordion-body">';
             parts.forEach(function(p) {
                 var stock = p.inStock || 0;
                 var stockColor = stock > 1 ? 'var(--success)' : (stock === 1 ? 'var(--warning)' : 'var(--danger)');
+                var syncIcon = getSyncIcon(p.id);
                 html += '<div class="card-item expandable">';
                 html += '<div class="card-header">';
                 html += '<div class="card-summary">';
-                html += '<strong>' + App.utils.escapeHtml(p.oem || p.analog || p.operation || '—') + '</strong>';
+                html += '<strong>' + App.utils.escapeHtml(p.oem || p.analog || p.operation || '—') + syncIcon + '</strong>';
                 html += '<div class="card-meta">' + (p.price ? p.price + ' ₽' : '—') + ' · В наличии: <span style="color:' + stockColor + '">' + stock + ' шт</span></div>';
                 html += '</div>';
                 html += '<button class="icon-btn card-toggle-btn"><i data-lucide="more-vertical"></i></button>';
-                html += '</div>'; // card-header
-                // Раскрывающиеся детали
+                html += '</div>';
                 html += '<div class="card-details">';
                 if (p.operation) html += '<div><strong>Операция:</strong> ' + App.utils.escapeHtml(p.operation) + '</div>';
                 if (p.oem) html += '<div><strong>OEM:</strong> ' + App.utils.escapeHtml(p.oem) + '</div>';
@@ -191,16 +192,15 @@ App.ui.pages.renderPartsCards = function() {
                     html += '<button class="icon-btn" data-action="price-history" data-id="' + p.id + '"><i data-lucide="trending-up"></i></button>';
                 html += '<button class="icon-btn" data-action="search-part" data-oem="' + App.utils.escapeHtml(p.oem) + '"><i data-lucide="search"></i></button>';
                 html += '</div>';
-                html += '</div>'; // card-details
-                html += '</div>'; // card-item
+                html += '</div>';
+                html += '</div>';
             });
-            html += '</div></div>'; // accordion-body, accordion-group
+            html += '</div></div>';
         });
 
         var accordionsContainer = document.getElementById('parts-accordions');
         if (accordionsContainer) accordionsContainer.innerHTML = html;
 
-        // Обработчики аккордеонов и раскрытия
         var allHeaders = document.querySelectorAll('#parts-accordions .accordion-header');
         allHeaders.forEach(function(header) {
             header.addEventListener('click', function() {
@@ -233,10 +233,8 @@ App.ui.pages.renderPartsCards = function() {
         App.initIcons();
     }
 
-    // Первичный рендер
     filterAndRender();
 
-    // Слушатель поиска
     var searchInput = document.getElementById('parts-search-input');
     if (searchInput) {
         searchInput.addEventListener('input', function() {
