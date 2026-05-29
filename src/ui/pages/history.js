@@ -3,6 +3,15 @@ window.App = window.App || {};
 App.ui = App.ui || {};
 App.ui.pages = App.ui.pages || {};
 
+// Вспомогательная функция для иконки синхронизации
+function getSyncIcon(recordId) {
+    if (!recordId) return '';
+    if (App.store.isRecordPending && App.store.isRecordPending(recordId)) {
+        return '<i data-lucide="clock" class="sync-pending-icon" style="color: var(--warning); width: 16px; height: 16px; margin-left: 8px;" title="Ожидает синхронизации"></i>';
+    }
+    return '';
+}
+
 // ========== ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ DEBOUNCE ==========
 function debounce(func, delay) {
     let timeout;
@@ -70,10 +79,8 @@ App.ui.pages.populateHistoryExecutorFilter = function() {
 
 // Привязка событий фильтров (с debounce)
 App.ui.pages.bindHistoryFilterEvents = function() {
-    // Создаём debounced версию renderHistoryCards
     const debouncedRender = debounce(() => App.ui.pages.renderHistoryCards(), 300);
 
-    // Фильтры с событием 'change' (используем debouncedRender)
     var filters = [
         'history-period-select', 'history-operation-filter', 'history-category-filter', 'history-executor-filter',
         'history-sort-order', 'history-diy-only'
@@ -85,7 +92,6 @@ App.ui.pages.bindHistoryFilterEvents = function() {
         }
     });
 
-    // Поля ввода с событием 'input' (используем debouncedRender)
     ['history-search', 'history-cost-min', 'history-cost-max', 'history-mileage-min', 'history-mileage-max'].forEach(function(id) {
         var el = document.getElementById(id);
         if (el) {
@@ -93,11 +99,9 @@ App.ui.pages.bindHistoryFilterEvents = function() {
         }
     });
 
-    // Кнопка сброса – без debounce (мгновенный сброс и рендер)
     var resetBtn = document.getElementById('history-reset-filters');
     if (resetBtn) {
         resetBtn.addEventListener('click', function() {
-            // Сбрасываем значения всех фильтров
             ['history-period-select','history-operation-filter','history-category-filter','history-executor-filter',
              'history-search','history-diy-only','history-cost-min','history-cost-max','history-mileage-min','history-mileage-max','history-sort-order'
             ].forEach(function(id) {
@@ -108,13 +112,12 @@ App.ui.pages.bindHistoryFilterEvents = function() {
                 }
             });
             document.getElementById('history-sort-order').value = 'date-desc';
-            // Рендерим сразу (без debounce)
             App.ui.pages.renderHistoryCards();
         });
     }
 };
 
-// Получение отфильтрованных записей с новыми фильтрами
+// Получение отфильтрованных записей
 App.ui.pages.getFilteredHistory = function() {
     var period = document.getElementById('history-period-select')?.value || 'all';
     var opFilter = document.getElementById('history-operation-filter')?.value || '';
@@ -191,7 +194,7 @@ App.ui.pages.getFilteredHistory = function() {
     return filtered;
 };
 
-// Рендер карточек
+// Рендер карточек с иконкой синхронизации
 App.ui.pages.renderHistoryCards = function() {
     var container = document.getElementById('history-cards-container');
     if (!container) return;
@@ -208,10 +211,11 @@ App.ui.pages.renderHistoryCards = function() {
     filtered.forEach(function(record) {
         var op = App.store.operations.find(function(o) { return o.id == record.operation_id; }) || { name: 'Неизвестно' };
         var diyFlag = record.is_diy === 'TRUE' || record.is_diy === true;
+        var syncIcon = getSyncIcon(record.id);
 
         if (isMobile) {
             html += '<div class="history-card-mobile">';
-            html += '<div class="header"><strong>' + App.utils.escapeHtml(record.date || '') + '</strong></div>';
+            html += '<div class="header"><strong>' + App.utils.escapeHtml(record.date || '') + syncIcon + '</strong></div>';
             html += '<div class="operation">' + App.utils.escapeHtml(op.name) + '</div>';
             html += '<div class="details">';
             html += 'Пробег: ' + (record.mileage || '—') + ' км · Моточасы: ' + (record.motohours || '—') + '<br>';
@@ -230,7 +234,7 @@ App.ui.pages.renderHistoryCards = function() {
             html += '</div>';
         } else {
             html += '<div class="history-card">';
-            html += '<div class="history-card-header"><span class="date">' + App.utils.escapeHtml(record.date || '') + '</span><span class="operation">' + App.utils.escapeHtml(op.name) + '</span></div>';
+            html += '<div class="history-card-header"><span class="date">' + App.utils.escapeHtml(record.date || '') + syncIcon + '</span><span class="operation">' + App.utils.escapeHtml(op.name) + '</span></div>';
             html += '<div class="history-card-grid">';
             html += '<div><strong>Пробег</strong><br>' + (record.mileage || '—') + ' км</div>';
             html += '<div><strong>Моточасы</strong><br>' + (record.motohours || '—') + '</div>';
@@ -256,7 +260,6 @@ App.ui.pages.renderHistoryCards = function() {
     });
 
     container.innerHTML = html;
-    // Принудительно заменяем иконки Lucide в контейнере
     if (typeof lucide !== 'undefined') {
         lucide.createIcons({ target: container });
     }
@@ -266,7 +269,6 @@ App.ui.pages.renderHistoryCards = function() {
 App.ui.pages.deleteHistoryEntry = async function(rowIndex) {
     var record = App.store.serviceRecords.find(function(r) { return r.rowIndex == rowIndex; });
     try {
-        // Удаляем фото, если оно есть
         if (record && record.photo_url) {
             var path = record.photo_url.split('/public/vesta-photos/')[1];
             if (path) {
@@ -284,7 +286,7 @@ App.ui.pages.deleteHistoryEntry = async function(rowIndex) {
     }
 };
 
-// Редактирование записи (без изменений)
+// Редактирование записи
 App.ui.pages.openHistoryEdit = function(rowIndex) {
     var record = App.store.serviceRecords.find(function(r) { return r.rowIndex == rowIndex; });
     if (!record) return;
