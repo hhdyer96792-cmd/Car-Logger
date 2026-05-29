@@ -23,6 +23,7 @@ App.store = {
         telegramToken: '',
         telegramChatId: '',
         notificationMethod: 'telegram',
+        reminderDays: '7,2',
         carBrand: '',
         carModel: '',
         carYear: null,
@@ -61,7 +62,6 @@ App.store = {
         try {
             const carId = this.activeCarId;
             
-            // Загружаем все записи из БД
             const allOps = await App.db.getAll('operations');
             const allFuel = await App.db.getAll('fuel_log');
             const allTires = await App.db.getAll('tires');
@@ -70,7 +70,6 @@ App.store = {
             const allMileage = await App.db.getAll('mileage_log');
 
             if (carId) {
-                // Фильтруем по car_id
                 this.operations = allOps.filter(op => op.car_id == carId).map(op => ({
                     id: op.id,
                     uuid: op.id,
@@ -148,37 +147,12 @@ App.store = {
                     motohours: m.motohours || 0
                 })).sort((a, b) => new Date(a.date) - new Date(b.date));
             } else {
-                // Нет активного автомобиля – очищаем данные
                 this.operations = [];
                 this.fuelLog = [];
                 this.tireLog = [];
                 this.parts = [];
                 this.serviceRecords = [];
                 this.mileageHistory = [];
-            }
-
-            const settings = await App.db.getById('settings', 1);
-            if (settings) {
-                let decryptedSettings = settings;
-                const masterKey = App.db.encryption.getMasterKey();
-                if (masterKey && settings.telegramToken && typeof settings.telegramToken === 'object') {
-                    decryptedSettings = await App.db.encryption.decryptSettings(settings, masterKey);
-                }
-                this.settings = {
-                    currentMileage: decryptedSettings.currentMileage || 0,
-                    currentMotohours: decryptedSettings.currentMotohours || 0,
-                    avgDailyMileage: decryptedSettings.avgDailyMileage || 45,
-                    avgDailyMotohours: decryptedSettings.avgDailyMotohours || 1.8,
-                    telegramToken: decryptedSettings.telegramToken || '',
-                    telegramChatId: decryptedSettings.telegramChatId || '',
-                    notificationMethod: decryptedSettings.notificationMethod || 'telegram',
-                    reminderDays: decryptedSettings.reminderDays || '7,2',
-                    carBrand: decryptedSettings.carBrand || '',
-                    carModel: decryptedSettings.carModel || '',
-                    carYear: decryptedSettings.carYear || null,
-                    plateNumber: decryptedSettings.plateNumber || '',
-                    vin: decryptedSettings.vin || ''
-                };
             }
 
             const cars = await App.db.getAll('cars');
@@ -255,16 +229,17 @@ App.store = {
         await App.db.put('mileage_log', record);
     },
     saveSettingsToDB: async function() {
-        let settingsToSave = { id: 1, ...this.settings };
+        const carId = this.activeCarId;
+        if (!carId) return;
+        const settingsToSave = { car_id: carId, ...this.settings };
         const masterKey = App.db.encryption.getMasterKey();
         if (masterKey) {
-            settingsToSave = await App.db.encryption.encryptSettings(settingsToSave, masterKey);
-            const existing = await App.db.getById('encrypted_secrets', 'verification');
-            if (!existing) {
-                await App.db.encryption.saveVerificationString(masterKey);
-            }
+            // Шифрование чувствительных полей для car_settings
+            const encrypted = await App.db.encryption.encryptSettings(settingsToSave, masterKey);
+            await App.db.put('car_settings', encrypted);
+        } else {
+            await App.db.put('car_settings', settingsToSave);
         }
-        await App.db.put('settings', settingsToSave);
     },
     saveCarToDB: async function(car) {
         await App.db.put('cars', car);
@@ -322,17 +297,27 @@ App.store = {
         if (this.activeCarId === carId) return;
         this.activeCarId = carId;
         localStorage.setItem('vesta_active_car_id', carId);
-        // Загружаем данные для нового автомобиля
+        
+        // Загружаем данные автомобиля
         this.loadFromIndexedDB().catch(console.error);
-        // Загружаем настройки для нового автомобиля
+        
+        // Загружаем настройки для этого автомобиля и обновляем UI после загрузки
         if (typeof App.storage.loadSettingsForCar === 'function') {
-            App.storage.loadSettingsForCar(carId).catch(console.error);
+            App.storage.loadSettingsForCar(carId).then(() => {
+                // После обновления настроек перерисовываем всё, что зависит от settings
+                if (typeof App.ui.pages.renderDashboard === 'function') App.ui.pages.renderDashboard();
+                if (typeof App.ui.pages.renderTOStats === 'function') App.ui.pages.renderTOStats();
+                if (typeof App.ui.pages.renderTotalCost === 'function') App.ui.pages.renderTotalCost();
+                if (typeof App.ui.pages.renderFinanceTab === 'function') App.ui.pages.renderFinanceTab();
+                if (typeof App.ui.pages.renderTOTable === 'function') App.ui.pages.renderTOTable();
+                if (typeof App.renderAll === 'function') App.renderAll();
+            }).catch(console.error);
+        } else {
+            // Если метод отсутствует, хотя бы перерисуем дашборд
+            if (typeof App.ui.pages.renderDashboard === 'function') App.ui.pages.renderDashboard();
         }
-        // Обновляем UI
-        if (typeof App.ui.pages.renderDashboard === 'function') App.ui.pages.renderDashboard();
-        if (typeof App.ui.pages.renderTOStats === 'function') App.ui.pages.renderTOStats();
-        if (typeof App.ui.pages.renderTOTable === 'function') App.ui.pages.renderTOTable();
     },
+    
     loadCars: function() {
         const self = this;
         return App.supa.loadCars().then(cars => {
