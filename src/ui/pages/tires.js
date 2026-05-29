@@ -3,7 +3,16 @@ window.App = window.App || {};
 App.ui = App.ui || {};
 App.ui.pages = App.ui.pages || {};
 
-// ---------- Главная точка входа при открытии вкладки ----------
+// Вспомогательная функция для иконки синхронизации
+function getSyncIcon(recordId) {
+    if (!recordId) return '';
+    if (App.store.isRecordPending && App.store.isRecordPending(recordId)) {
+        return '<i data-lucide="clock" class="sync-pending-icon" style="color: var(--warning); width: 16px; height: 16px; margin-left: 8px;" title="Ожидает синхронизации"></i>';
+    }
+    return '';
+}
+
+// ---------- Главная точка входа ----------
 App.ui.pages.renderTiresTab = function() {
     App.ui.pages.renderTotalTiresCost();
     App.ui.pages.renderTireWearBars();
@@ -11,12 +20,11 @@ App.ui.pages.renderTiresTab = function() {
     App.ui.pages.renderTireCalculator();
 };
 
-// Поддержка старого вызова из events.js
 App.ui.pages.renderTiresTable = function() {
     App.ui.pages.renderTiresTab();
 };
 
-// ---------- 1. Карточка «Всего затрат на колёса» (с защитой от undefined) ----------
+// ---------- 1. Карточка «Всего затрат на колёса» ----------
 App.ui.pages.renderTotalTiresCost = function() {
     var total = (App.store.tireLog || []).reduce(function(sum, t) {
         return sum + (parseFloat(t.purchaseCost) || 0) + (parseFloat(t.mountCost) || 0) + (parseFloat(t.diskCost) || 0);
@@ -84,7 +92,7 @@ App.ui.pages.renderTireWearBars = function() {
     App.initIcons();
 };
 
-// ---------- 3. Карточки истории шин (с защитой от undefined) ----------
+// ---------- 3. Карточки истории шин с иконкой синхронизации ----------
 App.ui.pages.renderTiresCards = function() {
     var container = document.getElementById('tires-cards-container');
     if (!container) return;
@@ -99,22 +107,23 @@ App.ui.pages.renderTiresCards = function() {
         var originalIndex = App.store.tireLog.indexOf(t);
         var depth = parseFloat(t.wear) || 0;
         var totalCost = (parseFloat(t.purchaseCost) || 0) + (parseFloat(t.mountCost) || 0) + (parseFloat(t.diskCost) || 0);
+        var syncIcon = getSyncIcon(t.id);
         html += '<div class="card-item">';
         html += '<div class="card-header" style="justify-content:space-between;">';
         html += '<div class="card-summary">';
-        html += '<strong>' + App.utils.escapeHtml(t.date) + ' · ' + (t.type || '—') + ' · ' + App.utils.escapeHtml(t.model || '') + ' ' + App.utils.escapeHtml(t.size || '') + '</strong>';
+        html += '<strong>' + App.utils.escapeHtml(t.date) + syncIcon + ' · ' + (t.type || '—') + ' · ' + App.utils.escapeHtml(t.model || '') + ' ' + App.utils.escapeHtml(t.size || '') + '</strong>';
         html += '<div class="card-meta">Пробег: ' + (t.mileage || '—') + ' км · Глубина протектора: ' + depth.toFixed(1) + ' мм</div>';
         html += '<div class="card-meta">Покупка: ' + (t.purchaseCost || '0') + ' ₽ · Монтаж: ' + (t.mountCost || '0') + ' ₽' + (t.isDIY ? ' (DIY)' : '') + '</div>';
         if (t.diskCost > 0) html += '<div class="card-meta">Диски: ' + (t.diskCost || 0) + ' ₽</div>';
         if (t.notes) html += '<div class="card-meta">Прим.: ' + App.utils.escapeHtml(t.notes) + '</div>';
         html += '</div>';
         html += '<button class="icon-btn tire-toggle-btn"><i data-lucide="more-vertical"></i></button>';
-        html += '</div>'; // card-header
+        html += '</div>';
         html += '<div class="card-detail-actions" style="display:none; padding:8px 12px; justify-content:flex-end;">';
         html += '<button class="icon-btn" data-action="edit-tire" data-idx="' + originalIndex + '"><i data-lucide="pencil"></i></button>';
         html += '<button class="icon-btn" data-action="delete-tire" data-idx="' + originalIndex + '"><i data-lucide="trash-2"></i></button>';
         html += '</div>';
-        html += '</div>'; // card-item
+        html += '</div>';
     });
 
     container.innerHTML = html;
@@ -139,7 +148,7 @@ App.ui.pages.renderTiresCards = function() {
     App.initIcons();
 };
 
-// ---------- КАЛЬКУЛЯТОР (без изменений) ----------
+// ---------- КАЛЬКУЛЯТОР ----------
 App.ui.pages.parseTireSize = function(sizeStr) {
     var match = sizeStr.match(/(\d+)[\/\-](\d+)[\/\-R](\d+)/i);
     if (!match) return null;
