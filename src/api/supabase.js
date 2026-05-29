@@ -30,18 +30,21 @@ function ensureSupabase() {
 }
 
 // ========== СЖАТИЕ ИЗОБРАЖЕНИЙ ==========
+// src/api/supabase.js – изменить функцию compressImage
 async function compressImage(file) {
     // Если файл меньше 1 МБ – не сжимаем
     if (file.size < 1024 * 1024) return file;
     try {
+        // Динамический импорт с правильным использованием default
         const imageCompression = await import('https://cdn.jsdelivr.net/npm/browser-image-compression@2.0.2/dist/browser-image-compression.js');
+        const compressFn = imageCompression.default || imageCompression;
         const options = {
             maxSizeMB: 1,
             maxWidthOrHeight: 1920,
             useWebWorker: true,
             initialQuality: 0.8
         };
-        const compressed = await imageCompression.default(file, options);
+        const compressed = await compressFn(file, options);
         console.log(`[Supabase] Image compressed: ${(file.size / 1024).toFixed(0)}KB → ${(compressed.size / 1024).toFixed(0)}KB`);
         return compressed;
     } catch (err) {
