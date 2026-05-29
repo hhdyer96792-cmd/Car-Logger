@@ -35,7 +35,6 @@ App.db.sync._executeAction = async function(action) {
     const { type, entityType, entityId, data, id: actionId } = action;
     let supabaseMethod, tableName;
     
-    // Обновляем токен перед запросом
     await App.supabase.auth.getSession();
     
     switch (entityType) {
@@ -64,7 +63,6 @@ App.db.sync._executeAction = async function(action) {
             supabaseMethod = (record) => App.supa.addMileageRecord(record.date, record.mileage, record.motohours);
             break;
         case 'settings':
-            // Настройки синхронизируются отдельно, просто удаляем из очереди
             return { success: true };
         case 'delete':
             return await App.db.sync._executeDelete(action);
@@ -211,6 +209,12 @@ App.db.sync._updateLocalFromServer = async function(entityType, serverData) {
 };
 
 App.db.sync.processSyncQueue = async function() {
+    // Проверка инициализации БД
+    if (!App.db._db) {
+        console.log('[Sync] База данных не инициализирована, повтор через 1с');
+        setTimeout(() => App.db.sync.processSyncQueue(), 1000);
+        return;
+    }
     if (!navigator.onLine) {
         console.log('[Sync] Нет сети, синхронизация отложена');
         return;
