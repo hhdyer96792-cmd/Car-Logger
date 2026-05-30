@@ -141,6 +141,7 @@ App.store = {
                 }));
 
                 this.mileageHistory = allMileage.filter(m => m.car_id == carId).map(m => ({
+                    id: m.id,
                     date: m.date,
                     mileage: m.mileage,
                     motohours: m.motohours || 0
@@ -164,7 +165,6 @@ App.store = {
             const pending = await App.db.getAll('pending_actions');
             this.pendingActions = pending.sort((a, b) => a.timestamp - b.timestamp);
 
-            // Загружаем настройки для активного автомобиля, если есть
             if (this.activeCarId && typeof App.storage.loadSettingsForCar === 'function') {
                 await App.storage.loadSettingsForCar(this.activeCarId);
             }
@@ -213,29 +213,36 @@ App.store = {
         console.warn('[Store] Используется устаревший initFromLocalStorage');
     },
 
-    // ========== СОХРАНЕНИЕ В INDEXEDDB ==========
+    // ========== СОХРАНЕНИЕ В INDEXEDDB (С ГАРАНТИЕЙ ID) ==========
     saveOperationToDB: async function(op) {
+        if (!op.id) op.id = crypto.randomUUID();
         await App.db.put('operations', op);
     },
     saveFuelRecordToDB: async function(record) {
+        if (!record.id) record.id = crypto.randomUUID();
         await App.db.put('fuel_log', record);
     },
     saveTireRecordToDB: async function(record) {
+        if (!record.id) record.id = crypto.randomUUID();
         await App.db.put('tires', record);
     },
     savePartToDB: async function(part) {
+        if (!part.id) part.id = crypto.randomUUID();
         await App.db.put('parts', part);
     },
     saveHistoryRecordToDB: async function(record) {
+        if (!record.id) record.id = crypto.randomUUID();
         await App.db.put('service_records', record);
     },
     saveMileageRecordToDB: async function(record) {
+        if (!record.id) record.id = crypto.randomUUID();
         await App.db.put('mileage_log', record);
     },
     saveSettingsToDB: async function() {
         const carId = this.activeCarId;
         if (!carId) return;
         const settingsToSave = { car_id: carId, ...this.settings };
+        if (!settingsToSave.id) settingsToSave.id = carId;
         const masterKey = App.db.encryption.getMasterKey();
         if (masterKey) {
             const encrypted = await App.db.encryption.encryptSettings(settingsToSave, masterKey);
@@ -250,20 +257,20 @@ App.store = {
 
     // ========== ОЧЕРЕДЬ СИНХРОНИЗАЦИИ ==========
     addPendingAction: async function(action) {
-    console.log('[Store] addPendingAction вызван с действием:', action);
-    const newAction = {
-        id: crypto.randomUUID(),
-        type: action.type,
-        entityType: action.entityType,
-        entityId: action.entityId,
-        data: action.data,
-        timestamp: Date.now(),
-        retryCount: 0
-    };
-    this.pendingActions.push(newAction);
-    await App.db.put('pending_actions', newAction);
-    console.log('[Store] Действие добавлено, теперь pendingActions:', this.pendingActions.length);
-},
+        console.log('[Store] addPendingAction вызван с действием:', action);
+        const newAction = {
+            id: crypto.randomUUID(),
+            type: action.type,
+            entityType: action.entityType,
+            entityId: action.entityId,
+            data: action.data,
+            timestamp: Date.now(),
+            retryCount: 0
+        };
+        this.pendingActions.push(newAction);
+        await App.db.put('pending_actions', newAction);
+        console.log('[Store] Действие добавлено, теперь pendingActions:', this.pendingActions.length);
+    },
     clearPendingActions: async function() {
         await App.db.clear('pending_actions');
         this.pendingActions = [];
