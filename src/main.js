@@ -19,8 +19,6 @@
     let isDemoMode = false;
     let demoModeInitialized = false;
     let dbInitialized = false;
-
-    // ========== ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ДЛЯ ИНТЕРВАЛОВ ==========
     let syncInterval = null;
     let premiumCheckInterval = null;
 
@@ -332,14 +330,6 @@
             clearInterval(premiumCheckInterval);
             premiumCheckInterval = null;
         }
-        if (App.premium && App.premium._checkInterval) {
-            clearInterval(App.premium._checkInterval);
-            App.premium._checkInterval = null;
-        }
-        if (App.db.killSwitch && App.db.killSwitch._interval) {
-            clearInterval(App.db.killSwitch._interval);
-            App.db.killSwitch._interval = null;
-        }
 
         console.log('[DEBUG] doLogout: вызываем signOut()');
         try {
@@ -546,7 +536,6 @@
                         }
                     }
 
-                    // ===== СИНХРОНИЗАЦИЯ ОЧЕРЕДИ ПЕРЕД ЗАГРУЗКОЙ =====
                     if (typeof App.db.sync !== 'undefined' && typeof App.db.sync.processSyncQueue === 'function') {
                         console.log('[DEBUG] Запускаем синхронизацию очереди перед загрузкой');
                         await App.db.sync.processSyncQueue();
@@ -565,7 +554,6 @@
                         await forceLoadDataFromSupabase();
                     }
 
-                    // Сохраняем имя пользователя
                     const { data: { user } } = await App.supabase.auth.getUser();
                     const username = user?.user_metadata?.username || user?.email?.split('@')[0] || '';
                     if (username) localStorage.setItem('vesta_username', username);
@@ -622,6 +610,11 @@
                         App.ui.pages.checkAndShowInitialParamsModal();
                     }
                     if (typeof App.renderAll === 'function') App.renderAll();
+                    
+                    if (App.premium && typeof App.premium.init === 'function') {
+                        await App.premium.init();
+                    }
+                    
                     console.log('[DEBUG] Обработка входа завершена');
                 } finally {
                     window._processingAuth = false;
@@ -757,23 +750,21 @@
             navigator.storage.persist().then(isPersisted => console.log('Persistent storage:', isPersisted ? 'granted' : 'denied'));
         }
 
-        // Регистрация Service Worker
+        // Регистрация Service Worker (основной и Firebase)
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.register('./service-worker.js').then(reg => {
-                console.log('[SW] Зарегистрирован:', reg);
-            }).catch(err => console.error('[SW] Ошибка регистрации:', err));
+                console.log('[SW] Основной Service Worker зарегистрирован:', reg);
+            }).catch(err => console.error('[SW] Ошибка регистрации основного SW:', err));
             
             navigator.serviceWorker.register('./firebase-messaging-sw.js').then(reg => {
-                console.log('[Firebase SW] зарегистрирован');
-            }).catch(err => console.warn('[Firebase SW] ошибка:', err));
+                console.log('[Firebase SW] Service Worker зарегистрирован:', reg);
+            }).catch(err => console.warn('[Firebase SW] Ошибка регистрации:', err));
         }
 
         initDatabase().then(async () => {
             console.log('[DEBUG] initDatabase завершён, проверяем сессию');
-            // Более надёжная проверка сессии (с учётом офлайн-режима)
             let hasSession = false;
             try {
-                // Сначала проверяем локальный токен (для офлайн)
                 const localToken = localStorage.getItem('sb-auth-token');
                 if (localToken) {
                     hasSession = true;
@@ -791,7 +782,6 @@
                 enterDemoMode();
             } else {
                 console.log('[DEBUG] Сессия активна, не запускаем демо');
-                // Восстанавливаем имя пользователя из localStorage
                 const savedUsername = localStorage.getItem('vesta_username');
                 if (savedUsername) updateUsernameDisplay(savedUsername);
             }
@@ -833,28 +823,25 @@
         }
 
         window.addEventListener('online', () => {
-    if (typeof App.toast === 'function') App.toast('Сеть восстановлена', 'success');
-    
-    // 1. Синхронизация очереди pending_actions
-    if (App.db.sync && typeof App.db.sync.processSyncQueue === 'function') {
-        App.db.sync.processSyncQueue().catch(console.error);
-    }
-    
-    // 2. Принудительная перезагрузка данных текущего автомобиля с сервера
-    if (App.store.activeCarId && typeof App.storage.loadAllData === 'function') {
-        App.storage.loadAllData().catch(console.error);
-    }
-    
-    // 3. Обновление UI, если остались несинхронизированные записи
-    if (App.store.pendingActions && App.store.pendingActions.length > 0) {
-        if (typeof App.ui.pages.renderFuelTab === 'function') App.ui.pages.renderFuelTab();
-        if (typeof App.ui.pages.renderPartsTab === 'function') App.ui.pages.renderPartsTab();
-        if (typeof App.ui.pages.renderTOTable === 'function') App.ui.pages.renderTOTable();
-        if (typeof App.ui.pages.renderDashboard === 'function') App.ui.pages.renderDashboard();
-    }
-    
-    handleOnlineSession();
-});
+            if (typeof App.toast === 'function') App.toast('Сеть восстановлена', 'success');
+            
+            if (App.db.sync && typeof App.db.sync.processSyncQueue === 'function') {
+                App.db.sync.processSyncQueue().catch(console.error);
+            }
+            
+            if (App.store.activeCarId && typeof App.storage.loadAllData === 'function') {
+                App.storage.loadAllData().catch(console.error);
+            }
+            
+            if (App.store.pendingActions && App.store.pendingActions.length > 0) {
+                if (typeof App.ui.pages.renderFuelTab === 'function') App.ui.pages.renderFuelTab();
+                if (typeof App.ui.pages.renderPartsTab === 'function') App.ui.pages.renderPartsTab();
+                if (typeof App.ui.pages.renderTOTable === 'function') App.ui.pages.renderTOTable();
+                if (typeof App.ui.pages.renderDashboard === 'function') App.ui.pages.renderDashboard();
+            }
+            
+            handleOnlineSession();
+        });
 
         window.addEventListener('offline', () => {
             if (typeof App.toast === 'function') App.toast('Вы офлайн', 'warning');
