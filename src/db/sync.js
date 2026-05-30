@@ -305,6 +305,15 @@ App.db.sync.processSyncQueue = async function() {
                 const idx = App.store.pendingActions.findIndex(a => a.id === action.id);
                 if (idx !== -1) App.store.pendingActions.splice(idx, 1);
                 console.log(`[Sync] Действие ${action.id} удалено из очереди`);
+                
+                // Принудительно обновляем UI всех вкладок, где может быть иконка
+                if (typeof App.ui.pages.renderTOTable === 'function') App.ui.pages.renderTOTable();
+                if (typeof App.ui.pages.renderFuelTab === 'function') App.ui.pages.renderFuelTab();
+                if (typeof App.ui.pages.renderPartsTab === 'function') App.ui.pages.renderPartsTab();
+                if (typeof App.ui.pages.renderTiresTab === 'function') App.ui.pages.renderTiresTab();
+                if (typeof App.ui.pages.renderHistoryCards === 'function') App.ui.pages.renderHistoryCards();
+                if (typeof App.ui.pages.renderDashboard === 'function') App.ui.pages.renderDashboard();
+                
             } catch (err) {
                 console.error(`[Sync] Ошибка действия ${action.id}:`, err);
                 if (err.status === 409 || (err.message && err.message.includes('conflict'))) {
