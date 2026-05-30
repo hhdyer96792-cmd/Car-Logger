@@ -50,7 +50,7 @@ App.store = {
         );
     },
 
-    // ========== ЗАГРУЗКА ИЗ INDEXEDDB ==========
+    // ========== ЗАГРУЗКА ИЗ INDEXEDDB С ФИЛЬТРАЦИЕЙ ПО CAR_ID ==========
     loadFromIndexedDB: async function() {
         if (!App.db || !App.db._db) {
             console.warn('[Store] IndexedDB не инициализирована, загружаю из localStorage (fallback)');
@@ -80,7 +80,8 @@ App.store = {
                     lastDate: op.lastDate || null,
                     lastMileage: op.lastMileage || 0,
                     lastMotohours: op.lastMotohours || 0,
-                    updatedAt: op.updatedAt
+                    updatedAt: op.updatedAt,
+                    car_id: op.car_id
                 }));
 
                 this.fuelLog = allFuel.filter(f => f.car_id == carId).map(f => ({
@@ -92,7 +93,8 @@ App.store = {
                     pricePerLiter: f.pricePerLiter,
                     fullTank: f.fullTank ? 'TRUE' : '',
                     fuelType: f.fuelType || 'Бензин',
-                    notes: f.notes || ''
+                    notes: f.notes || '',
+                    car_id: f.car_id
                 }));
 
                 this.tireLog = allTires.filter(t => t.car_id == carId).map(t => ({
@@ -107,7 +109,8 @@ App.store = {
                     notes: t.notes || '',
                     purchaseCost: t.purchaseCost || 0,
                     mountCost: t.mountCost || 0,
-                    isDIY: t.isDIY || false
+                    isDIY: t.isDIY || false,
+                    car_id: t.car_id
                 }));
 
                 this.parts = allParts.filter(p => p.car_id == carId).map(p => ({
@@ -122,7 +125,8 @@ App.store = {
                     comment: p.comment || '',
                     inStock: p.inStock || 0,
                     location: p.location || '',
-                    dateAdded: p.dateAdded || ''
+                    dateAdded: p.dateAdded || '',
+                    car_id: p.car_id
                 }));
 
                 this.serviceRecords = allHistory.filter(h => h.car_id == carId).map(h => ({
@@ -137,13 +141,16 @@ App.store = {
                     notes: h.notes || '',
                     photo_url: h.photo_url || '',
                     user_id: h.user_id,
-                    rowIndex: h.id
+                    rowIndex: h.id,
+                    car_id: h.car_id
                 }));
 
                 this.mileageHistory = allMileage.filter(m => m.car_id == carId).map(m => ({
+                    id: m.id,
                     date: m.date,
                     mileage: m.mileage,
-                    motohours: m.motohours || 0
+                    motohours: m.motohours || 0,
+                    car_id: m.car_id
                 })).sort((a, b) => new Date(a.date) - new Date(b.date));
             } else {
                 this.operations = [];
@@ -164,6 +171,7 @@ App.store = {
             const pending = await App.db.getAll('pending_actions');
             this.pendingActions = pending.sort((a, b) => a.timestamp - b.timestamp);
 
+            // Загружаем настройки для активного автомобиля
             if (this.activeCarId && typeof App.storage.loadSettingsForCar === 'function') {
                 await App.storage.loadSettingsForCar(this.activeCarId);
             }
@@ -212,7 +220,7 @@ App.store = {
         console.warn('[Store] Используется устаревший initFromLocalStorage');
     },
 
-    // ========== СОХРАНЕНИЕ В INDEXEDDB ==========
+    // ========== СОХРАНЕНИЕ В INDEXEDDB (С ГЕНЕРАЦИЕЙ ID) ==========
     saveOperationToDB: async function(op) {
         if (!op.id) op.id = crypto.randomUUID();
         await App.db.put('operations', op);
@@ -241,6 +249,7 @@ App.store = {
         const carId = this.activeCarId;
         if (!carId) return;
         const settingsToSave = { car_id: carId, ...this.settings };
+        if (!settingsToSave.id) settingsToSave.id = carId;
         const masterKey = App.db.encryption.getMasterKey();
         if (masterKey) {
             const encrypted = await App.db.encryption.encryptSettings(settingsToSave, masterKey);
@@ -266,7 +275,6 @@ App.store = {
         };
         this.pendingActions.push(newAction);
         await App.db.put('pending_actions', newAction);
-        console.log('[Store] Добавлено действие в очередь:', newAction);
     },
     clearPendingActions: async function() {
         await App.db.clear('pending_actions');
@@ -306,14 +314,9 @@ App.store = {
         if (this.activeCarId === carId) return;
         this.activeCarId = carId;
         localStorage.setItem('vesta_active_car_id', carId);
-        
-        // Загружаем данные из IndexedDB для этого автомобиля
         this.loadFromIndexedDB().catch(console.error);
-        
-        // Загружаем настройки для этого автомобиля
         if (typeof App.storage.loadSettingsForCar === 'function') {
             App.storage.loadSettingsForCar(carId).then(() => {
-                // Перерисовываем UI
                 if (typeof App.ui.pages.renderDashboard === 'function') App.ui.pages.renderDashboard();
                 if (typeof App.ui.pages.renderTOStats === 'function') App.ui.pages.renderTOStats();
                 if (typeof App.ui.pages.renderTotalCost === 'function') App.ui.pages.renderTotalCost();
@@ -323,11 +326,6 @@ App.store = {
             }).catch(console.error);
         } else {
             if (typeof App.ui.pages.renderDashboard === 'function') App.ui.pages.renderDashboard();
-        }
-        
-        // Если онлайн, загружаем свежие данные из Supabase
-        if (navigator.onLine && typeof App.storage.loadAllData === 'function') {
-            App.storage.loadAllData().catch(console.error);
         }
     },
     
