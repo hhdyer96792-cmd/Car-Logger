@@ -63,14 +63,12 @@ App.db.sync._executeAction = async function(action) {
             supabaseMethod = (record) => App.supa.addMileageRecord(record.date, record.mileage, record.motohours);
             break;
         case 'car_settings':
-            if (data.telegramToken !== undefined) {
-                await App.supa.saveUserSettings({
-                    telegramToken: data.telegramToken,
-                    telegramChatId: data.telegramChatId,
-                    notificationMethod: data.notificationMethod,
-                    reminderDays: data.reminderDays
-                });
-            }
+            await App.supa.saveUserSettings({
+                telegramToken: data.telegramToken,
+                telegramChatId: data.telegramChatId,
+                notificationMethod: data.notificationMethod,
+                reminderDays: data.reminderDays
+            });
             await App.supa.saveVehicleState({
                 currentMileage: data.currentMileage,
                 currentMotohours: data.currentMotohours,
@@ -82,12 +80,14 @@ App.db.sync._executeAction = async function(action) {
                 plateNumber: data.plateNumber,
                 vin: data.vin
             });
+            Object.assign(App.store.settings, data);
             return { success: true };
         case 'delete':
             return await App.db.sync._executeDelete(action);
         default:
             throw new Error(`Unknown entityType: ${entityType}`);
     }
+    
     if (type === 'save' || type === 'update') {
         const result = await supabaseMethod(data);
         if (result.error) throw result.error;
