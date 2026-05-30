@@ -63,6 +63,7 @@ App.storage.saveOperation = async function(op) {
             data: opWithCarId
         });
         await App.store.saveOperationToDB(opWithCarId);
+        // Обновляем локальный массив с правильным car_id
         const idx = App.store.operations.findIndex(o => o.id == opWithCarId.id);
         if (idx !== -1) App.store.operations[idx] = opWithCarId;
         else App.store.operations.push(opWithCarId);
