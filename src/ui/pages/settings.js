@@ -7,15 +7,15 @@ let settingsListenersAttached = false;
 
 // ==================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ====================
 App.ui.pages.saveSettings = function() {
-    var notificationMethodSelect = document.getElementById('notification-method');
-    var reminderDaysInput = document.getElementById('reminder-days-input');
-    var reminderDaysRaw = reminderDaysInput?.value.trim() || '7,2';
-    var daysArray = reminderDaysRaw.split(',').map(d => parseInt(d.trim())).filter(d => !isNaN(d) && d > 0);
+    const notificationMethodSelect = document.getElementById('notification-method');
+    const reminderDaysInput = document.getElementById('reminder-days-input');
+    let reminderDaysRaw = reminderDaysInput?.value.trim() || '7,2';
+    let daysArray = reminderDaysRaw.split(',').map(d => parseInt(d.trim())).filter(d => !isNaN(d) && d > 0);
     if (daysArray.length === 0) daysArray = [7, 2];
-    var reminderDays = daysArray.join(',');
-    var telegramEnabled = document.getElementById('telegram-toggle')?.checked === true;
+    const reminderDays = daysArray.join(',');
+    const telegramEnabled = document.getElementById('telegram-toggle')?.checked === true;
 
-    var settings = {
+    const settings = {
         currentMileage: App.store.settings.currentMileage,
         currentMotohours: App.store.settings.currentMotohours,
         avgDailyMileage: App.store.settings.avgDailyMileage,
@@ -25,7 +25,7 @@ App.ui.pages.saveSettings = function() {
         telegramEnabled: telegramEnabled
     };
 
-    App.storage.saveSettings(settings).then(function() {
+    App.storage.saveSettings(settings).then(() => {
         if (notificationMethodSelect) {
             App.store.settings.notificationMethod = notificationMethodSelect.value;
             localStorage.setItem(App.config.NOTIFICATION_METHOD_KEY, notificationMethodSelect.value);
@@ -37,7 +37,7 @@ App.ui.pages.saveSettings = function() {
         App.store.saveSettingsToDB().catch(console.warn);
 
         App.toast('Настройки сохранены', 'success');
-    }).catch(function(err) {
+    }).catch(err => {
         console.error(err);
         document.getElementById('settings-result').textContent = '⚠️ Ошибка сохранения';
         App.toast('Ошибка сохранения настроек', 'error');
@@ -73,10 +73,17 @@ App.ui.pages.savePushSubscription = async function(playerId) {
     try {
         const { data: { user } } = await App.supabase.auth.getUser();
         if (!user) throw new Error('User not authenticated');
-        const { error } = await App.supabase
-            .from('push_subscriptions')
-            .upsert({ user_id: user.id, player_id: playerId, updated_at: new Date().toISOString() }, { onConflict: 'user_id' });
-        if (error) throw error;
+        
+        // Сохраняем токен через Supabase
+        if (App.supa.savePushToken) {
+            await App.supa.savePushToken(playerId);
+        } else {
+            const { error } = await App.supabase
+                .from('push_subscriptions')
+                .upsert({ user_id: user.id, player_id: playerId, updated_at: new Date().toISOString() }, { onConflict: 'user_id' });
+            if (error) throw error;
+        }
+        
         localStorage.setItem('push_subscribed', 'true');
         await App.ui.pages.populateSettingsFields();
         return true;
@@ -93,11 +100,17 @@ App.ui.pages.removePushSubscription = async function() {
     try {
         const { data: { user } } = await App.supabase.auth.getUser();
         if (!user) throw new Error('User not authenticated');
-        const { error } = await App.supabase
-            .from('push_subscriptions')
-            .delete()
-            .eq('user_id', user.id);
-        if (error) throw error;
+        
+        if (App.supa.removePushToken) {
+            await App.supa.removePushToken();
+        } else {
+            const { error } = await App.supabase
+                .from('push_subscriptions')
+                .delete()
+                .eq('user_id', user.id);
+            if (error) throw error;
+        }
+        
         localStorage.removeItem('push_subscribed');
         if (typeof firebase !== 'undefined' && firebase.apps && firebase.apps.length > 0) {
             try {
@@ -361,12 +374,11 @@ App.ui.pages.populateSettingsFields = async function() {
         return;
     }
 
-    // 0. Premium карточка
     if (typeof App.ui.pages.renderPremiumBlock === 'function') {
         App.ui.pages.renderPremiumBlock();
     }
 
-    // 1. Карточка уведомлений (push-уведомления временно отключены)
+    // ВОССТАНОВЛЕНА КАРТОЧКА УВЕДОМЛЕНИЙ С PUSH
     notificationsContainer.innerHTML = `
         <div class="card">
             <h3><i data-lucide="bell"></i> Уведомления</h3>
@@ -394,9 +406,12 @@ App.ui.pages.populateSettingsFields = async function() {
                 <p class="hint">Отключите, если не хотите получать напоминания о ТО в Telegram</p>
             </div>
 
-            <!-- Push-уведомления временно отключены -->
-            <div style="margin-top: 12px; padding: 8px; background: var(--bg); border-radius: var(--radius-sm);">
-                <p class="hint"><i data-lucide="info"></i> Push-уведомления находятся в разработке и будут доступны в одном из следующих обновлений.</p>
+            <div id="push-settings" style="margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border);">
+                <p><strong><i data-lucide="bell"></i> Push-уведомления в браузере</strong></p>
+                <p id="push-status" class="hint">Push-уведомления не настроены.</p>
+                <button id="subscribe-push-btn" class="secondary-btn"><i data-lucide="bell"></i> Подписаться на уведомления</button>
+                <button id="unsubscribe-push-btn" class="secondary-btn" style="display:none;"><i data-lucide="bell-off"></i> Отписаться от уведомлений</button>
+                <p class="hint" style="margin-top: 8px;">Push-уведомления работают только через защищённое соединение (HTTPS) и требуют разрешения браузера.</p>
             </div>
 
             <div style="display:flex; gap:8px; align-items:center; margin-top:12px;">
@@ -414,6 +429,32 @@ App.ui.pages.populateSettingsFields = async function() {
     if (reminderInput && App.store.settings.reminderDays) reminderInput.value = App.store.settings.reminderDays;
     const telegramToggle = document.getElementById('telegram-toggle');
     if (telegramToggle) telegramToggle.checked = App.store.settings.telegramEnabled !== false;
+
+    const pushStatus = document.getElementById('push-status');
+    const subscribeBtn = document.getElementById('subscribe-push-btn');
+    const unsubscribeBtn = document.getElementById('unsubscribe-push-btn');
+    if (pushStatus && subscribeBtn && unsubscribeBtn) {
+        const isSubscribed = localStorage.getItem('push_subscribed') === 'true';
+        pushStatus.innerHTML = isSubscribed 
+            ? '<i data-lucide="check-circle" style="color: var(--success);"></i> Push-уведомления активны' 
+            : '<i data-lucide="bell-off"></i> Push-уведомления не настроены';
+        subscribeBtn.style.display = isSubscribed ? 'none' : 'inline-flex';
+        unsubscribeBtn.style.display = isSubscribed ? 'inline-flex' : 'none';
+        
+        if (isSubscribed) {
+            App.initIcons();
+        } else {
+            if (!('Notification' in window)) {
+                pushStatus.innerHTML = '<i data-lucide="alert-triangle" style="color: var(--warning);"></i> Push-уведомления не поддерживаются вашим браузером.';
+                subscribeBtn.disabled = true;
+            } else if (Notification.permission === 'denied') {
+                pushStatus.innerHTML = '<i data-lucide="alert-triangle" style="color: var(--danger);"></i> Разрешение на уведомления заблокировано. Измените в настройках браузера.';
+                subscribeBtn.disabled = true;
+            } else if (Notification.permission === 'granted') {
+                pushStatus.innerHTML = '<i data-lucide="check-circle" style="color: var(--success);"></i> Разрешение есть. Нажмите "Подписаться" для активации.';
+            }
+        }
+    }
 
     const telegramBindArea = document.getElementById('telegram-bind-area');
     if (telegramBindArea) {
@@ -457,6 +498,33 @@ App.ui.pages.populateSettingsFields = async function() {
             saveBtn.parentNode.replaceChild(newSaveBtn, saveBtn);
             newSaveBtn.addEventListener('click', App.ui.pages.saveSettings);
         }
+        
+        const subPushBtn = document.getElementById('subscribe-push-btn');
+        if (subPushBtn) {
+            const newSubBtn = subPushBtn.cloneNode(true);
+            subPushBtn.parentNode.replaceChild(newSubBtn, subPushBtn);
+            newSubBtn.addEventListener('click', async () => {
+                await App.ui.pages.subscribeToPush();
+            });
+        }
+        
+        const unsubPushBtn = document.getElementById('unsubscribe-push-btn');
+        if (unsubPushBtn) {
+            const newUnsubBtn = unsubPushBtn.cloneNode(true);
+            unsubPushBtn.parentNode.replaceChild(newUnsubBtn, unsubPushBtn);
+            newUnsubBtn.addEventListener('click', async () => {
+                await App.ui.pages.removePushSubscription();
+                App.toast('Подписка на push отключена', 'success');
+                const statusEl = document.getElementById('push-status');
+                if (statusEl) statusEl.innerHTML = '<i data-lucide="bell-off"></i> Push-уведомления не настроены';
+                const subscribeEl = document.getElementById('subscribe-push-btn');
+                const unsubscribeEl = document.getElementById('unsubscribe-push-btn');
+                if (subscribeEl) subscribeEl.style.display = 'inline-flex';
+                if (unsubscribeEl) unsubscribeEl.style.display = 'none';
+                App.initIcons();
+            });
+        }
+        
         const infoBtn = document.getElementById('telegram-info-btn');
         if (infoBtn) {
             infoBtn.addEventListener('click', () => {
@@ -466,12 +534,10 @@ App.ui.pages.populateSettingsFields = async function() {
         settingsListenersAttached = true;
     }
 
-    // 2. PIN
     if (typeof App.ui.pages.renderPinSettings === 'function') {
         await App.ui.pages.renderPinSettings();
     }
 
-    // 3. Аккордеон
     accordionContainer.innerHTML = `
         <div class="accordion-group settings-accordion">
             <div class="accordion-header" id="accordion-recovery-header">
@@ -675,6 +741,68 @@ App.ui.pages.renderPinSettings = async function() {
         }
     }
     App.initIcons();
+};
+
+// ==================== PUSH-УВЕДОМЛЕНИЯ (ВОССТАНОВЛЕНА ФУНКЦИЯ) ====================
+App.ui.pages.subscribeToPush = async function() {
+    if (!('Notification' in window)) {
+        App.ui.alertModal('Push-уведомления не поддерживаются вашим браузером.');
+        return;
+    }
+    
+    if (Notification.permission === 'denied') {
+        App.ui.alertModal('Разрешение на уведомления заблокировано. Пожалуйста, измените настройки в браузере.');
+        return;
+    }
+    
+    try {
+        if (Notification.permission !== 'granted') {
+            const permission = await Notification.requestPermission();
+            if (permission !== 'granted') {
+                App.toast('Необходимо разрешить уведомления для работы Push', 'warning');
+                return;
+            }
+        }
+        
+        if ('serviceWorker' in navigator) {
+            let registration = await navigator.serviceWorker.getRegistration('/firebase-messaging-sw.js');
+            if (!registration) {
+                registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+                console.log('[Push] Firebase SW registered:', registration);
+            }
+            
+            if (typeof firebase !== 'undefined' && firebase.messaging) {
+                const messaging = firebase.messaging();
+                
+                const token = await messaging.getToken({
+                    vapidKey: 'BPp7qK9xQ2yL3zM4wN5xO6yP7zQ8rS9tU0vW1xY2zA3bC4dE5fG6hI7jK8lL9mM0nN1oO2pP3qQ4rR5sS6tT7uU8vV9wW0xX1yY2zZ3'
+                });
+                
+                if (token) {
+                    console.log('[Push] FCM Token получен:', token);
+                    await App.ui.pages.savePushSubscription(token);
+                    App.toast('Push-уведомления активированы', 'success');
+                    
+                    const statusEl = document.getElementById('push-status');
+                    if (statusEl) statusEl.innerHTML = '<i data-lucide="check-circle" style="color: var(--success);"></i> Push-уведомления активны';
+                    const subscribeEl = document.getElementById('subscribe-push-btn');
+                    const unsubscribeEl = document.getElementById('unsubscribe-push-btn');
+                    if (subscribeEl) subscribeEl.style.display = 'none';
+                    if (unsubscribeEl) unsubscribeEl.style.display = 'inline-flex';
+                    App.initIcons();
+                } else {
+                    throw new Error('Не удалось получить токен FCM');
+                }
+            } else {
+                throw new Error('Firebase не инициализирован');
+            }
+        } else {
+            throw new Error('Service Worker не поддерживается');
+        }
+    } catch (err) {
+        console.error('[Push] Ошибка подписки:', err);
+        App.toast('Ошибка активации push-уведомлений: ' + err.message, 'error');
+    }
 };
 
 if (document.getElementById('tab-settings')) {
