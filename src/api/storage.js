@@ -64,8 +64,8 @@ App.storage.saveOperation = async function(op) {
         });
         await App.store.saveOperationToDB(opWithCarId);
         const idx = App.store.operations.findIndex(o => o.id == opWithCarId.id);
-        if (idx !== -1) App.store.operations[idx] = op;
-        else App.store.operations.push(op);
+        if (idx !== -1) App.store.operations[idx] = opWithCarId;
+        else App.store.operations.push(opWithCarId);
         App.toast('Операция сохранена локально', 'warning');
         refreshUIToTables();
         return;
@@ -115,7 +115,7 @@ App.storage.addHistoryRecord = async function(rec) {
             data: recWithCarId
         });
         await App.store.saveHistoryRecordToDB(recWithCarId);
-        App.store.serviceRecords.push(rec);
+        App.store.serviceRecords.push(recWithCarId);
         App.toast('Запись сохранена локально', 'warning');
         refreshUIToHistory();
         return;
@@ -171,9 +171,9 @@ App.storage.savePart = async function(part) {
             data: partWithCarId
         });
         await App.store.savePartToDB(partWithCarId);
-        const idx = App.store.parts.findIndex(p => p.id == part.id);
-        if (idx !== -1) App.store.parts[idx] = part;
-        else App.store.parts.push(part);
+        const idx = App.store.parts.findIndex(p => p.id == partWithCarId.id);
+        if (idx !== -1) App.store.parts[idx] = partWithCarId;
+        else App.store.parts.push(partWithCarId);
         App.toast('Запчасть сохранена локально', 'warning');
         refreshUIToParts();
         return;
@@ -224,8 +224,8 @@ App.storage.saveFuelRecord = async function(id, record) {
         });
         await App.store.saveFuelRecordToDB(recordWithCarId);
         const idx = App.store.fuelLog.findIndex(f => f.id == recordWithCarId.id);
-        if (idx !== -1) App.store.fuelLog[idx] = record;
-        else App.store.fuelLog.push(record);
+        if (idx !== -1) App.store.fuelLog[idx] = recordWithCarId;
+        else App.store.fuelLog.push(recordWithCarId);
         App.toast('Заправка сохранена локально', 'warning');
         refreshUIToFuel();
         return;
@@ -276,8 +276,8 @@ App.storage.saveTireRecord = async function(id, record) {
         });
         await App.store.saveTireRecordToDB(recordWithCarId);
         const idx = App.store.tireLog.findIndex(t => t.id == recordWithCarId.id);
-        if (idx !== -1) App.store.tireLog[idx] = record;
-        else App.store.tireLog.push(record);
+        if (idx !== -1) App.store.tireLog[idx] = recordWithCarId;
+        else App.store.tireLog.push(recordWithCarId);
         App.toast('Шины сохранены локально', 'warning');
         refreshUIToTires();
         return;
@@ -341,7 +341,7 @@ App.storage.addMileageRecord = async function(date, mileage, motohours) {
     refreshUIToMileage();
 };
 
-// ========== НАСТРОЙКИ (с привязкой к автомобилю) ==========
+// ========== НАСТРОЙКИ ==========
 App.storage.saveSettings = async function(settings) {
     const carId = App.store.activeCarId;
     if (!carId) {
@@ -364,7 +364,6 @@ App.storage.saveSettings = async function(settings) {
         return;
     }
     
-    // Онлайн: сохраняем в Supabase
     await App.supa.saveVehicleState({
         currentMileage: settings.currentMileage,
         currentMotohours: settings.currentMotohours,
@@ -391,10 +390,8 @@ App.storage.saveSettings = async function(settings) {
 App.storage.loadSettingsForCar = async function(carId) {
     if (!carId) return null;
     try {
-        // Сначала пробуем из кэша
         let cached = await App.db.getById('car_settings', carId);
         if (cached) {
-            // Если в кэше есть, расшифровываем при необходимости
             let decrypted = cached;
             const masterKey = App.db.encryption.getMasterKey();
             if (masterKey && cached.telegramToken && typeof cached.telegramToken === 'object') {
@@ -403,7 +400,6 @@ App.storage.loadSettingsForCar = async function(carId) {
             Object.assign(App.store.settings, decrypted);
             return decrypted;
         }
-        // Если нет в кэше и есть сеть – загружаем с сервера
         if (navigator.onLine) {
             const settings = await App.supa.loadSettings();
             if (settings) {
@@ -419,7 +415,6 @@ App.storage.loadSettingsForCar = async function(carId) {
                 return settingsWithCar;
             }
         }
-        // Если ничего нет – используем дефолтные настройки
         const defaultSettings = { ...App.defaults.settings, car_id: carId };
         Object.assign(App.store.settings, defaultSettings);
         await App.db.put('car_settings', defaultSettings);
@@ -456,36 +451,12 @@ App.storage.loadAllData = async function() {
 
         const carId = App.store.activeCarId;
         
-        const opsWithCar = operations.map(op => ({ 
-            ...op, 
-            id: op.id || crypto.randomUUID(), 
-            car_id: carId 
-        }));
-        const fuelWithCar = fuelLog.map(f => ({ 
-            ...f, 
-            id: f.id || crypto.randomUUID(), 
-            car_id: carId 
-        }));
-        const tiresWithCar = tireLog.map(t => ({ 
-            ...t, 
-            id: t.id || crypto.randomUUID(), 
-            car_id: carId 
-        }));
-        const partsWithCar = parts.map(p => ({ 
-            ...p, 
-            id: p.id || crypto.randomUUID(), 
-            car_id: carId 
-        }));
-        const historyWithCar = history.map(h => ({ 
-            ...h, 
-            id: h.id || crypto.randomUUID(), 
-            car_id: carId 
-        }));
-        const mileageWithCar = mileageHistory.map(m => ({ 
-            ...m, 
-            id: m.id || crypto.randomUUID(), 
-            car_id: carId 
-        }));
+        const opsWithCar = operations.map(op => ({ ...op, id: op.id || crypto.randomUUID(), car_id: carId }));
+        const fuelWithCar = fuelLog.map(f => ({ ...f, id: f.id || crypto.randomUUID(), car_id: carId }));
+        const tiresWithCar = tireLog.map(t => ({ ...t, id: t.id || crypto.randomUUID(), car_id: carId }));
+        const partsWithCar = parts.map(p => ({ ...p, id: p.id || crypto.randomUUID(), car_id: carId }));
+        const historyWithCar = history.map(h => ({ ...h, id: h.id || crypto.randomUUID(), car_id: carId }));
+        const mileageWithCar = mileageHistory.map(m => ({ ...m, id: m.id || crypto.randomUUID(), car_id: carId }));
 
         await App.db.putMany('operations', opsWithCar);
         await App.db.putMany('fuel_log', fuelWithCar);
