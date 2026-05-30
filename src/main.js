@@ -357,13 +357,13 @@
 
     async function forceLoadDataFromSupabase() {
     console.log('[DEBUG] forceLoadDataFromSupabase: загрузка данных напрямую из Supabase');
+    const carId = App.store.activeCarId;
+    if (!carId) {
+        console.warn('[DEBUG] Нет активного автомобиля, пропускаем загрузку');
+        return;
+    }
     try {
-        const carId = App.store.activeCarId;
-        if (!carId) {
-            console.warn('[DEBUG] Нет активного автомобиля, пропускаем загрузку');
-            return;
-        }
-
+        // Получаем свежие данные
         const [operations, fuelLog, tireLog, parts, history, mileageHistory, settings] = await Promise.all([
             App.supa.loadOperations(),
             App.supa.loadFuelLog(),
@@ -374,19 +374,18 @@
             App.supa.loadSettings()
         ]);
 
-        // Очищаем старые данные в store и IndexedDB для текущего автомобиля
-        await App.db.delete('operations', carId); // но delete по id не подходит – нужно удалить все с car_id
-        // Проще: очистить всё хранилище и перезаписать
-        const stores = ['operations', 'fuel_log', 'tires', 'parts', 'service_records', 'mileage_log'];
-        for (const store of stores) {
-            const all = await App.db.getAll(store);
-            const toDelete = all.filter(item => item.car_id == carId);
-            for (const item of toDelete) {
-                await App.db.delete(store, item.id);
-            }
-        }
+        console.log(`[DEBUG] Загружено: operations=${operations.length}, fuel=${fuelLog.length}, parts=${parts.length}, history=${history.length}`);
 
-        // Сохраняем загруженные данные
+        // Обновляем store
+        App.store.operations = operations;
+        App.store.fuelLog = fuelLog;
+        App.store.tireLog = tireLog;
+        App.store.parts = parts;
+        App.store.serviceRecords = history;
+        App.store.mileageHistory = mileageHistory;
+        if (settings) Object.assign(App.store.settings, settings);
+
+        // Сохраняем в IndexedDB с проставлением car_id
         for (const op of operations) {
             await App.store.saveOperationToDB({ ...op, car_id: carId });
         }
@@ -409,16 +408,6 @@
             await App.db.put('car_settings', { ...settings, car_id: carId });
         }
 
-        // Обновляем store
-        App.store.operations = operations;
-        App.store.fuelLog = fuelLog;
-        App.store.tireLog = tireLog;
-        App.store.parts = parts;
-        App.store.serviceRecords = history;
-        App.store.mileageHistory = mileageHistory;
-        if (settings) Object.assign(App.store.settings, settings);
-
-        console.log('[DEBUG] Данные загружены напрямую. operations:', App.store.operations.length);
         if (typeof App.renderAll === 'function') App.renderAll();
         App.toast('Данные загружены', 'info');
     } catch (err) {
