@@ -685,3 +685,28 @@ App.supa.removePushToken = async function() {
     return true;
 };
 
+// ========== ОБРАБОТКА OAuth РЕДИРЕКТА ==========
+// Эта функция вызывается при загрузке страницы, если в URL есть hash с токеном
+App.supa.handleOAuthRedirect = async function() {
+    const hash = window.location.hash;
+    if (hash && (hash.includes('access_token') || hash.includes('error'))) {
+        console.log('[Supabase] Обнаружен OAuth редирект, обрабатываем...');
+        const { data, error } = await App.supabase.auth.getSession();
+        if (error) {
+            console.error('[Supabase] Ошибка получения сессии после редиректа:', error);
+            App.toast('Ошибка входа через Google', 'error');
+        } else if (data.session) {
+            console.log('[Supabase] Сессия успешно получена');
+            App.toast('Вход через Google выполнен', 'success');
+        }
+        window.location.hash = '';
+    }
+};
+// Вызываем при загрузке
+if (typeof window !== 'undefined') {
+    setTimeout(() => {
+        if (App.supa && typeof App.supa.handleOAuthRedirect === 'function') {
+            App.supa.handleOAuthRedirect();
+        }
+    }, 100);
+}
