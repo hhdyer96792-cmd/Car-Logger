@@ -644,7 +644,27 @@ App.ui.pages.openOperationForm = function(op) {
         e.preventDefault();
         var d = Object.fromEntries(new FormData(form));
         modal.remove();
-        App.logic.saveOperation(d).catch(function(err) { console.warn(err); });
+
+        var opData = {
+            id: d.id || null,
+            category: d.category,
+            name: d.name,
+            intervalKm: parseInt(d.km) || 0,
+            intervalMonths: parseInt(d.months) || 0,
+            intervalMotohours: d.moto ? parseInt(d.moto) : null,
+            lastDate: op ? op.lastDate : null,
+            lastMileage: op ? op.lastMileage : 0,
+            lastMotohours: op ? op.lastMotohours : 0
+        };
+        // Новая операция — генерируем временный ID
+        if (!opData.id) {
+            opData.id = crypto.randomUUID();
+        }
+        // Используем единый метод сохранения (работает офлайн и онлайн)
+        App.storage.saveOperation(opData).catch(function(err) {
+            console.error('Ошибка сохранения операции:', err);
+            App.toast('Ошибка сохранения операции', 'error');
+        });
     };
     modal.querySelector('.cancel-btn').onclick = function() { modal.remove(); };
 };
