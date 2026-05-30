@@ -134,7 +134,6 @@ App.ui.confirmModalAsync = function(message) {
     });
 };
 
-// Единственная корректная версия promptModalAsync
 App.ui.promptModalAsync = function(title, placeholder, isPassword = false) {
     return new Promise(function(resolve) {
         const inputType = isPassword ? 'password' : 'text';
@@ -151,11 +150,13 @@ App.ui.promptModalAsync = function(title, placeholder, isPassword = false) {
         const cancelBtn = modal.querySelector('#prompt-cancel-btn');
         input.focus();
         let resolved = false;
+        
         function cleanup() {
             if (resolved) return;
             resolved = true;
             if (modal && modal.remove) modal.remove();
         }
+        
         const onOk = (e) => {
             if (e) e.stopPropagation();
             if (resolved) return;
@@ -163,14 +164,17 @@ App.ui.promptModalAsync = function(title, placeholder, isPassword = false) {
             cleanup();
             resolve(value);
         };
+        
         const onCancel = (e) => {
             if (e) e.stopPropagation();
             if (resolved) return;
             cleanup();
             resolve(null);
         };
+        
         okBtn.onclick = onOk;
         cancelBtn.onclick = onCancel;
+        
         const originalRemove = modal.remove;
         modal.remove = function() {
             originalRemove.call(modal);
@@ -179,6 +183,7 @@ App.ui.promptModalAsync = function(title, placeholder, isPassword = false) {
                 resolve(null);
             }
         };
+        
         input.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') {
                 e.preventDefault();
@@ -187,6 +192,7 @@ App.ui.promptModalAsync = function(title, placeholder, isPassword = false) {
         });
     });
 };
+
 
 // Старая версия promptModal (с колбэком) для обратной совместимости
 App.ui.promptModal = function(title, defaultValue, onSubmit) {
