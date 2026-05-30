@@ -250,18 +250,20 @@ App.store = {
 
     // ========== ОЧЕРЕДЬ СИНХРОНИЗАЦИИ ==========
     addPendingAction: async function(action) {
-        const newAction = {
-            id: crypto.randomUUID(),
-            type: action.type,
-            entityType: action.entityType,
-            entityId: action.entityId,
-            data: action.data,
-            timestamp: Date.now(),
-            retryCount: 0
-        };
-        this.pendingActions.push(newAction);
-        await App.db.put('pending_actions', newAction);
-    },
+    console.log('[Store] addPendingAction вызван с действием:', action);
+    const newAction = {
+        id: crypto.randomUUID(),
+        type: action.type,
+        entityType: action.entityType,
+        entityId: action.entityId,
+        data: action.data,
+        timestamp: Date.now(),
+        retryCount: 0
+    };
+    this.pendingActions.push(newAction);
+    await App.db.put('pending_actions', newAction);
+    console.log('[Store] Действие добавлено, теперь pendingActions:', this.pendingActions.length);
+},
     clearPendingActions: async function() {
         await App.db.clear('pending_actions');
         this.pendingActions = [];
