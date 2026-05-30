@@ -183,9 +183,13 @@ App.db.sync._updateLocalId = async function(entityType, oldId, newId) {
     const item = storeArray.find(i => i.id == oldId);
     if (item) {
         item.id = newId;
+        // Удаляем старую запись из IndexedDB
+        await App.db.delete(storeName, oldId);
+        // Сохраняем обновлённую
         await App.db.put(storeName, item);
     }
 };
+
 
 App.db.sync._resolveConflict = async function(action) {
     const { entityType, entityId } = action;
@@ -301,21 +305,21 @@ App.db.sync.processSyncQueue = async function() {
             try {
                 await App.db.sync._executeAction(action);
                 await App.db.delete('pending_actions', action.id);
-                const idx = App.store.pendingActions.findIndex(a => a.id === action.id);
-                if (idx !== -1) App.store.pendingActions.splice(idx, 1);
+const idx = App.store.pendingActions.findIndex(a => a.id === action.id);
+if (idx !== -1) App.store.pendingActions.splice(idx, 1);
                 
-                // ПРИНУДИТЕЛЬНО ОБНОВЛЯЕМ UI И STORE
-                await App.store.loadFromIndexedDB();  // перезагружаем store из IndexedDB
-                if (typeof App.renderAll === 'function') App.renderAll();
-                // Дополнительная перерисовка всех вкладок
-                if (typeof App.ui.pages.renderTOTable === 'function') App.ui.pages.renderTOTable();
-                if (typeof App.ui.pages.renderFuelTab === 'function') App.ui.pages.renderFuelTab();
-                if (typeof App.ui.pages.renderPartsTab === 'function') App.ui.pages.renderPartsTab();
-                if (typeof App.ui.pages.renderTiresTab === 'function') App.ui.pages.renderTiresTab();
-                if (typeof App.ui.pages.renderHistoryCards === 'function') App.ui.pages.renderHistoryCards();
-                if (typeof App.ui.pages.renderDashboard === 'function') App.ui.pages.renderDashboard();
-                
-                console.log(`[Sync] Действие ${action.id} удалено из очереди, UI обновлён`);
+               // Принудительно обновляем store из IndexedDB и перерисовываем UI
+await App.store.loadFromIndexedDB();
+if (typeof App.renderAll === 'function') App.renderAll();
+// Дополнительная перерисовка вкладок
+if (typeof App.ui.pages.renderTOTable === 'function') App.ui.pages.renderTOTable();
+if (typeof App.ui.pages.renderFuelTab === 'function') App.ui.pages.renderFuelTab();
+if (typeof App.ui.pages.renderPartsTab === 'function') App.ui.pages.renderPartsTab();
+if (typeof App.ui.pages.renderTiresTab === 'function') App.ui.pages.renderTiresTab();
+if (typeof App.ui.pages.renderHistoryCards === 'function') App.ui.pages.renderHistoryCards();
+if (typeof App.ui.pages.renderDashboard === 'function') App.ui.pages.renderDashboard();
+
+console.log(`[Sync] Действие ${action.id} удалено из очереди, UI обновлён`);
             } catch (err) {
                 console.error(`[Sync] Ошибка действия ${action.id}:`, err);
                 if (err.status === 409 || (err.message && err.message.includes('conflict'))) {
