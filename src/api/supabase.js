@@ -233,8 +233,10 @@ App.supa.loadMileageHistory = function() {
 
 // ========== СОХРАНЕНИЕ ДАННЫХ (С ПОДДЕРЖКОЙ CAR_ID) ==========
 App.supa.saveOperation = async function(op) {
+    console.log('[Supabase] saveOperation вызван:', op);
     const userId = await App.supa.getCurrentUserId();
     const carId = op.car_id || App.store.activeCarId;
+    console.log('[Supabase] saveOperation: userId=' + userId + ', carId=' + carId);
     const record = {
         category: op.category,
         name: op.name,
@@ -255,8 +257,10 @@ App.supa.saveOperation = async function(op) {
 };
 
 App.supa.saveFuelRecord = async function(record) {
+    console.log('[Supabase] saveFuelRecord вызван:', record);
     const userId = await App.supa.getCurrentUserId();
     const carId = record.car_id || App.store.activeCarId;
+    console.log('[Supabase] saveFuelRecord: userId=' + userId + ', carId=' + carId);
     const data = {
         date: record.date,
         mileage: record.mileage,
@@ -276,8 +280,10 @@ App.supa.saveFuelRecord = async function(record) {
 };
 
 App.supa.saveTireRecord = async function(record) {
+    console.log('[Supabase] saveTireRecord вызван:', record);
     const userId = await App.supa.getCurrentUserId();
     const carId = record.car_id || App.store.activeCarId;
+    console.log('[Supabase] saveTireRecord: userId=' + userId + ', carId=' + carId);
     const data = {
         date: record.date,
         type: record.type,
@@ -300,8 +306,10 @@ App.supa.saveTireRecord = async function(record) {
 };
 
 App.supa.savePart = async function(part) {
+    console.log('[Supabase] savePart вызван:', part);
     const userId = await App.supa.getCurrentUserId();
     const carId = part.car_id || App.store.activeCarId;
+    console.log('[Supabase] savePart: userId=' + userId + ', carId=' + carId);
     const data = {
         operation: part.operation || '',
         oem: part.oem || '',
@@ -326,8 +334,10 @@ App.supa.savePart = async function(part) {
 };
 
 App.supa.saveHistoryRecord = async function(record) {
+    console.log('[Supabase] saveHistoryRecord вызван:', record);
     const userId = await App.supa.getCurrentUserId();
     const carId = record.car_id || App.store.activeCarId;
+    console.log('[Supabase] saveHistoryRecord: userId=' + userId + ', carId=' + carId);
     const data = {
         operation_id: record.operation_id,
         date: record.date,
@@ -349,6 +359,7 @@ App.supa.saveHistoryRecord = async function(record) {
 };
 
 App.supa.addMileageRecord = async function(date, mileage, motohours, carId) {
+    console.log('[Supabase] addMileageRecord вызван: date=' + date + ', mileage=' + mileage + ', motohours=' + motohours + ', carId=' + carId);
     const userId = await App.supa.getCurrentUserId();
     const effectiveCarId = carId || App.store.activeCarId;
     const record = {
@@ -393,7 +404,7 @@ App.supa.saveUserSettings = async function(settingsObj) {
     return upsertWithRetry('user_settings', record, 'user_id, car_id');
 };
 
-// ========== ЗАГРУЗКА ФОТО С УЛУЧШЕННОЙ ДИАГНОСТИКОЙ ==========
+// ========== ЗАГРУЗКА ФОТО ==========
 App.supa.uploadPhoto = async function(file) {
     const MAX_SIZE = 5 * 1024 * 1024;
     if (file.size > MAX_SIZE) {
@@ -430,7 +441,7 @@ App.supa.uploadPhoto = async function(file) {
             throw new Error(`Ошибка загрузки фото: ${error.message}`);
         }
         
-        console.log('[Supabase] Файл загружен успешно, получаем публичный URL');
+        console.log('[Supabase] Файл загружен успешно');
         const { data: urlData } = App.supabase.storage
             .from('vesta-photos')
             .getPublicUrl(filePath);
@@ -439,7 +450,7 @@ App.supa.uploadPhoto = async function(file) {
         return urlData.publicUrl;
     } catch (err) {
         clearTimeout(timeoutId);
-        console.error('[Supabase] Критическая ошибка при загрузке фото:', err);
+        console.error('[Supabase] Ошибка загрузки фото:', err);
         throw err;
     }
 };
