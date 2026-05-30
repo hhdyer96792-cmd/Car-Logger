@@ -98,7 +98,7 @@ App.supa.clearUserIdCache = function() {
     cachedUserId = null;
 };
 
-// ========== ЗАГРУЗКА ДАННЫХ (С ID) ==========
+// ========== ЗАГРУЗКА ДАННЫХ ==========
 App.supa.loadOperations = function() {
     return withRetry(() => App.supa.fetchTable('operations').then(({ data, error }) => {
         if (error) throw error;
@@ -233,11 +233,19 @@ App.supa.loadMileageHistory = function() {
     }), 3, 500, 'loadMileageHistory');
 };
 
-// ========== СОХРАНЕНИЕ ДАННЫХ ==========
+// ========== СОХРАНЕНИЕ ДАННЫХ (С ПРОВЕРКОЙ userId И carId) ==========
 App.supa.saveOperation = async function(op) {
     console.log('[Supabase] saveOperation вызван:', op);
     const userId = await App.supa.getCurrentUserId();
+    if (!userId) {
+        console.error('[Supabase] saveOperation: Нет userId');
+        throw new Error('User not authenticated');
+    }
     const carId = op.car_id || App.store.activeCarId;
+    if (!carId) {
+        console.error('[Supabase] saveOperation: Нет carId');
+        throw new Error('No car_id');
+    }
     console.log('[Supabase] saveOperation: userId=' + userId + ', carId=' + carId);
     const record = {
         category: op.category,
@@ -251,17 +259,32 @@ App.supa.saveOperation = async function(op) {
         user_id: userId,
         car_id: carId
     };
-    if (op.id) {
-        return App.supa.updateRow('operations', op.id, record);
+    let result;
+    if (op.id && op.id !== 'new') {
+        result = await App.supa.updateRow('operations', op.id, record);
     } else {
-        return App.supa.insertRow('operations', record);
+        result = await App.supa.insertRow('operations', record);
     }
+    if (result.error) {
+        console.error('[Supabase] saveOperation ошибка:', result.error);
+        throw result.error;
+    }
+    console.log('[Supabase] saveOperation результат:', result);
+    return result;
 };
 
 App.supa.saveFuelRecord = async function(record) {
     console.log('[Supabase] saveFuelRecord вызван:', record);
     const userId = await App.supa.getCurrentUserId();
+    if (!userId) {
+        console.error('[Supabase] saveFuelRecord: Нет userId');
+        throw new Error('User not authenticated');
+    }
     const carId = record.car_id || App.store.activeCarId;
+    if (!carId) {
+        console.error('[Supabase] saveFuelRecord: Нет carId');
+        throw new Error('No car_id');
+    }
     console.log('[Supabase] saveFuelRecord: userId=' + userId + ', carId=' + carId);
     const data = {
         date: record.date,
@@ -274,17 +297,32 @@ App.supa.saveFuelRecord = async function(record) {
         user_id: userId,
         car_id: carId
     };
-    if (record.id) {
-        return App.supa.updateRow('fuel_log', record.id, data);
+    let result;
+    if (record.id && record.id !== 'new') {
+        result = await App.supa.updateRow('fuel_log', record.id, data);
     } else {
-        return App.supa.insertRow('fuel_log', data);
+        result = await App.supa.insertRow('fuel_log', data);
     }
+    if (result.error) {
+        console.error('[Supabase] saveFuelRecord ошибка:', result.error);
+        throw result.error;
+    }
+    console.log('[Supabase] saveFuelRecord результат:', result);
+    return result;
 };
 
 App.supa.saveTireRecord = async function(record) {
     console.log('[Supabase] saveTireRecord вызван:', record);
     const userId = await App.supa.getCurrentUserId();
+    if (!userId) {
+        console.error('[Supabase] saveTireRecord: Нет userId');
+        throw new Error('User not authenticated');
+    }
     const carId = record.car_id || App.store.activeCarId;
+    if (!carId) {
+        console.error('[Supabase] saveTireRecord: Нет carId');
+        throw new Error('No car_id');
+    }
     console.log('[Supabase] saveTireRecord: userId=' + userId + ', carId=' + carId);
     const data = {
         date: record.date,
@@ -300,17 +338,32 @@ App.supa.saveTireRecord = async function(record) {
         user_id: userId,
         car_id: carId
     };
-    if (record.id) {
-        return App.supa.updateRow('tires', record.id, data);
+    let result;
+    if (record.id && record.id !== 'new') {
+        result = await App.supa.updateRow('tires', record.id, data);
     } else {
-        return App.supa.insertRow('tires', data);
+        result = await App.supa.insertRow('tires', data);
     }
+    if (result.error) {
+        console.error('[Supabase] saveTireRecord ошибка:', result.error);
+        throw result.error;
+    }
+    console.log('[Supabase] saveTireRecord результат:', result);
+    return result;
 };
 
 App.supa.savePart = async function(part) {
     console.log('[Supabase] savePart вызван:', part);
     const userId = await App.supa.getCurrentUserId();
+    if (!userId) {
+        console.error('[Supabase] savePart: Нет userId');
+        throw new Error('User not authenticated');
+    }
     const carId = part.car_id || App.store.activeCarId;
+    if (!carId) {
+        console.error('[Supabase] savePart: Нет carId');
+        throw new Error('No car_id');
+    }
     console.log('[Supabase] savePart: userId=' + userId + ', carId=' + carId);
     const data = {
         operation: part.operation || '',
@@ -326,19 +379,32 @@ App.supa.savePart = async function(part) {
         user_id: userId,
         car_id: carId
     };
-    if (part.id && part.id !== part.uuid) {
-        return App.supa.updateRow('parts', part.uuid || part.id, data);
-    } else if (part.id) {
-        return App.supa.updateRow('parts', part.id, data);
+    let result;
+    if (part.id && part.id !== 'new') {
+        result = await App.supa.updateRow('parts', part.id, data);
     } else {
-        return App.supa.insertRow('parts', data);
+        result = await App.supa.insertRow('parts', data);
     }
+    if (result.error) {
+        console.error('[Supabase] savePart ошибка:', result.error);
+        throw result.error;
+    }
+    console.log('[Supabase] savePart результат:', result);
+    return result;
 };
 
 App.supa.saveHistoryRecord = async function(record) {
     console.log('[Supabase] saveHistoryRecord вызван:', record);
     const userId = await App.supa.getCurrentUserId();
+    if (!userId) {
+        console.error('[Supabase] saveHistoryRecord: Нет userId');
+        throw new Error('User not authenticated');
+    }
     const carId = record.car_id || App.store.activeCarId;
+    if (!carId) {
+        console.error('[Supabase] saveHistoryRecord: Нет carId');
+        throw new Error('No car_id');
+    }
     console.log('[Supabase] saveHistoryRecord: userId=' + userId + ', carId=' + carId);
     const data = {
         operation_id: record.operation_id,
@@ -353,17 +419,32 @@ App.supa.saveHistoryRecord = async function(record) {
         user_id: userId,
         car_id: carId
     };
-    if (record.id) {
-        return App.supa.updateRow('history', record.id, data);
+    let result;
+    if (record.id && record.id !== 'new') {
+        result = await App.supa.updateRow('history', record.id, data);
     } else {
-        return App.supa.insertRow('history', data);
+        result = await App.supa.insertRow('history', data);
     }
+    if (result.error) {
+        console.error('[Supabase] saveHistoryRecord ошибка:', result.error);
+        throw result.error;
+    }
+    console.log('[Supabase] saveHistoryRecord результат:', result);
+    return result;
 };
 
 App.supa.addMileageRecord = async function(date, mileage, motohours, carId) {
-    console.log('[Supabase] addMileageRecord вызван: date=' + date + ', mileage=' + mileage + ', motohours=' + motohours + ', carId=' + carId);
+    console.log('[Supabase] addMileageRecord: date=' + date + ', mileage=' + mileage + ', motohours=' + motohours + ', carId=' + carId);
     const userId = await App.supa.getCurrentUserId();
+    if (!userId) {
+        console.error('[Supabase] addMileageRecord: Нет userId');
+        throw new Error('User not authenticated');
+    }
     const effectiveCarId = carId || App.store.activeCarId;
+    if (!effectiveCarId) {
+        console.error('[Supabase] addMileageRecord: Нет carId');
+        throw new Error('No car_id');
+    }
     const record = {
         date: date,
         mileage: mileage,
@@ -371,10 +452,15 @@ App.supa.addMileageRecord = async function(date, mileage, motohours, carId) {
         user_id: userId,
         car_id: effectiveCarId
     };
-    return App.supa.insertRow('mileage_log', record);
+    const result = await App.supa.insertRow('mileage_log', record);
+    if (result.error) {
+        console.error('[Supabase] addMileageRecord ошибка:', result.error);
+        throw result.error;
+    }
+    return result;
 };
 
-// ========== UPSERT С ПОВТОРНЫМИ ПОПЫТКАМИ ==========
+// ========== UPSERT ==========
 App.supa.saveVehicleState = async function(state) {
     ensureSupabase();
     const record = {
@@ -394,6 +480,7 @@ App.supa.saveVehicleState = async function(state) {
 
 App.supa.saveUserSettings = async function(settingsObj) {
     const userId = await App.supa.getCurrentUserId();
+    if (!userId) throw new Error('User not authenticated');
     ensureSupabase();
     const record = {
         user_id: userId,
@@ -406,53 +493,29 @@ App.supa.saveUserSettings = async function(settingsObj) {
     return upsertWithRetry('user_settings', record, 'user_id, car_id');
 };
 
-// ========== ЗАГРУЗКА ФОТО ==========
+// ========== ФОТО ==========
 App.supa.uploadPhoto = async function(file) {
     const MAX_SIZE = 5 * 1024 * 1024;
-    if (file.size > MAX_SIZE) {
-        throw new Error('Файл слишком большой. Максимальный размер 5 МБ.');
-    }
-    console.log('[Supabase] Начинаем загрузку файла:', file.name, file.size);
+    if (file.size > MAX_SIZE) throw new Error('Файл слишком большой. Максимальный размер 5 МБ.');
     const compressed = await compressImage(file);
     const userId = await App.supa.getCurrentUserId();
     if (!userId) throw new Error('Not authenticated');
     ensureSupabase();
-    
     const fileExt = compressed.name.split('.').pop();
     const fileName = `${Date.now()}_${Math.random().toString(36).substring(2)}.${fileExt}`;
     const filePath = `${userId}/${App.store.activeCarId || 'default'}/${fileName}`;
-    
-    console.log('[Supabase] Загружаем в Storage:', filePath);
-    
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30000);
-    
     try {
         const { data, error } = await App.supabase.storage
             .from('vesta-photos')
-            .upload(filePath, compressed, {
-                cacheControl: '3600',
-                upsert: false,
-                signal: controller.signal
-            });
-        
+            .upload(filePath, compressed, { cacheControl: '3600', upsert: false, signal: controller.signal });
         clearTimeout(timeoutId);
-        
-        if (error) {
-            console.error('[Supabase] Ошибка загрузки в Storage:', error);
-            throw new Error(`Ошибка загрузки фото: ${error.message}`);
-        }
-        
-        console.log('[Supabase] Файл загружен успешно');
-        const { data: urlData } = App.supabase.storage
-            .from('vesta-photos')
-            .getPublicUrl(filePath);
-        
-        console.log('[Supabase] Публичный URL:', urlData.publicUrl);
+        if (error) throw error;
+        const { data: urlData } = App.supabase.storage.from('vesta-photos').getPublicUrl(filePath);
         return urlData.publicUrl;
     } catch (err) {
         clearTimeout(timeoutId);
-        console.error('[Supabase] Ошибка загрузки фото:', err);
         throw err;
     }
 };
@@ -474,6 +537,7 @@ App.supa.loadCarDocuments = function() {
 
 App.supa.addCarDocument = async function(doc) {
     const userId = await App.supa.getCurrentUserId();
+    if (!userId) throw new Error('Not authenticated');
     const record = {
         car_id: App.store.activeCarId,
         user_id: userId,
@@ -505,7 +569,7 @@ App.supa.deleteCarDocument = async function(docId) {
     return true;
 };
 
-// ---------- Мульти-авто и совместный доступ ----------
+// ---------- Мульти-авто ----------
 App.supa.loadCars = function() {
     ensureSupabase();
     return App.supabase.from('cars').select('*').then(({ data, error }) => {
@@ -515,9 +579,10 @@ App.supa.loadCars = function() {
 };
 
 App.supa.createCar = function(name) {
-    return App.supa.getCurrentUserId().then(function(userId) {
+    return App.supa.getCurrentUserId().then(userId => {
+        if (!userId) throw new Error('Not authenticated');
         ensureSupabase();
-        return App.supabase.from('cars').insert({ user_id: userId, name: name }).select().single();
+        return App.supabase.from('cars').insert({ user_id: userId, name }).select().single();
     });
 };
 
@@ -537,7 +602,7 @@ App.supa.inviteUserToCar = function(carId, email) {
 };
 
 App.supa.getPendingInvites = function() {
-    return App.supa.getCurrentUserId().then(function(userId) {
+    return App.supa.getCurrentUserId().then(userId => {
         if (!userId) return { data: [], error: null };
         return App.supabase.from('car_shares')
             .select('*, cars(name)')
@@ -548,6 +613,7 @@ App.supa.getPendingInvites = function() {
 
 App.supa.acceptInvite = async function(inviteId) {
     const userId = await App.supa.getCurrentUserId();
+    if (!userId) throw new Error('Not authenticated');
     ensureSupabase();
     return App.supabase.from('car_shares')
         .update({ accepted: true, invited_user_id: userId })
@@ -633,25 +699,17 @@ App.supa.createCalendarToken = async function(carId) {
 
 App.supa.createInviteLink = async function(carId) {
     const userId = await App.supa.getCurrentUserId();
-    if (!userId) {
-        throw new Error('Пользователь не авторизован');
-    }
+    if (!userId) throw new Error('Пользователь не авторизован');
     try {
         const { data, error } = await App.supabase
             .from('car_shares')
-            .insert({ 
-                car_id: carId, 
-                invited_email: null
-            })
+            .insert({ car_id: carId, invited_email: null })
             .select('invite_code')
             .single();
         if (error) throw error;
-        if (!data || !data.invite_code) {
-            throw new Error('Не удалось получить invite_code');
-        }
+        if (!data || !data.invite_code) throw new Error('Не удалось получить invite_code');
         const inviteCode = data.invite_code;
         const link = window.location.origin + '/Car-K3eper/?invite=' + inviteCode;
-        console.log('[Supabase] Invite link created:', link);
         return link;
     } catch (err) {
         console.error('[Supabase] createInviteLink error:', err);
@@ -671,16 +729,9 @@ if (!App.supa.updateVehicleState) {
 App.supa.savePushToken = async function(token) {
     const userId = await App.supa.getCurrentUserId();
     if (!userId) throw new Error('User not authenticated');
-    
     const { error } = await App.supabase
         .from('push_subscriptions')
-        .upsert({ 
-            user_id: userId, 
-            player_id: token,
-            fcm_token: token,
-            updated_at: new Date().toISOString() 
-        }, { onConflict: 'user_id' });
-    
+        .upsert({ user_id: userId, player_id: token, fcm_token: token, updated_at: new Date().toISOString() }, { onConflict: 'user_id' });
     if (error) throw error;
     return true;
 };
@@ -688,27 +739,23 @@ App.supa.savePushToken = async function(token) {
 App.supa.removePushToken = async function() {
     const userId = await App.supa.getCurrentUserId();
     if (!userId) throw new Error('User not authenticated');
-    
     const { error } = await App.supabase
         .from('push_subscriptions')
         .delete()
         .eq('user_id', userId);
-    
     if (error) throw error;
     return true;
 };
 
-// ========== ОБРАБОТКА OAuth РЕДИРЕКТА ==========
+// ========== OAuth РЕДИРЕКТ ==========
 App.supa.handleOAuthRedirect = async function() {
     const hash = window.location.hash;
     if (hash && (hash.includes('access_token') || hash.includes('error'))) {
-        console.log('[Supabase] Обнаружен OAuth редирект, обрабатываем...');
+        console.log('[Supabase] OAuth редирект, обрабатываем...');
         const { data, error } = await App.supabase.auth.getSession();
         if (error) {
-            console.error('[Supabase] Ошибка получения сессии после редиректа:', error);
             App.toast('Ошибка входа через Google', 'error');
         } else if (data.session) {
-            console.log('[Supabase] Сессия успешно получена');
             App.toast('Вход через Google выполнен', 'success');
         }
         window.location.hash = '';
