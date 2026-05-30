@@ -32,7 +32,7 @@ App.db.sync._updatePendingAction = async function(action, retryCount, errorMessa
 };
 
 App.db.sync._executeAction = async function(action) {
-    const { type, entityType, entityId, data, id: actionId } = action;
+    const { type, entityType, entityId, data } = action;
     let supabaseMethod, tableName;
     
     await App.supabase.auth.getSession();
@@ -62,7 +62,26 @@ App.db.sync._executeAction = async function(action) {
             tableName = 'mileage_log';
             supabaseMethod = (record) => App.supa.addMileageRecord(record.date, record.mileage, record.motohours);
             break;
-        case 'settings':
+        case 'car_settings':
+            if (data.telegramToken !== undefined) {
+                await App.supa.saveUserSettings({
+                    telegramToken: data.telegramToken,
+                    telegramChatId: data.telegramChatId,
+                    notificationMethod: data.notificationMethod,
+                    reminderDays: data.reminderDays
+                });
+            }
+            await App.supa.saveVehicleState({
+                currentMileage: data.currentMileage,
+                currentMotohours: data.currentMotohours,
+                avgDailyMileage: data.avgDailyMileage,
+                avgDailyMotohours: data.avgDailyMotohours,
+                carBrand: data.carBrand,
+                carModel: data.carModel,
+                carYear: data.carYear,
+                plateNumber: data.plateNumber,
+                vin: data.vin
+            });
             return { success: true };
         case 'delete':
             return await App.db.sync._executeDelete(action);
@@ -77,6 +96,7 @@ App.db.sync._executeAction = async function(action) {
         }
         return { success: true };
     }
+    return { success: true };
 };
 
 App.db.sync._executeDelete = async function(action) {
@@ -209,7 +229,6 @@ App.db.sync._updateLocalFromServer = async function(entityType, serverData) {
 };
 
 App.db.sync.processSyncQueue = async function() {
-    // Проверка инициализации БД
     if (!App.db._db) {
         console.log('[Sync] База данных не инициализирована, повтор через 1с');
         setTimeout(() => App.db.sync.processSyncQueue(), 1000);
