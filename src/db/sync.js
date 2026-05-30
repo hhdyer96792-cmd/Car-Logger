@@ -32,47 +32,6 @@ App.db.sync._updatePendingAction = async function(action, retryCount, errorMessa
     }
 };
 
-// Функция для перерисовки текущей активной вкладки
-function renderCurrentTab() {
-    const activeTab = App.events.currentActiveTab;
-    if (!activeTab) return;
-    switch (activeTab) {
-        case 'dashboard':
-            if (typeof App.ui.pages.renderDashboard === 'function') App.ui.pages.renderDashboard();
-            break;
-        case 'to':
-            if (typeof App.ui.pages.renderTOTable === 'function') App.ui.pages.renderTOTable();
-            if (typeof App.ui.pages.renderTotalCost === 'function') App.ui.pages.renderTotalCost();
-            if (typeof App.ui.pages.renderTOStats === 'function') App.ui.pages.renderTOStats();
-            if (typeof App.ui.pages.renderResourceBars === 'function') App.ui.pages.renderResourceBars();
-            if (typeof App.ui.pages.renderTOCostChart === 'function') App.ui.pages.renderTOCostChart();
-            break;
-        case 'stats':
-            if (typeof App.ui.pages.renderFinanceTab === 'function') App.ui.pages.renderFinanceTab();
-            break;
-        case 'history':
-            if (typeof App.ui.pages.renderHistoryCards === 'function') App.ui.pages.renderHistoryCards();
-            break;
-        case 'fuel':
-            if (typeof App.ui.pages.renderFuelTab === 'function') App.ui.pages.renderFuelTab();
-            break;
-        case 'tires':
-            if (typeof App.ui.pages.renderTiresTab === 'function') App.ui.pages.renderTiresTab();
-            break;
-        case 'parts':
-            if (typeof App.ui.pages.renderPartsTab === 'function') App.ui.pages.renderPartsTab();
-            break;
-        case 'car':
-            if (typeof App.ui.pages.renderCarTab === 'function') App.ui.pages.renderCarTab();
-            break;
-        case 'settings':
-            if (typeof App.ui.pages.populateSettingsFields === 'function') App.ui.pages.populateSettingsFields();
-            break;
-        default:
-            if (typeof App.ui.pages.renderDashboard === 'function') App.ui.pages.renderDashboard();
-    }
-}
-
 App.db.sync._executeAction = async function(action) {
     const { type, entityType, entityId, data } = action;
     let supabaseMethod, tableName;
@@ -347,8 +306,14 @@ App.db.sync.processSyncQueue = async function() {
                 if (idx !== -1) App.store.pendingActions.splice(idx, 1);
                 console.log(`[Sync] Действие ${action.id} удалено из очереди`);
                 
-                // Принудительно обновляем текущую вкладку, чтобы иконка часов исчезла
-                renderCurrentTab();
+                // Принудительное обновление UI для всех вкладок
+                if (typeof App.renderAll === 'function') App.renderAll();
+                if (typeof App.ui.pages.renderTOTable === 'function') App.ui.pages.renderTOTable();
+                if (typeof App.ui.pages.renderFuelTab === 'function') App.ui.pages.renderFuelTab();
+                if (typeof App.ui.pages.renderPartsTab === 'function') App.ui.pages.renderPartsTab();
+                if (typeof App.ui.pages.renderTiresTab === 'function') App.ui.pages.renderTiresTab();
+                if (typeof App.ui.pages.renderHistoryCards === 'function') App.ui.pages.renderHistoryCards();
+                if (typeof App.ui.pages.renderDashboard === 'function') App.ui.pages.renderDashboard();
                 
             } catch (err) {
                 console.error(`[Sync] Ошибка действия ${action.id}:`, err);
@@ -358,7 +323,6 @@ App.db.sync.processSyncQueue = async function() {
                     await App.db.delete('pending_actions', action.id);
                     const idx = App.store.pendingActions.findIndex(a => a.id === action.id);
                     if (idx !== -1) App.store.pendingActions.splice(idx, 1);
-                    renderCurrentTab();
                 } else {
                     const newRetryCount = (action.retryCount || 0) + 1;
                     await App.db.sync._updatePendingAction(action, newRetryCount, err.message);
@@ -370,8 +334,6 @@ App.db.sync.processSyncQueue = async function() {
                 }
             }
         }
-        // Финальное обновление после синхронизации всех действий
-        renderCurrentTab();
         if (typeof App.renderAll === 'function') App.renderAll();
         if (typeof App.toast === 'function') App.toast('Данные синхронизированы', 'success');
     } finally {
