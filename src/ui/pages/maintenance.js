@@ -535,8 +535,9 @@ App.ui.pages.openServiceModal = function(opId, opName) {
             }
         }
 
+        // Офлайн-ветка: используем App.storage.addHistoryRecord, который сам обработает офлайн
         if (!navigator.onLine) {
-            var offlineRecord = {
+            var record = {
                 operation_id: op.id,
                 date: formattedDate,
                 mileage: mileage,
@@ -545,27 +546,15 @@ App.ui.pages.openServiceModal = function(opId, opName) {
                 work_cost: workCost || 0,
                 is_diy: isDIY,
                 notes: notes,
-                photo_url: ''
+                photo_url: ''  // фото в офлайне не сохраняем
             };
-            App.store.serviceRecords.unshift(offlineRecord);
-            App.store.addPendingAction({
-                type: 'service',
-                opId: op.id,
-                date: formattedDate,
-                mileage: mileage,
-                motohours: motohours || 0,
-                partsCost: cost || 0,
-                workCost: workCost || 0,
-                isDIY: isDIY,
-                notes: notes,
-                photoUrl: ''
+            App.storage.addHistoryRecord(record).then(() => {
+                op.lastDate = formattedDate;
+                op.lastMileage = mileage;
+                op.lastMotohours = motohours || 0;
+                App.storage.saveOperation(op).catch(console.warn);
+                App.toast('Запись сохранена локально. Синхронизируется при подключении к сети.', 'warning');
             });
-            op.lastDate = formattedDate;
-            op.lastMileage = mileage;
-            op.lastMotohours = motohours || 0;
-            App.store.saveToLocalStorage();
-            App.toast('Запись сохранена локально. Синхронизируется при подключении к сети.', 'warning');
-            if (typeof App.ui.pages.renderTOTable === 'function') App.ui.pages.renderTOTable();
             return;
         }
 
@@ -573,7 +562,6 @@ App.ui.pages.openServiceModal = function(opId, opName) {
             var photoUrl = photoUrls.filter(function(url) { return url !== ''; })[0] || '';
             var fullNotes = notes;
             if (isOsago) fullNotes = 'ОСАГО. Стоимость: ' + cost + ' ₽. Срок: ' + (data.get('osagoMonths') || '12') + ' мес. Ссылка: ' + (data.get('fileLink') || '') + '. ' + notes;
-           // if (photoUrls.length) fullNotes += '\nФото: ' + photoUrls.join(', ');
 
             if (App.config.USE_SUPABASE) {
                 var record = {
@@ -602,6 +590,7 @@ App.ui.pages.openServiceModal = function(opId, opName) {
                         App.toast('Ошибка сохранения ТО', 'error');
                     });
             } else {
+                // fallback (не используется)
                 App.logic.addServiceRecord(opId, formattedDate, mileage, motohours, cost, workCost, isDIY, fullNotes, photoUrl)
                     .then(function() {
                         var normalizedMainName = App.utils.normalizeOperationName(opName, App.store.operations);
@@ -629,6 +618,7 @@ App.ui.pages.openServiceModal = function(opId, opName) {
 
     modal.querySelector('.cancel-btn').onclick = function() { modal.remove(); };
 };
+
 
 App.ui.pages.openOperationForm = function(op) {
     var isEdit = !!op;
