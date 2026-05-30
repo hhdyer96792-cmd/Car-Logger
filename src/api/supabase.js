@@ -98,6 +98,7 @@ App.supa.clearUserIdCache = function() {
     cachedUserId = null;
 };
 
+// loadOperations
 App.supa.loadOperations = function() {
     return withRetry(() => App.supa.fetchTable('operations').then(({ data, error }) => {
         if (error) throw error;
@@ -117,6 +118,7 @@ App.supa.loadOperations = function() {
     }), 3, 500, 'loadOperations');
 };
 
+// loadFuelLog
 App.supa.loadFuelLog = function() {
     return withRetry(() => App.supa.fetchTable('fuel_log').then(({ data, error }) => {
         if (error) throw error;
@@ -133,6 +135,7 @@ App.supa.loadFuelLog = function() {
     }), 3, 500, 'loadFuelLog');
 };
 
+// loadTires
 App.supa.loadTires = function() {
     return withRetry(() => App.supa.fetchTable('tires').then(({ data, error }) => {
         if (error) throw error;
@@ -152,6 +155,7 @@ App.supa.loadTires = function() {
     }), 3, 500, 'loadTires');
 };
 
+// loadParts
 App.supa.loadParts = function() {
     return withRetry(() => App.supa.fetchTable('parts').then(({ data, error }) => {
         if (error) throw error;
@@ -172,6 +176,7 @@ App.supa.loadParts = function() {
     }), 3, 500, 'loadParts');
 };
 
+// loadHistory
 App.supa.loadHistory = function() {
     return withRetry(() => App.supa.fetchTable('history').then(({ data, error }) => {
         if (error) throw error;
@@ -190,6 +195,19 @@ App.supa.loadHistory = function() {
             rowIndex: h.id
         }));
     }), 3, 500, 'loadHistory');
+};
+
+// loadMileageHistory
+App.supa.loadMileageHistory = function() {
+    return withRetry(() => App.supa.fetchTable('mileage_log').then(({ data, error }) => {
+        if (error) throw error;
+        return (data || []).map(m => ({
+            id: m.id,
+            date: m.date,
+            mileage: parseFloat(m.mileage) || 0,
+            motohours: parseFloat(m.motohours) || 0
+        })).sort((a, b) => new Date(a.date) - new Date(b.date));
+    }), 3, 500, 'loadMileageHistory');
 };
 
 App.supa.loadSettings = function() {
