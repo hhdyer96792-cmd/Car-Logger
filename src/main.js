@@ -358,6 +358,12 @@
     async function forceLoadDataFromSupabase() {
     console.log('[DEBUG] forceLoadDataFromSupabase: загрузка данных напрямую из Supabase');
     try {
+        const carId = App.store.activeCarId;
+        if (!carId) {
+            console.warn('[DEBUG] Нет активного автомобиля, пропускаем загрузку');
+            return;
+        }
+
         const [operations, fuelLog, tireLog, parts, history, mileageHistory, settings] = await Promise.all([
             App.supa.loadOperations(),
             App.supa.loadFuelLog(),
@@ -367,6 +373,43 @@
             App.supa.loadMileageHistory(),
             App.supa.loadSettings()
         ]);
+
+        // Очищаем старые данные в store и IndexedDB для текущего автомобиля
+        await App.db.delete('operations', carId); // но delete по id не подходит – нужно удалить все с car_id
+        // Проще: очистить всё хранилище и перезаписать
+        const stores = ['operations', 'fuel_log', 'tires', 'parts', 'service_records', 'mileage_log'];
+        for (const store of stores) {
+            const all = await App.db.getAll(store);
+            const toDelete = all.filter(item => item.car_id == carId);
+            for (const item of toDelete) {
+                await App.db.delete(store, item.id);
+            }
+        }
+
+        // Сохраняем загруженные данные
+        for (const op of operations) {
+            await App.store.saveOperationToDB({ ...op, car_id: carId });
+        }
+        for (const f of fuelLog) {
+            await App.store.saveFuelRecordToDB({ ...f, car_id: carId });
+        }
+        for (const t of tireLog) {
+            await App.store.saveTireRecordToDB({ ...t, car_id: carId });
+        }
+        for (const p of parts) {
+            await App.store.savePartToDB({ ...p, car_id: carId });
+        }
+        for (const h of history) {
+            await App.store.saveHistoryRecordToDB({ ...h, car_id: carId });
+        }
+        for (const m of mileageHistory) {
+            await App.store.saveMileageRecordToDB({ ...m, car_id: carId });
+        }
+        if (settings) {
+            await App.db.put('car_settings', { ...settings, car_id: carId });
+        }
+
+        // Обновляем store
         App.store.operations = operations;
         App.store.fuelLog = fuelLog;
         App.store.tireLog = tireLog;
@@ -374,63 +417,10 @@
         App.store.serviceRecords = history;
         App.store.mileageHistory = mileageHistory;
         if (settings) Object.assign(App.store.settings, settings);
-        
-        const carId = App.store.activeCarId;
-        
-        // Каждое сохранение обёрнуто в try/catch с логированием
-        for (const op of operations) {
-            try {
-                await App.store.saveOperationToDB({ ...op, car_id: carId });
-            } catch (e) {
-                console.error('[DEBUG] Ошибка сохранения операции:', op, e);
-            }
-        }
-        for (const f of fuelLog) {
-            try {
-                await App.store.saveFuelRecordToDB({ ...f, car_id: carId });
-            } catch (e) {
-                console.error('[DEBUG] Ошибка сохранения заправки:', f, e);
-            }
-        }
-        for (const t of tireLog) {
-            try {
-                await App.store.saveTireRecordToDB({ ...t, car_id: carId });
-            } catch (e) {
-                console.error('[DEBUG] Ошибка сохранения шины:', t, e);
-            }
-        }
-        for (const p of parts) {
-            try {
-                await App.store.savePartToDB({ ...p, car_id: carId });
-            } catch (e) {
-                console.error('[DEBUG] Ошибка сохранения запчасти:', p, e);
-            }
-        }
-        for (const h of history) {
-            try {
-                await App.store.saveHistoryRecordToDB({ ...h, car_id: carId });
-            } catch (e) {
-                console.error('[DEBUG] Ошибка сохранения истории:', h, e);
-            }
-        }
-        for (const m of mileageHistory) {
-            try {
-                await App.store.saveMileageRecordToDB({ ...m, car_id: carId });
-            } catch (e) {
-                console.error('[DEBUG] Ошибка сохранения пробега:', m, e);
-            }
-        }
-        if (settings) {
-            try {
-                await App.db.put('settings', { id: 1, ...settings });
-            } catch (e) {
-                console.error('[DEBUG] Ошибка сохранения настроек:', settings, e);
-            }
-        }
-        
+
         console.log('[DEBUG] Данные загружены напрямую. operations:', App.store.operations.length);
         if (typeof App.renderAll === 'function') App.renderAll();
-        App.toast('Данные загружены (режим без шифрования)', 'info');
+        App.toast('Данные загружены', 'info');
     } catch (err) {
         console.error('[DEBUG] Ошибка принудительной загрузки:', err);
         App.toast('Не удалось загрузить данные', 'error');
