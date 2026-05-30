@@ -42,7 +42,6 @@ App.store = {
     calendarEventCache: new Map(),
     serverTimestamps: {},
 
-    // Проверка ожидания синхронизации
     isRecordPending: function(recordId) {
         if (!recordId) return false;
         return this.pendingActions.some(action => 
@@ -165,6 +164,11 @@ App.store = {
             const pending = await App.db.getAll('pending_actions');
             this.pendingActions = pending.sort((a, b) => a.timestamp - b.timestamp);
 
+            // Загружаем настройки для активного автомобиля, если есть
+            if (this.activeCarId && typeof App.storage.loadSettingsForCar === 'function') {
+                await App.storage.loadSettingsForCar(this.activeCarId);
+            }
+
             this.baseMileage = 0;
             this.baseMotohours = 0;
             this.purchaseDate = '';
@@ -234,7 +238,6 @@ App.store = {
         const settingsToSave = { car_id: carId, ...this.settings };
         const masterKey = App.db.encryption.getMasterKey();
         if (masterKey) {
-            // Шифрование чувствительных полей для car_settings
             const encrypted = await App.db.encryption.encryptSettings(settingsToSave, masterKey);
             await App.db.put('car_settings', encrypted);
         } else {
@@ -298,13 +301,10 @@ App.store = {
         this.activeCarId = carId;
         localStorage.setItem('vesta_active_car_id', carId);
         
-        // Загружаем данные автомобиля
         this.loadFromIndexedDB().catch(console.error);
         
-        // Загружаем настройки для этого автомобиля и обновляем UI после загрузки
         if (typeof App.storage.loadSettingsForCar === 'function') {
             App.storage.loadSettingsForCar(carId).then(() => {
-                // После обновления настроек перерисовываем всё, что зависит от settings
                 if (typeof App.ui.pages.renderDashboard === 'function') App.ui.pages.renderDashboard();
                 if (typeof App.ui.pages.renderTOStats === 'function') App.ui.pages.renderTOStats();
                 if (typeof App.ui.pages.renderTotalCost === 'function') App.ui.pages.renderTotalCost();
@@ -313,7 +313,6 @@ App.store = {
                 if (typeof App.renderAll === 'function') App.renderAll();
             }).catch(console.error);
         } else {
-            // Если метод отсутствует, хотя бы перерисуем дашборд
             if (typeof App.ui.pages.renderDashboard === 'function') App.ui.pages.renderDashboard();
         }
     },
