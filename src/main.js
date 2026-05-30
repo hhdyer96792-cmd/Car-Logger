@@ -363,7 +363,6 @@
         return;
     }
     try {
-        // Получаем свежие данные
         const [operations, fuelLog, tireLog, parts, history, mileageHistory, settings] = await Promise.all([
             App.supa.loadOperations(),
             App.supa.loadFuelLog(),
