@@ -50,7 +50,7 @@ App.store = {
         );
     },
 
-    // ========== ЗАГРУЗКА ИЗ INDEXEDDB С ФИЛЬТРАЦИЕЙ ПО CAR_ID ==========
+    // ========== ЗАГРУЗКА ИЗ INDEXEDDB ==========
     loadFromIndexedDB: async function() {
         if (!App.db || !App.db._db) {
             console.warn('[Store] IndexedDB не инициализирована, загружаю из localStorage (fallback)');
@@ -141,7 +141,6 @@ App.store = {
                 }));
 
                 this.mileageHistory = allMileage.filter(m => m.car_id == carId).map(m => ({
-                    id: m.id,
                     date: m.date,
                     mileage: m.mileage,
                     motohours: m.motohours || 0
@@ -213,7 +212,7 @@ App.store = {
         console.warn('[Store] Используется устаревший initFromLocalStorage');
     },
 
-    // ========== СОХРАНЕНИЕ В INDEXEDDB (С ГАРАНТИЕЙ ID) ==========
+    // ========== СОХРАНЕНИЕ В INDEXEDDB ==========
     saveOperationToDB: async function(op) {
         if (!op.id) op.id = crypto.randomUUID();
         await App.db.put('operations', op);
@@ -242,7 +241,6 @@ App.store = {
         const carId = this.activeCarId;
         if (!carId) return;
         const settingsToSave = { car_id: carId, ...this.settings };
-        if (!settingsToSave.id) settingsToSave.id = carId;
         const masterKey = App.db.encryption.getMasterKey();
         if (masterKey) {
             const encrypted = await App.db.encryption.encryptSettings(settingsToSave, masterKey);
@@ -257,7 +255,6 @@ App.store = {
 
     // ========== ОЧЕРЕДЬ СИНХРОНИЗАЦИИ ==========
     addPendingAction: async function(action) {
-        console.log('[Store] addPendingAction вызван с действием:', action);
         const newAction = {
             id: crypto.randomUUID(),
             type: action.type,
@@ -269,7 +266,7 @@ App.store = {
         };
         this.pendingActions.push(newAction);
         await App.db.put('pending_actions', newAction);
-        console.log('[Store] Действие добавлено, теперь pendingActions:', this.pendingActions.length);
+        console.log('[Store] Добавлено действие в очередь:', newAction);
     },
     clearPendingActions: async function() {
         await App.db.clear('pending_actions');
@@ -310,10 +307,13 @@ App.store = {
         this.activeCarId = carId;
         localStorage.setItem('vesta_active_car_id', carId);
         
+        // Загружаем данные из IndexedDB для этого автомобиля
         this.loadFromIndexedDB().catch(console.error);
         
+        // Загружаем настройки для этого автомобиля
         if (typeof App.storage.loadSettingsForCar === 'function') {
             App.storage.loadSettingsForCar(carId).then(() => {
+                // Перерисовываем UI
                 if (typeof App.ui.pages.renderDashboard === 'function') App.ui.pages.renderDashboard();
                 if (typeof App.ui.pages.renderTOStats === 'function') App.ui.pages.renderTOStats();
                 if (typeof App.ui.pages.renderTotalCost === 'function') App.ui.pages.renderTotalCost();
@@ -323,6 +323,11 @@ App.store = {
             }).catch(console.error);
         } else {
             if (typeof App.ui.pages.renderDashboard === 'function') App.ui.pages.renderDashboard();
+        }
+        
+        // Если онлайн, загружаем свежие данные из Supabase
+        if (navigator.onLine && typeof App.storage.loadAllData === 'function') {
+            App.storage.loadAllData().catch(console.error);
         }
     },
     
