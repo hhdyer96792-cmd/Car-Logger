@@ -30,18 +30,32 @@ App.events.init = function() {
 
 App.events.setupDelegation = function() {
     document.body.addEventListener('click', async function(e) {
-        var target = e.target.closest('[data-action]');
+        const target = e.target.closest('[data-action]');
         if (!target) return;
-        var action = target.dataset.action;
+        const action = target.dataset.action;
 
         switch (action) {
             case 'add-record':
-                var opId = target.dataset.opId;
-                var opName = target.dataset.opName;
+                const opId = target.dataset.opId;
+                const opName = target.dataset.opName;
                 if (opId && opName) App.ui.pages.openServiceModal(opId, opName);
                 break;
+                
+            case 'edit-op':
+                const editOpId = target.dataset.opId;
+                if (editOpId) {
+                    const editOp = App.store.operations.find(o => o.id == editOpId);
+                    if (editOp) App.ui.pages.openOperationForm(editOp);
+                }
+                break;
+                
+            case 'shopping-list':
+                const shopOpId = target.dataset.opId;
+                if (shopOpId) App.ui.pages.generateShoppingList(shopOpId);
+                break;
+                
             case 'delete-op':
-                var delOpId = target.dataset.opId;
+                const delOpId = target.dataset.opId;
                 if (!delOpId) return;
                 if (await App.ui.confirmModalAsync('Удалить операцию? Это действие нельзя отменить.')) {
                     try {
@@ -54,111 +68,125 @@ App.events.setupDelegation = function() {
                     }
                 }
                 break;
+                
             case 'calendar':
-                var calOpId = target.dataset.opId;
-                var calOpName = target.dataset.opName;
-                var calPlanDate = target.dataset.planDate;
-                var calPlanMileage = target.dataset.planMileage;
+                const calOpId = target.dataset.opId;
+                const calOpName = target.dataset.opName;
+                const calPlanDate = target.dataset.planDate;
+                const calPlanMileage = target.dataset.planMileage;
                 if (calOpId && calPlanDate) {
                     App.events.addToCalendar(calOpId, calOpName, calPlanDate, calPlanMileage);
                 }
                 break;
-            case 'shopping-list':
-                var shopOpId = target.dataset.opId;
-                if (shopOpId) App.ui.pages.generateShoppingList(shopOpId);
+                
+            case 'execute-plan':
+                const planOpId = target.dataset.opId;
+                const planOpName = target.dataset.opName;
+                if (planOpId && planOpName) App.ui.pages.openServiceModal(planOpId, planOpName);
                 break;
+                
+            case 'execute-upcoming':
+                const upcomingOpId = target.dataset.opId;
+                const upcomingOpName = target.dataset.opName;
+                if (upcomingOpId && upcomingOpName) App.ui.pages.openServiceModal(upcomingOpId, upcomingOpName);
+                break;
+                
             case 'edit-part':
-                var partId = target.dataset.id;
-                var part = App.store.parts.find(function(p) { return p.id == partId; });
+                const partId = target.dataset.id;
+                const part = App.store.parts.find(p => p.id == partId);
                 if (part) App.ui.pages.openPartForm(part);
                 break;
+                
             case 'delete-part':
-                var delPartId = target.dataset.id;
+                const delPartId = target.dataset.id;
                 if (!delPartId) return;
                 if (await App.ui.confirmModalAsync('Удалить запчасть?')) {
                     App.ui.pages.deletePart(delPartId);
                 }
                 break;
+                
             case 'search-part':
-                var oem = target.dataset.oem;
+                const oem = target.dataset.oem;
                 if (oem) App.ui.pages.showCatalogMenu(target, oem);
                 break;
+                
             case 'price-history':
-                var histPartId = target.dataset.id;
-                var histPart = App.store.parts.find(function(p) { return p.id == histPartId; });
+                const histPartId = target.dataset.id;
+                const histPart = App.store.parts.find(p => p.id == histPartId);
                 if (histPart) App.ui.pages.showPriceHistoryChart(histPart);
                 break;
+                
             case 'edit-fuel':
-                var fuelIdx = parseInt(target.dataset.idx);
-                var fuelRec = App.store.fuelLog[fuelIdx];
+                const fuelIdx = parseInt(target.dataset.idx);
+                const fuelRec = App.store.fuelLog[fuelIdx];
                 if (fuelRec) {
                     fuelRec.id = fuelRec.id;
                     App.ui.pages.openFuelModal(fuelRec);
                 }
                 break;
+                
             case 'delete-fuel':
-                var delFuelIdx = parseInt(target.dataset.idx);
+                const delFuelIdx = parseInt(target.dataset.idx);
                 if (isNaN(delFuelIdx)) return;
                 if (await App.ui.confirmModalAsync('Удалить заправку?')) {
                     App.ui.pages.deleteFuelEntry(delFuelIdx);
                 }
                 break;
+                
             case 'edit-tire':
-                var tireIdx = parseInt(target.dataset.idx);
-                var tireRec = App.store.tireLog[tireIdx];
+                const tireIdx = parseInt(target.dataset.idx);
+                const tireRec = App.store.tireLog[tireIdx];
                 if (tireRec) {
                     App.ui.pages.openTireModal(tireRec);
                 }
                 break;
+                
             case 'delete-tire':
-                var delTireIdx = parseInt(target.dataset.idx);
+                const delTireIdx = parseInt(target.dataset.idx);
                 if (isNaN(delTireIdx)) return;
                 if (await App.ui.confirmModalAsync('Удалить запись о шинах?')) {
                     App.ui.pages.deleteTireEntry(delTireIdx);
                 }
                 break;
+                
             case 'edit-history':
-                var histRow = target.dataset.row;
+                const histRow = target.dataset.row;
                 if (histRow) App.ui.pages.openHistoryEdit(histRow);
                 break;
+                
             case 'delete-history':
-                var delHistRow = target.dataset.row;
+                const delHistRow = target.dataset.row;
                 if (!delHistRow) return;
                 if (await App.ui.confirmModalAsync('Удалить запись из истории? Это действие нельзя отменить.')) {
                     App.ui.pages.deleteHistoryEntry(delHistRow);
                 }
-                break;
-            case 'execute-plan':
-                var planOpId = target.dataset.opId;
-                var planOpName = target.dataset.opName;
-                if (planOpId && planOpName) App.ui.pages.openServiceModal(planOpId, planOpName);
                 break;
         }
     });
 };
 
 App.events.addToCalendar = function(opId, opName, planDate, planMileage) {
-    var parts = App.store.parts.filter(function(p) {
-        var op = App.store.operations.find(function(o) { return o.id == opId; });
+    const parts = App.store.parts.filter(p => {
+        const op = App.store.operations.find(o => o.id == opId);
         return p.operation === opName || p.operation === (op ? op.category : '');
     });
 
-    var partsList = '';
+    let partsList = '';
     if (parts.length > 0) {
         partsList = '\\n\\nСписок запчастей:\\n';
-        parts.forEach(function(p) {
-            var status = (p.inStock && p.inStock > 0) ? '✅' : '☐';
+        parts.forEach(p => {
+            const status = (p.inStock && p.inStock > 0) ? '✅' : '☐';
             partsList += status + ' ' + (p.oem || p.analog || p.operation) + (p.price ? ' (' + p.price + '₽)' : '') + '\\n';
         });
     }
 
-    var description = 'Пробег: ' + (planMileage || '—') + ' км.' + partsList;
-    var uid = opId + '-vesta-' + planDate;
-    var dtStart = planDate.replace(/-/g, '') + 'T090000';
-    var dtEnd   = planDate.replace(/-/g, '') + 'T100000';
-    var now = new Date().toISOString().replace(/[-:]/g, '').slice(0, 15) + 'Z';
+    const description = 'Пробег: ' + (planMileage || '—') + ' км.' + partsList;
+    const uid = opId + '-vesta-' + planDate;
+    const dtStart = planDate.replace(/-/g, '') + 'T090000';
+    const dtEnd   = planDate.replace(/-/g, '') + 'T100000';
+    const now = new Date().toISOString().replace(/[-:]/g, '').slice(0, 15) + 'Z';
 
-    var icsContent = 'BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Vesta Dashboard//RU\r\nCALSCALE:GREGORIAN\r\nMETHOD:PUBLISH\r\n' +
+    const icsContent = 'BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Vesta Dashboard//RU\r\nCALSCALE:GREGORIAN\r\nMETHOD:PUBLISH\r\n' +
         'BEGIN:VEVENT\r\n' +
         'UID:' + uid + '\r\n' +
         'DTSTART:' + dtStart + '\r\n' +
@@ -168,8 +196,8 @@ App.events.addToCalendar = function(opId, opName, planDate, planMileage) {
         'DTSTAMP:' + now + '\r\n' +
         'END:VEVENT\r\n' +
         'END:VCALENDAR';
-    var blob = new Blob([icsContent], { type: 'text/calendar;charset=utf-8' });
-    var link = document.createElement('a');
+    const blob = new Blob([icsContent], { type: 'text/calendar;charset=utf-8' });
+    const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
     link.download = opName.replace(/\s/g, '_') + '_' + planDate + '.ics';
     document.body.appendChild(link);
@@ -179,61 +207,58 @@ App.events.addToCalendar = function(opId, opName, planDate, planMileage) {
 };
 
 App.events.initNavigation = function() {
-    document.querySelectorAll('.sidebar-item').forEach(function(btn) {
-        btn.addEventListener('click', function() {
-            var tab = btn.dataset.tab;
+    document.querySelectorAll('.sidebar-item').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const tab = btn.dataset.tab;
             if (tab) App.events.switchToTab(tab);
         });
     });
 
-    document.querySelectorAll('.bottom-nav-item').forEach(function(btn) {
+    document.querySelectorAll('.bottom-nav-item').forEach(btn => {
         if (btn.id === 'more-menu-btn') return;
-        btn.addEventListener('click', function() {
-            var tab = btn.dataset.tab;
+        btn.addEventListener('click', () => {
+            const tab = btn.dataset.tab;
             if (tab) App.events.switchToTab(tab);
             App.events.closeDrawer();
         });
     });
 
-    var moreBtn = document.getElementById('more-menu-btn');
+    const moreBtn = document.getElementById('more-menu-btn');
     if (moreBtn) moreBtn.addEventListener('click', App.events.openDrawer);
 
-    var drawer = document.getElementById('drawer-menu');
+    const drawer = document.getElementById('drawer-menu');
     if (drawer) {
         drawer.querySelector('.drawer-overlay').addEventListener('click', App.events.closeDrawer);
-        drawer.querySelectorAll('.drawer-item[data-tab]').forEach(function(item) {
-            item.addEventListener('click', function() {
+        drawer.querySelectorAll('.drawer-item[data-tab]').forEach(item => {
+            item.addEventListener('click', () => {
                 App.events.switchToTab(item.dataset.tab);
                 App.events.closeDrawer();
             });
         });
     }
 
-    document.addEventListener('keydown', function(e) {
+    document.addEventListener('keydown', e => {
         if (e.key === 'Escape' && drawer && !drawer.classList.contains('hidden')) {
             App.events.closeDrawer();
         }
     });
 };
 
-// ========== ИСПРАВЛЕННАЯ ФУНКЦИЯ switchToTab ==========
 App.events.switchToTab = function(tabId) {
     if (App.events.currentActiveTab === tabId) return;
 
     document.body.style.overflow = '';
-    var allTabs = document.querySelectorAll('.tab-content');
-    allTabs.forEach(function(tab) {
+    const allTabs = document.querySelectorAll('.tab-content');
+    allTabs.forEach(tab => {
         if (tab.id === 'tab-' + tabId) {
             tab.classList.remove('active');
-            setTimeout(function() {
-                tab.classList.add('active');
-            }, 10);
+            setTimeout(() => tab.classList.add('active'), 10);
         } else {
             tab.classList.remove('active');
         }
     });
 
-    document.querySelectorAll('.sidebar-item, .bottom-nav-item').forEach(function(btn) {
+    document.querySelectorAll('.sidebar-item, .bottom-nav-item').forEach(btn => {
         btn.classList.remove('active');
         if (btn.dataset.tab === tabId) btn.classList.add('active');
     });
@@ -246,30 +271,28 @@ App.events.switchToTab = function(tabId) {
             if (typeof App.ui.pages.renderDashboard === 'function') App.ui.pages.renderDashboard();
             break;
         case 'to':
-    (async function() {
-        const container = document.getElementById('to-cards-container');
-        const originalHtml = container ? container.innerHTML : '';
-        // Показываем индикатор загрузки, если данных ещё нет
-        if (container && (!App.store.operations || App.store.operations.length === 0)) {
-            container.innerHTML = '<div class="spinner"></div><p class="hint">Загрузка данных...</p>';
-        }
-        try {
-            if (!App.store.operations || App.store.operations.length === 0) {
-                await App.storage.loadAllData();
-            }
-            if (typeof App.ui.pages.renderTotalCost === 'function') App.ui.pages.renderTotalCost();
-            if (typeof App.ui.pages.renderTOStats === 'function') App.ui.pages.renderTOStats();
-            if (typeof App.ui.pages.renderOilResourceCard === 'function') App.ui.pages.renderOilResourceCard();
-            if (typeof App.ui.pages.renderResourceBars === 'function') App.ui.pages.renderResourceBars();
-            if (typeof App.ui.pages.renderTOCostChart === 'function') App.ui.pages.renderTOCostChart();
-            if (typeof App.ui.pages.renderTOCategoryPieChart === 'function') App.ui.pages.renderTOCategoryPieChart();
-            if (typeof App.ui.pages.renderTOTable === 'function') App.ui.pages.renderTOTable();
-        } catch (err) {
-            console.error('[Events] Ошибка загрузки вкладки ТО:', err);
-            if (container) container.innerHTML = '<p class="hint error">Ошибка загрузки данных. Попробуйте обновить страницу.</p>';
-        }
-    })();
-    break;
+            (async function() {
+                const container = document.getElementById('to-cards-container');
+                if (container && (!App.store.operations || App.store.operations.length === 0)) {
+                    container.innerHTML = '<div class="spinner"></div><p class="hint">Загрузка данных...</p>';
+                }
+                try {
+                    if (!App.store.operations || App.store.operations.length === 0) {
+                        await App.storage.loadAllData();
+                    }
+                    if (typeof App.ui.pages.renderTotalCost === 'function') App.ui.pages.renderTotalCost();
+                    if (typeof App.ui.pages.renderTOStats === 'function') App.ui.pages.renderTOStats();
+                    if (typeof App.ui.pages.renderOilResourceCard === 'function') App.ui.pages.renderOilResourceCard();
+                    if (typeof App.ui.pages.renderResourceBars === 'function') App.ui.pages.renderResourceBars();
+                    if (typeof App.ui.pages.renderTOCostChart === 'function') App.ui.pages.renderTOCostChart();
+                    if (typeof App.ui.pages.renderTOCategoryPieChart === 'function') App.ui.pages.renderTOCategoryPieChart();
+                    if (typeof App.ui.pages.renderTOTable === 'function') App.ui.pages.renderTOTable();
+                } catch (err) {
+                    console.error('[Events] Ошибка загрузки вкладки ТО:', err);
+                    if (container) container.innerHTML = '<p class="hint error">Ошибка загрузки данных. Попробуйте обновить страницу.</p>';
+                }
+            })();
+            break;
         case 'stats':
             if (typeof App.ui.pages.renderFinanceTab === 'function') App.ui.pages.renderFinanceTab();
             break;
@@ -297,11 +320,11 @@ App.events.switchToTab = function(tabId) {
             break;
     }
 
-    setTimeout(function() { App.initIcons(); }, 150);
+    setTimeout(() => { App.initIcons(); }, 150);
 };
 
 App.events.openDrawer = function() {
-    var drawer = document.getElementById('drawer-menu');
+    const drawer = document.getElementById('drawer-menu');
     if (drawer) {
         drawer.classList.remove('hidden');
         document.body.classList.add('drawer-open');
@@ -309,7 +332,7 @@ App.events.openDrawer = function() {
 };
 
 App.events.closeDrawer = function() {
-    var drawer = document.getElementById('drawer-menu');
+    const drawer = document.getElementById('drawer-menu');
     if (drawer) {
         drawer.classList.add('hidden');
         document.body.classList.remove('drawer-open');
@@ -317,33 +340,33 @@ App.events.closeDrawer = function() {
 };
 
 App.events.initTheme = function() {
-    var savedTheme = localStorage.getItem(App.config.THEME_KEY);
+    const savedTheme = localStorage.getItem(App.config.THEME_KEY);
     if (savedTheme) {
         App.events.applyTheme(savedTheme);
     } else {
-        var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
         App.events.applyTheme(prefersDark ? 'dark' : 'light');
     }
 
-    var themeToggle = document.getElementById('theme-toggle');
+    const themeToggle = document.getElementById('theme-toggle');
     if (themeToggle) themeToggle.addEventListener('click', App.events.toggleTheme);
 
-    var sidebarTheme = document.getElementById('sidebar-theme');
+    const sidebarTheme = document.getElementById('sidebar-theme');
     if (sidebarTheme) sidebarTheme.addEventListener('click', App.events.toggleTheme);
 };
 
 App.events.applyTheme = function(theme) {
     if (theme === 'dark') {
         document.body.classList.add('dark');
-        var themeToggle = document.getElementById('theme-toggle');
+        const themeToggle = document.getElementById('theme-toggle');
         if (themeToggle) themeToggle.innerHTML = '<i data-lucide="sun"></i>';
-        var sidebarTheme = document.getElementById('sidebar-theme');
+        const sidebarTheme = document.getElementById('sidebar-theme');
         if (sidebarTheme) sidebarTheme.innerHTML = '<i data-lucide="sun"></i>';
     } else {
         document.body.classList.remove('dark');
-        var themeToggle = document.getElementById('theme-toggle');
+        const themeToggle = document.getElementById('theme-toggle');
         if (themeToggle) themeToggle.innerHTML = '<i data-lucide="moon"></i>';
-        var sidebarTheme = document.getElementById('sidebar-theme');
+        const sidebarTheme = document.getElementById('sidebar-theme');
         if (sidebarTheme) sidebarTheme.innerHTML = '<i data-lucide="moon"></i>';
     }
     localStorage.setItem(App.config.THEME_KEY, theme);
@@ -351,71 +374,68 @@ App.events.applyTheme = function(theme) {
 };
 
 App.events.toggleTheme = function() {
-    var isDark = document.body.classList.contains('dark');
+    const isDark = document.body.classList.contains('dark');
     App.events.applyTheme(isDark ? 'light' : 'dark');
 };
 
 App.events.initDirectListeners = function() {
-    var addOperationBtn = document.getElementById('add-operation-btn');
-    if (addOperationBtn) addOperationBtn.addEventListener('click', function() { App.ui.pages.openOperationForm(null); });
+    const addOperationBtn = document.getElementById('add-operation-btn');
+    if (addOperationBtn) addOperationBtn.addEventListener('click', () => { App.ui.pages.openOperationForm(null); });
 
-    var exportBtn = document.getElementById('export-btn');
+    const exportBtn = document.getElementById('export-btn');
     if (exportBtn) exportBtn.addEventListener('click', App.ui.pages.exportToExcelAll);
 
-    var importBtn = document.getElementById('import-btn');
-    var importFile = document.getElementById('import-file');
+    const importBtn = document.getElementById('import-btn');
+    const importFile = document.getElementById('import-file');
     if (importBtn && importFile) {
-        importBtn.addEventListener('click', function() { importFile.click(); });
+        importBtn.addEventListener('click', () => { importFile.click(); });
         importFile.addEventListener('change', App.events.handleImport);
     }
 
-    var updateMileageBtn = document.getElementById('update-mileage-btn');
+    const updateMileageBtn = document.getElementById('update-mileage-btn');
     if (updateMileageBtn) updateMileageBtn.addEventListener('click', App.events.updateMileageAndAverages);
 
-    var addFuelBtn = document.getElementById('add-fuel-btn');
-    if (addFuelBtn) addFuelBtn.addEventListener('click', function() { App.ui.pages.openFuelModal(null); });
+    const addFuelBtn = document.getElementById('add-fuel-btn');
+    if (addFuelBtn) addFuelBtn.addEventListener('click', () => { App.ui.pages.openFuelModal(null); });
 
-    var voiceFuelBtn = document.getElementById('voice-fuel-btn');
+    const voiceFuelBtn = document.getElementById('voice-fuel-btn');
     if (voiceFuelBtn) voiceFuelBtn.addEventListener('click', App.ui.pages.startVoiceFuelInput);
 
-    var addTireBtn = document.getElementById('add-tire-btn');
-    if (addTireBtn) addTireBtn.addEventListener('click', function() { App.ui.pages.openTireModal(null); });
+    const addTireBtn = document.getElementById('add-tire-btn');
+    if (addTireBtn) addTireBtn.addEventListener('click', () => { App.ui.pages.openTireModal(null); });
 
-    var addPartBtn = document.getElementById('add-part-btn');
-    if (addPartBtn) addPartBtn.addEventListener('click', function() { App.ui.pages.openPartForm(null); });
+    const addPartBtn = document.getElementById('add-part-btn');
+    if (addPartBtn) addPartBtn.addEventListener('click', () => { App.ui.pages.openPartForm(null); });
 
-    var saveSettingsBtn = document.getElementById('save-settings-btn');
+    const saveSettingsBtn = document.getElementById('save-settings-btn');
     if (saveSettingsBtn) saveSettingsBtn.addEventListener('click', App.ui.pages.saveSettings);
 
-    var subscribePushBtn = document.getElementById('subscribe-push-btn');
-    if (subscribePushBtn) subscribePushBtn.addEventListener('click', App.ui.pages.subscribeToPush);
-
-    var exportDataBtn = document.getElementById('export-data-btn');
+    const exportDataBtn = document.getElementById('export-data-btn');
     if (exportDataBtn) exportDataBtn.addEventListener('click', App.ui.pages.handleExport);
 
-    var generatePdfBtn = document.getElementById('generate-pdf-btn');
+    const generatePdfBtn = document.getElementById('generate-pdf-btn');
     if (generatePdfBtn) generatePdfBtn.addEventListener('click', App.ui.pages.generateServiceReport);
 
-    var toggleOwnershipBtn = document.getElementById('toggle-ownership-unit');
+    const toggleOwnershipBtn = document.getElementById('toggle-ownership-unit');
     if (toggleOwnershipBtn) toggleOwnershipBtn.addEventListener('click', App.ui.pages.toggleOwnershipUnit);
 
-    var dashUpdateMileageBtn = document.getElementById('dash-update-mileage-btn');
-    if (dashUpdateMileageBtn) dashUpdateMileageBtn.addEventListener('click', function() {
+    const dashUpdateMileageBtn = document.getElementById('dash-update-mileage-btn');
+    if (dashUpdateMileageBtn) dashUpdateMileageBtn.addEventListener('click', () => {
         App.events.switchToTab('to');
-        var newMileageInput = document.getElementById('new-mileage');
-        if (newMileageInput) setTimeout(function() { newMileageInput.focus(); }, 200);
+        const newMileageInput = document.getElementById('new-mileage');
+        if (newMileageInput) setTimeout(() => newMileageInput.focus(), 200);
     });
 
-    var dashAddFuelBtn = document.getElementById('dash-add-fuel-btn');
-    if (dashAddFuelBtn) dashAddFuelBtn.addEventListener('click', function() { App.ui.pages.openFuelModal(null); });
+    const dashAddFuelBtn = document.getElementById('dash-add-fuel-btn');
+    if (dashAddFuelBtn) dashAddFuelBtn.addEventListener('click', () => { App.ui.pages.openFuelModal(null); });
 
-    var dashAddServiceBtn = document.getElementById('dash-add-service-btn');
-    if (dashAddServiceBtn) dashAddServiceBtn.addEventListener('click', function() {
-        var upcoming = document.getElementById('dash-upcoming-container');
-        var firstOp = upcoming?.querySelector('.top5-name');
+    const dashAddServiceBtn = document.getElementById('dash-add-service-btn');
+    if (dashAddServiceBtn) dashAddServiceBtn.addEventListener('click', () => {
+        const upcoming = document.getElementById('dash-upcoming-container');
+        const firstOp = upcoming?.querySelector('.top5-name');
         if (firstOp) {
-            var opName = firstOp.textContent;
-            var op = App.store.operations.find(function(o) { return o.name === opName; });
+            const opName = firstOp.textContent;
+            const op = App.store.operations.find(o => o.name === opName);
             if (op) App.ui.pages.openServiceModal(op.id, op.name);
             else App.events.switchToTab('to');
         } else {
@@ -423,12 +443,12 @@ App.events.initDirectListeners = function() {
         }
     });
 
-    var dashPredictBtn = document.getElementById('dash-predict-btn');
-    if (dashPredictBtn) dashPredictBtn.addEventListener('click', function() {
-        var target = parseFloat(document.getElementById('dash-target-mileage')?.value);
+    const dashPredictBtn = document.getElementById('dash-predict-btn');
+    if (dashPredictBtn) dashPredictBtn.addEventListener('click', () => {
+        const target = parseFloat(document.getElementById('dash-target-mileage')?.value);
         if (isNaN(target)) return;
-        var result = App.logic.predictMileageDate(target);
-        var resultEl = document.getElementById('dash-prediction-result');
+        const result = App.logic.predictMileageDate(target);
+        const resultEl = document.getElementById('dash-prediction-result');
         if (resultEl) {
             if (result) {
                 resultEl.textContent = 'Ожидаемая дата: ' + result.toLocaleDateString('ru-RU', { year: 'numeric', month: 'long', day: 'numeric' });
@@ -439,28 +459,28 @@ App.events.initDirectListeners = function() {
         App.initIcons();
     });
 
-    var resetZoomBtn = document.getElementById('reset-all-zoom');
-    if (resetZoomBtn) resetZoomBtn.addEventListener('click', function() {
-        ['fuelConsumptionChart', 'fuelPriceChart', 'costsChart'].forEach(function(id) {
-            var chart = App.charts.activeCharts[id];
+    const resetZoomBtn = document.getElementById('reset-all-zoom');
+    if (resetZoomBtn) resetZoomBtn.addEventListener('click', () => {
+        ['fuelConsumptionChart', 'fuelPriceChart', 'costsChart'].forEach(id => {
+            const chart = App.charts.activeCharts[id];
             if (chart && typeof chart.resetZoom === 'function') chart.resetZoom();
         });
     });
 
-    var toCostPeriod = document.getElementById('to-cost-period');
+    const toCostPeriod = document.getElementById('to-cost-period');
     if (toCostPeriod) {
-        toCostPeriod.addEventListener('change', function() {
+        toCostPeriod.addEventListener('change', () => {
             if (document.getElementById('tab-to')?.classList.contains('active')) {
                 App.ui.pages.renderTOCostChart();
             }
         });
     }
 
-    var settingsThemeToggle = document.getElementById('settings-theme-toggle');
+    const settingsThemeToggle = document.getElementById('settings-theme-toggle');
     if (settingsThemeToggle) {
-        settingsThemeToggle.addEventListener('click', function() {
+        settingsThemeToggle.addEventListener('click', () => {
             App.events.toggleTheme();
-            var isDark = document.body.classList.contains('dark');
+            const isDark = document.body.classList.contains('dark');
             this.innerHTML = isDark ? '<i data-lucide="sun"></i> Светлая тема' : '<i data-lucide="moon"></i> Тёмная тема';
             App.initIcons();
         });
@@ -470,21 +490,21 @@ App.events.initDirectListeners = function() {
 App.events.initHistoryFilters = function() {
     ['history-period-select', 'history-operation-filter', 'history-category-filter', 'history-executor-filter',
      'history-search', 'history-diy-only', 'history-cost-min', 'history-cost-max', 'history-mileage-min', 'history-mileage-max', 'history-sort-order'
-    ].forEach(function(id) {
-        var el = document.getElementById(id);
+    ].forEach(id => {
+        const el = document.getElementById(id);
         if (el) {
-            var eventType = (el.tagName === 'INPUT' && el.type === 'checkbox') ? 'change' : (el.tagName === 'INPUT' ? 'input' : 'change');
+            const eventType = (el.tagName === 'INPUT' && el.type === 'checkbox') ? 'change' : (el.tagName === 'INPUT' ? 'input' : 'change');
             el.addEventListener(eventType, App.ui.pages.renderHistoryCards);
         }
     });
 
-    var resetFiltersBtn = document.getElementById('history-reset-filters');
+    const resetFiltersBtn = document.getElementById('history-reset-filters');
     if (resetFiltersBtn) {
-        resetFiltersBtn.addEventListener('click', function() {
+        resetFiltersBtn.addEventListener('click', () => {
             ['history-period-select', 'history-operation-filter', 'history-category-filter', 'history-executor-filter',
              'history-search', 'history-diy-only', 'history-cost-min', 'history-cost-max', 'history-mileage-min', 'history-mileage-max', 'history-sort-order'
-            ].forEach(function(id) {
-                var el = document.getElementById(id);
+            ].forEach(id => {
+                const el = document.getElementById(id);
                 if (el) {
                     if (el.type === 'checkbox') el.checked = false;
                     else el.value = '';
@@ -497,10 +517,10 @@ App.events.initHistoryFilters = function() {
 };
 
 App.events.initStatsListeners = function() {
-    var periodSelect = document.getElementById('stats-period-select');
+    const periodSelect = document.getElementById('stats-period-select');
     if (periodSelect) {
         periodSelect.value = localStorage.getItem(App.config.STATS_PERIOD_KEY) || 'all';
-        periodSelect.addEventListener('change', function() {
+        periodSelect.addEventListener('change', () => {
             localStorage.setItem(App.config.STATS_PERIOD_KEY, periodSelect.value);
             if (document.getElementById('tab-stats')?.classList.contains('active')) {
                 App.ui.pages.renderFinanceTab();
@@ -510,12 +530,12 @@ App.events.initStatsListeners = function() {
 };
 
 App.events.handleImport = function(e) {
-    var file = e.target.files[0];
+    const file = e.target.files[0];
     if (!file) return;
-    var reader = new FileReader();
-    reader.onload = function(ev) {
+    const reader = new FileReader();
+    reader.onload = ev => {
         try {
-            var d = JSON.parse(ev.target.result);
+            const d = JSON.parse(ev.target.result);
             App.store.operations = d.operations || [];
             App.store.settings = d.settings || App.defaults.settings;
             App.store.parts = d.parts || [];
@@ -534,8 +554,8 @@ App.events.handleImport = function(e) {
 };
 
 App.events.updateMileageAndAverages = function() {
-    var m = document.getElementById('dash-new-mileage');
-    var h = document.getElementById('dash-new-motohours');
+    let m = document.getElementById('dash-new-mileage');
+    let h = document.getElementById('dash-new-motohours');
     if (!m) m = document.getElementById('new-mileage');
     if (!h) h = document.getElementById('new-motohours');
     if (!m || !h) {
@@ -543,8 +563,8 @@ App.events.updateMileageAndAverages = function() {
         return;
     }
 
-    var newM = App.utils.validateNumberInput(m, false);
-    var newH = App.utils.validateNumberInput(h, true);
+    const newM = App.utils.validateNumberInput(m, false);
+    const newH = App.utils.validateNumberInput(h, true);
     if (newM === null || newH === null) return;
 
     if (newM < (App.store.baseMileage || 0)) {
@@ -556,7 +576,7 @@ App.events.updateMileageAndAverages = function() {
         return;
     }
 
-    var today = new Date().toISOString().split('T')[0];
+    const today = new Date().toISOString().split('T')[0];
     App.storage.addMileageRecord(today, newM, newH);
     App.store.mileageHistory.push({
         uuid: crypto.randomUUID(),
@@ -564,12 +584,12 @@ App.events.updateMileageAndAverages = function() {
         mileage: newM,
         motohours: newH
     });
-    App.store.mileageHistory.sort(function(a, b) { return new Date(a.date) - new Date(b.date); });
+    App.store.mileageHistory.sort((a, b) => new Date(a.date) - new Date(b.date));
 
     if (App.store.mileageHistory.length >= 2) {
-        var last = App.store.mileageHistory[App.store.mileageHistory.length - 1];
-        var prev = App.store.mileageHistory[App.store.mileageHistory.length - 2];
-        var days = (new Date(last.date) - new Date(prev.date)) / 86400000;
+        const last = App.store.mileageHistory[App.store.mileageHistory.length - 1];
+        const prev = App.store.mileageHistory[App.store.mileageHistory.length - 2];
+        const days = (new Date(last.date) - new Date(prev.date)) / 86400000;
         if (days > 0) {
             App.store.settings.avgDailyMileage = (last.mileage - prev.mileage) / days;
             App.store.settings.avgDailyMotohours = (last.motohours - prev.motohours) / days;
@@ -584,20 +604,16 @@ App.events.updateMileageAndAverages = function() {
 
     if (App.config.USE_SUPABASE) {
         App.storage.addMileageRecord(today, newM, newH)
-            .then(function() {
-                return App.storage.saveSettings({
-                    currentMileage: newM,
-                    currentMotohours: newH,
-                    avgDailyMileage: App.store.settings.avgDailyMileage,
-                    avgDailyMotohours: App.store.settings.avgDailyMotohours,
-                    telegramToken: App.store.settings.telegramToken,
-                    telegramChatId: App.store.settings.telegramChatId,
-                    notificationMethod: App.store.settings.notificationMethod
-                });
-            })
-            .catch(function(err) {
-                console.error('Ошибка сохранения пробега в Supabase:', err);
-            });
+            .then(() => App.storage.saveSettings({
+                currentMileage: newM,
+                currentMotohours: newH,
+                avgDailyMileage: App.store.settings.avgDailyMileage,
+                avgDailyMotohours: App.store.settings.avgDailyMotohours,
+                telegramToken: App.store.settings.telegramToken,
+                telegramChatId: App.store.settings.telegramChatId,
+                notificationMethod: App.store.settings.notificationMethod
+            }))
+            .catch(err => console.error('Ошибка сохранения пробега в Supabase:', err));
     }
 
     if (typeof App.renderAll === 'function') App.renderAll();
