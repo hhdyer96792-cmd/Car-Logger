@@ -50,7 +50,7 @@ App.store = {
         );
     },
 
-    // ========== ЗАГРУЗКА ИЗ INDEXEDDB С ФИЛЬТРАЦИЕЙ ПО CAR_ID ==========
+    // ========== ЗАГРУЗКА ИЗ INDEXEDDB БЕЗ ДУБЛЕЙ ==========
     loadFromIndexedDB: async function() {
         if (!App.db || !App.db._db) {
             console.warn('[Store] IndexedDB не инициализирована, загружаю из localStorage (fallback)');
@@ -69,7 +69,12 @@ App.store = {
             const allMileage = await App.db.getAll('mileage_log');
 
             if (carId) {
-                this.operations = allOps.filter(op => op.car_id == carId).map(op => ({
+                // Используем Map для устранения дублей по id
+                const opsMap = new Map();
+                allOps.filter(op => op.car_id == carId).forEach(op => {
+                    if (!opsMap.has(op.id)) opsMap.set(op.id, op);
+                });
+                this.operations = Array.from(opsMap.values()).map(op => ({
                     id: op.id,
                     uuid: op.id,
                     category: op.category,
@@ -84,7 +89,11 @@ App.store = {
                     car_id: op.car_id
                 }));
 
-                this.fuelLog = allFuel.filter(f => f.car_id == carId).map(f => ({
+                const fuelMap = new Map();
+                allFuel.filter(f => f.car_id == carId).forEach(f => {
+                    if (!fuelMap.has(f.id)) fuelMap.set(f.id, f);
+                });
+                this.fuelLog = Array.from(fuelMap.values()).map(f => ({
                     id: f.id,
                     uuid: f.id,
                     date: f.date,
@@ -97,7 +106,11 @@ App.store = {
                     car_id: f.car_id
                 }));
 
-                this.tireLog = allTires.filter(t => t.car_id == carId).map(t => ({
+                const tiresMap = new Map();
+                allTires.filter(t => t.car_id == carId).forEach(t => {
+                    if (!tiresMap.has(t.id)) tiresMap.set(t.id, t);
+                });
+                this.tireLog = Array.from(tiresMap.values()).map(t => ({
                     id: t.id,
                     uuid: t.id,
                     date: t.date,
@@ -113,7 +126,11 @@ App.store = {
                     car_id: t.car_id
                 }));
 
-                this.parts = allParts.filter(p => p.car_id == carId).map(p => ({
+                const partsMap = new Map();
+                allParts.filter(p => p.car_id == carId).forEach(p => {
+                    if (!partsMap.has(p.id)) partsMap.set(p.id, p);
+                });
+                this.parts = Array.from(partsMap.values()).map(p => ({
                     id: p.id,
                     uuid: p.id,
                     operation: p.operation || '',
@@ -129,7 +146,11 @@ App.store = {
                     car_id: p.car_id
                 }));
 
-                this.serviceRecords = allHistory.filter(h => h.car_id == carId).map(h => ({
+                const historyMap = new Map();
+                allHistory.filter(h => h.car_id == carId).forEach(h => {
+                    if (!historyMap.has(h.id)) historyMap.set(h.id, h);
+                });
+                this.serviceRecords = Array.from(historyMap.values()).map(h => ({
                     id: h.id,
                     operation_id: h.operation_id,
                     date: h.date,
@@ -145,7 +166,11 @@ App.store = {
                     car_id: h.car_id
                 }));
 
-                this.mileageHistory = allMileage.filter(m => m.car_id == carId).map(m => ({
+                const mileageMap = new Map();
+                allMileage.filter(m => m.car_id == carId).forEach(m => {
+                    if (!mileageMap.has(m.id)) mileageMap.set(m.id, m);
+                });
+                this.mileageHistory = Array.from(mileageMap.values()).map(m => ({
                     id: m.id,
                     date: m.date,
                     mileage: m.mileage,
@@ -171,7 +196,6 @@ App.store = {
             const pending = await App.db.getAll('pending_actions');
             this.pendingActions = pending.sort((a, b) => a.timestamp - b.timestamp);
 
-            // Загружаем настройки для активного автомобиля
             if (this.activeCarId && typeof App.storage.loadSettingsForCar === 'function') {
                 await App.storage.loadSettingsForCar(this.activeCarId);
             }
@@ -179,7 +203,6 @@ App.store = {
             this.baseMileage = 0;
             this.baseMotohours = 0;
             this.purchaseDate = '';
-
             this.calculateOwnershipDays();
             console.log('[Store] Данные загружены из IndexedDB с фильтром car_id =', carId);
         } catch (err) {
@@ -220,7 +243,7 @@ App.store = {
         console.warn('[Store] Используется устаревший initFromLocalStorage');
     },
 
-    // ========== СОХРАНЕНИЕ В INDEXEDDB (С ГЕНЕРАЦИЕЙ ID) ==========
+    // ========== СОХРАНЕНИЕ В INDEXEDDB ==========
     saveOperationToDB: async function(op) {
         if (!op.id) op.id = crypto.randomUUID();
         await App.db.put('operations', op);
