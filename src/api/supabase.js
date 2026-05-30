@@ -4,7 +4,6 @@ App.supa = App.supa || {};
 
 let cachedUserId = null;
 
-// Функция повторных попыток при ошибках блокировки
 async function withRetry(fn, maxRetries = 3, delay = 500, context = 'unknown') {
     let lastError;
     for (let i = 0; i <= maxRetries; i++) {
@@ -29,20 +28,18 @@ function ensureSupabase() {
     return App.supabase;
 }
 
-// ========== СЖАТИЕ ИЗОБРАЖЕНИЙ ВРЕМЕННО ОТКЛЮЧЕНО ==========
 async function compressImage(file) {
     console.warn('[Supabase] Image compression temporarily disabled');
     return file;
 }
 
-// ========== UPSERT С ПОВТОРНЫМИ ПОПЫТКАМИ ==========
 async function upsertWithRetry(table, record, conflictField, maxRetries = 3) {
     let lastError;
     for (let i = 0; i < maxRetries; i++) {
         try {
             const { error } = await App.supabase.from(table).upsert(record, { onConflict: conflictField });
             if (error) {
-                if (error.code === '23505') { // conflict
+                if (error.code === '23505') {
                     console.warn(`[Supabase] Upsert conflict on ${table}, retry ${i+1}/${maxRetries}`);
                     await new Promise(r => setTimeout(r, 500 * (i + 1)));
                     continue;
@@ -59,7 +56,6 @@ async function upsertWithRetry(table, record, conflictField, maxRetries = 3) {
     throw lastError;
 }
 
-// ----- Универсальные запросы -----
 App.supa.fetchTable = function(tableName) {
     ensureSupabase();
     var query = App.supabase.from(tableName).select('*');
@@ -102,7 +98,6 @@ App.supa.clearUserIdCache = function() {
     cachedUserId = null;
 };
 
-// ----- Загрузка данных (без изменений) -----
 App.supa.loadOperations = function() {
     return withRetry(() => App.supa.fetchTable('operations').then(({ data, error }) => {
         if (error) throw error;
@@ -236,9 +231,10 @@ App.supa.loadMileageHistory = function() {
     }), 3, 500, 'loadMileageHistory');
 };
 
-// ----- Сохранение данных -----
+// ========== СОХРАНЕНИЕ ДАННЫХ (С ПОДДЕРЖКОЙ CAR_ID) ==========
 App.supa.saveOperation = async function(op) {
     const userId = await App.supa.getCurrentUserId();
+    const carId = op.car_id || App.store.activeCarId;
     const record = {
         category: op.category,
         name: op.name,
@@ -249,7 +245,7 @@ App.supa.saveOperation = async function(op) {
         last_mileage: op.lastMileage,
         last_motohours: op.lastMotohours,
         user_id: userId,
-        car_id: App.store.activeCarId
+        car_id: carId
     };
     if (op.id) {
         return App.supa.updateRow('operations', op.id, record);
@@ -260,6 +256,7 @@ App.supa.saveOperation = async function(op) {
 
 App.supa.saveFuelRecord = async function(record) {
     const userId = await App.supa.getCurrentUserId();
+    const carId = record.car_id || App.store.activeCarId;
     const data = {
         date: record.date,
         mileage: record.mileage,
@@ -269,7 +266,7 @@ App.supa.saveFuelRecord = async function(record) {
         fuel_type: record.fuelType || 'Бензин',
         notes: record.notes || '',
         user_id: userId,
-        car_id: App.store.activeCarId
+        car_id: carId
     };
     if (record.id) {
         return App.supa.updateRow('fuel_log', record.id, data);
@@ -280,6 +277,7 @@ App.supa.saveFuelRecord = async function(record) {
 
 App.supa.saveTireRecord = async function(record) {
     const userId = await App.supa.getCurrentUserId();
+    const carId = record.car_id || App.store.activeCarId;
     const data = {
         date: record.date,
         type: record.type,
@@ -292,7 +290,7 @@ App.supa.saveTireRecord = async function(record) {
         mount_cost: record.mountCost || 0,
         is_diy: record.isDIY || false,
         user_id: userId,
-        car_id: App.store.activeCarId
+        car_id: carId
     };
     if (record.id) {
         return App.supa.updateRow('tires', record.id, data);
@@ -303,6 +301,7 @@ App.supa.saveTireRecord = async function(record) {
 
 App.supa.savePart = async function(part) {
     const userId = await App.supa.getCurrentUserId();
+    const carId = part.car_id || App.store.activeCarId;
     const data = {
         operation: part.operation || '',
         oem: part.oem || '',
@@ -315,7 +314,7 @@ App.supa.savePart = async function(part) {
         location: part.location || '',
         purchase_date: part.purchaseDate || null,
         user_id: userId,
-        car_id: App.store.activeCarId
+        car_id: carId
     };
     if (part.id && part.id !== part.uuid) {
         return App.supa.updateRow('parts', part.uuid || part.id, data);
@@ -328,6 +327,7 @@ App.supa.savePart = async function(part) {
 
 App.supa.saveHistoryRecord = async function(record) {
     const userId = await App.supa.getCurrentUserId();
+    const carId = record.car_id || App.store.activeCarId;
     const data = {
         operation_id: record.operation_id,
         date: record.date,
@@ -339,7 +339,7 @@ App.supa.saveHistoryRecord = async function(record) {
         notes: record.notes || '',
         photo_url: record.photo_url || '',
         user_id: userId,
-        car_id: App.store.activeCarId
+        car_id: carId
     };
     if (record.id) {
         return App.supa.updateRow('history', record.id, data);
@@ -348,14 +348,15 @@ App.supa.saveHistoryRecord = async function(record) {
     }
 };
 
-App.supa.addMileageRecord = async function(date, mileage, motohours) {
+App.supa.addMileageRecord = async function(date, mileage, motohours, carId) {
     const userId = await App.supa.getCurrentUserId();
+    const effectiveCarId = carId || App.store.activeCarId;
     const record = {
         date: date,
         mileage: mileage,
         motohours: motohours || 0,
         user_id: userId,
-        car_id: App.store.activeCarId
+        car_id: effectiveCarId
     };
     return App.supa.insertRow('mileage_log', record);
 };
@@ -394,7 +395,7 @@ App.supa.saveUserSettings = async function(settingsObj) {
 
 // ========== ЗАГРУЗКА ФОТО С УЛУЧШЕННОЙ ДИАГНОСТИКОЙ ==========
 App.supa.uploadPhoto = async function(file) {
-    const MAX_SIZE = 5 * 1024 * 1024; // 5 MB
+    const MAX_SIZE = 5 * 1024 * 1024;
     if (file.size > MAX_SIZE) {
         throw new Error('Файл слишком большой. Максимальный размер 5 МБ.');
     }
@@ -410,9 +411,8 @@ App.supa.uploadPhoto = async function(file) {
     
     console.log('[Supabase] Загружаем в Storage:', filePath);
     
-    // Добавляем таймаут для запроса
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 секунд
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
     
     try {
         const { data, error } = await App.supabase.storage
@@ -686,7 +686,6 @@ App.supa.removePushToken = async function() {
 };
 
 // ========== ОБРАБОТКА OAuth РЕДИРЕКТА ==========
-// Эта функция вызывается при загрузке страницы, если в URL есть hash с токеном
 App.supa.handleOAuthRedirect = async function() {
     const hash = window.location.hash;
     if (hash && (hash.includes('access_token') || hash.includes('error'))) {
@@ -702,7 +701,7 @@ App.supa.handleOAuthRedirect = async function() {
         window.location.hash = '';
     }
 };
-// Вызываем при загрузке
+
 if (typeof window !== 'undefined') {
     setTimeout(() => {
         if (App.supa && typeof App.supa.handleOAuthRedirect === 'function') {
