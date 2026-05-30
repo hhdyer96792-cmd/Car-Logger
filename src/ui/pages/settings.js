@@ -774,9 +774,11 @@ App.ui.pages.subscribeToPush = async function() {
             if (typeof firebase !== 'undefined' && firebase.messaging) {
                 const messaging = firebase.messaging();
                 
-                const token = await messaging.getToken({
-                    vapidKey: 'BPp7qK9xQ2yL3zM4wN5xO6yP7zQ8rS9tU0vW1xY2zA3bC4dE5fG6hI7jK8lL9mM0nN1oO2pP3qQ4rR5sS6tT7uU8vV9wW0xX1yY2zZ3'
-                });
+                // ⚠️ ВАЖНО: замените этот ключ на реальный VAPID-ключ из вашего проекта Firebase!
+                // Ключ можно получить в настройках проекта -> Cloud Messaging -> Web configuration
+                const vapidKey = 'ВАШ_НАСТОЯЩИЙ_VAPID_КЛЮЧ_ИЗ_FIREBASE';
+                
+                const token = await messaging.getToken({ vapidKey });
                 
                 if (token) {
                     console.log('[Push] FCM Token получен:', token);
