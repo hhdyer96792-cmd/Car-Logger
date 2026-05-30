@@ -36,9 +36,8 @@ App.db.sync._executeAction = async function(action) {
     const { type, entityType, entityId, data } = action;
     let supabaseMethod, tableName;
     
-    console.log(`[Sync] Выполнение действия ${action.id}, тип=${type}, сущность=${entityType}`);
+    console.log(`[Sync] Выполнение действия ${action.id}, тип=${type}, сущность=${entityType}, данные:`, data);
     
-    // Ожидаем появления сессии (до 10 секунд)
     let session = null;
     for (let i = 0; i < 20; i++) {
         const { data: { session: s } } = await App.supabase.auth.getSession();
@@ -46,11 +45,13 @@ App.db.sync._executeAction = async function(action) {
             session = s;
             break;
         }
+        console.log(`[Sync] Ожидание сессии... попытка ${i+1}`);
         await new Promise(r => setTimeout(r, 500));
     }
     if (!session) {
         throw new Error('Нет активной сессии после ожидания');
     }
+    console.log(`[Sync] Сессия получена, access_token: ${session.access_token ? 'present' : 'missing'}`);
     
     switch (entityType) {
         case 'operation':
@@ -106,7 +107,9 @@ App.db.sync._executeAction = async function(action) {
     
     if (type === 'save' || type === 'update') {
         try {
+            console.log(`[Sync] Вызываем supabaseMethod для ${entityType} с данными:`, data);
             const result = await supabaseMethod(data);
+            console.log(`[Sync] Результат supabaseMethod:`, result);
             if (result.error) throw result.error;
             if (result.data && result.data[0] && result.data[0].id !== entityId) {
                 console.log(`[Sync] Обновляем локальный ID с ${entityId} на ${result.data[0].id}`);
