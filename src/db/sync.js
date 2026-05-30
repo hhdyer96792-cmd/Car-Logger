@@ -38,6 +38,7 @@ App.db.sync._executeAction = async function(action) {
     
     console.log(`[Sync] Выполнение действия ${action.id}, тип=${type}, сущность=${entityType}, данные:`, data);
     
+    // Ожидание сессии до 10 секунд
     let session = null;
     for (let i = 0; i < 20; i++) {
         const { data: { session: s } } = await App.supabase.auth.getSession();
@@ -45,12 +46,9 @@ App.db.sync._executeAction = async function(action) {
             session = s;
             break;
         }
-        console.log(`[Sync] Ожидание сессии... попытка ${i+1}`);
         await new Promise(r => setTimeout(r, 500));
     }
-    if (!session) {
-        throw new Error('Нет активной сессии после ожидания');
-    }
+    if (!session) throw new Error('Нет активной сессии после ожидания');
     console.log(`[Sync] Сессия получена, access_token: ${session.access_token ? 'present' : 'missing'}`);
     
     switch (entityType) {
@@ -107,11 +105,12 @@ App.db.sync._executeAction = async function(action) {
     
     if (type === 'save' || type === 'update') {
         try {
-            console.log(`[Sync] Вызываем supabaseMethod для ${entityType} с данными:`, data);
+            console.log(`[Sync] Вызываем supabaseMethod для ${entityType}`);
             const result = await supabaseMethod(data);
-            console.log(`[Sync] Результат supabaseMethod:`, result);
+            console.log(`[Sync] Результат supabaseMethod:`, JSON.stringify(result));
             if (result.error) throw result.error;
-            if (result.data && result.data[0] && result.data[0].id !== entityId) {
+            // Обновляем локальный ID, если сервер вернул новый
+            if (result.data && result.data[0] && result.data[0].id && result.data[0].id !== entityId) {
                 console.log(`[Sync] Обновляем локальный ID с ${entityId} на ${result.data[0].id}`);
                 await App.db.sync._updateLocalId(entityType, entityId, result.data[0].id);
             }
@@ -304,10 +303,11 @@ App.db.sync.processSyncQueue = async function() {
                 await App.db.delete('pending_actions', action.id);
                 const idx = App.store.pendingActions.findIndex(a => a.id === action.id);
                 if (idx !== -1) App.store.pendingActions.splice(idx, 1);
-                console.log(`[Sync] Действие ${action.id} удалено из очереди`);
                 
-                // Принудительное обновление UI для всех вкладок
+                // ПРИНУДИТЕЛЬНО ОБНОВЛЯЕМ UI И STORE
+                await App.store.loadFromIndexedDB();  // перезагружаем store из IndexedDB
                 if (typeof App.renderAll === 'function') App.renderAll();
+                // Дополнительная перерисовка всех вкладок
                 if (typeof App.ui.pages.renderTOTable === 'function') App.ui.pages.renderTOTable();
                 if (typeof App.ui.pages.renderFuelTab === 'function') App.ui.pages.renderFuelTab();
                 if (typeof App.ui.pages.renderPartsTab === 'function') App.ui.pages.renderPartsTab();
@@ -315,6 +315,7 @@ App.db.sync.processSyncQueue = async function() {
                 if (typeof App.ui.pages.renderHistoryCards === 'function') App.ui.pages.renderHistoryCards();
                 if (typeof App.ui.pages.renderDashboard === 'function') App.ui.pages.renderDashboard();
                 
+                console.log(`[Sync] Действие ${action.id} удалено из очереди, UI обновлён`);
             } catch (err) {
                 console.error(`[Sync] Ошибка действия ${action.id}:`, err);
                 if (err.status === 409 || (err.message && err.message.includes('conflict'))) {
@@ -323,6 +324,8 @@ App.db.sync.processSyncQueue = async function() {
                     await App.db.delete('pending_actions', action.id);
                     const idx = App.store.pendingActions.findIndex(a => a.id === action.id);
                     if (idx !== -1) App.store.pendingActions.splice(idx, 1);
+                    await App.store.loadFromIndexedDB();
+                    if (typeof App.renderAll === 'function') App.renderAll();
                 } else {
                     const newRetryCount = (action.retryCount || 0) + 1;
                     await App.db.sync._updatePendingAction(action, newRetryCount, err.message);
