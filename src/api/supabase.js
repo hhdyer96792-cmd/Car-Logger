@@ -653,3 +653,35 @@ if (!App.supa.getVehicleState) {
 if (!App.supa.updateVehicleState) {
     App.supa.updateVehicleState = async function(carId, updates) { return true; };
 }
+
+// ========== PUSH-ТОКЕНЫ ==========
+App.supa.savePushToken = async function(token) {
+    const userId = await App.supa.getCurrentUserId();
+    if (!userId) throw new Error('User not authenticated');
+    
+    const { error } = await App.supabase
+        .from('push_subscriptions')
+        .upsert({ 
+            user_id: userId, 
+            player_id: token,
+            fcm_token: token,
+            updated_at: new Date().toISOString() 
+        }, { onConflict: 'user_id' });
+    
+    if (error) throw error;
+    return true;
+};
+
+App.supa.removePushToken = async function() {
+    const userId = await App.supa.getCurrentUserId();
+    if (!userId) throw new Error('User not authenticated');
+    
+    const { error } = await App.supabase
+        .from('push_subscriptions')
+        .delete()
+        .eq('user_id', userId);
+    
+    if (error) throw error;
+    return true;
+};
+
