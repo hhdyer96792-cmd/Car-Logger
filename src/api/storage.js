@@ -53,6 +53,11 @@ function refreshUIToHistory() {
 // ========== ОПЕРАЦИИ ==========
 App.storage.saveOperation = async function(op) {
     const carId = App.store.activeCarId;
+    if (!carId) {
+        console.error('[Storage] Нельзя сохранить операцию: нет активного автомобиля');
+        App.toast('Ошибка: не выбран автомобиль', 'error');
+        return;
+    }
     const opWithCarId = { ...op, car_id: carId };
     if (!navigator.onLine) {
         if (!opWithCarId.id) opWithCarId.id = crypto.randomUUID();
@@ -63,7 +68,6 @@ App.storage.saveOperation = async function(op) {
             data: opWithCarId
         });
         await App.store.saveOperationToDB(opWithCarId);
-        // Обновляем локальный массив с правильным car_id
         const idx = App.store.operations.findIndex(o => o.id == opWithCarId.id);
         if (idx !== -1) App.store.operations[idx] = opWithCarId;
         else App.store.operations.push(opWithCarId);
@@ -106,6 +110,11 @@ App.storage.deleteOperation = async function(operationId) {
 // ========== ИСТОРИЯ ==========
 App.storage.addHistoryRecord = async function(rec) {
     const carId = App.store.activeCarId;
+    if (!carId) {
+        console.error('[Storage] Нельзя добавить запись истории: нет активного автомобиля');
+        App.toast('Ошибка: не выбран автомобиль', 'error');
+        return;
+    }
     const recWithCarId = { ...rec, car_id: carId };
     if (!navigator.onLine) {
         if (!recWithCarId.id) recWithCarId.id = crypto.randomUUID();
@@ -162,6 +171,11 @@ App.storage.deleteHistoryRecord = async function(rowIndex) {
 // ========== ЗАПЧАСТИ ==========
 App.storage.savePart = async function(part) {
     const carId = App.store.activeCarId;
+    if (!carId) {
+        console.error('[Storage] Нельзя сохранить запчасть: нет активного автомобиля');
+        App.toast('Ошибка: не выбран автомобиль', 'error');
+        return;
+    }
     const partWithCarId = { ...part, car_id: carId };
     if (!navigator.onLine) {
         if (!partWithCarId.id) partWithCarId.id = crypto.randomUUID();
@@ -214,6 +228,11 @@ App.storage.deletePart = async function(partId) {
 // ========== ТОПЛИВО ==========
 App.storage.saveFuelRecord = async function(id, record) {
     const carId = App.store.activeCarId;
+    if (!carId) {
+        console.error('[Storage] Нельзя сохранить заправку: нет активного автомобиля');
+        App.toast('Ошибка: не выбран автомобиль', 'error');
+        return;
+    }
     const recordWithCarId = { ...record, car_id: carId };
     if (!navigator.onLine) {
         if (!recordWithCarId.id) recordWithCarId.id = crypto.randomUUID();
@@ -266,6 +285,11 @@ App.storage.deleteFuelRecord = async function(id) {
 // ========== ШИНЫ ==========
 App.storage.saveTireRecord = async function(id, record) {
     const carId = App.store.activeCarId;
+    if (!carId) {
+        console.error('[Storage] Нельзя сохранить шины: нет активного автомобиля');
+        App.toast('Ошибка: не выбран автомобиль', 'error');
+        return;
+    }
     const recordWithCarId = { ...record, car_id: carId };
     if (!navigator.onLine) {
         if (!recordWithCarId.id) recordWithCarId.id = crypto.randomUUID();
@@ -319,6 +343,11 @@ App.storage.deleteTireRecord = async function(id) {
 App.storage.addMileageRecord = async function(date, mileage, motohours) {
     const userId = await App.supa.getCurrentUserId();
     const carId = App.store.activeCarId;
+    if (!carId) {
+        console.error('[Storage] Нельзя добавить пробег: нет активного автомобиля');
+        App.toast('Ошибка: не выбран автомобиль', 'error');
+        return;
+    }
     const record = { date, mileage, motohours, user_id: userId, car_id: carId };
     if (!navigator.onLine) {
         if (!record.id) record.id = crypto.randomUUID();
