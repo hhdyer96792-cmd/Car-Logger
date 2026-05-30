@@ -38,10 +38,18 @@ App.db.sync._executeAction = async function(action) {
     
     console.log(`[Sync] Выполнение действия ${action.id}, тип=${type}, сущность=${entityType}`);
     
-    // Обновляем сессию перед каждым запросом
-    const { data: { session } } = await App.supabase.auth.getSession();
+    // Ожидаем появления сессии (до 10 секунд)
+    let session = null;
+    for (let i = 0; i < 20; i++) {
+        const { data: { session: s } } = await App.supabase.auth.getSession();
+        if (s) {
+            session = s;
+            break;
+        }
+        await new Promise(r => setTimeout(r, 500));
+    }
     if (!session) {
-        throw new Error('Нет активной сессии, синхронизация невозможна');
+        throw new Error('Нет активной сессии после ожидания');
     }
     
     switch (entityType) {
@@ -67,7 +75,7 @@ App.db.sync._executeAction = async function(action) {
             break;
         case 'mileage':
             tableName = 'mileage_log';
-            supabaseMethod = (record) => App.supa.addMileageRecord(record.date, record.mileage, record.motohours);
+            supabaseMethod = (record) => App.supa.addMileageRecord(record.date, record.mileage, record.motohours, record.car_id);
             break;
         case 'car_settings':
             console.log('[Sync] Сохраняем настройки автомобиля');
@@ -128,7 +136,15 @@ App.db.sync._executeDelete = async function(action) {
     
     console.log(`[Sync] Удаление ${entityType} с ID ${entityId}`);
     
-    const { data: { session } } = await App.supabase.auth.getSession();
+    let session = null;
+    for (let i = 0; i < 20; i++) {
+        const { data: { session: s } } = await App.supabase.auth.getSession();
+        if (s) {
+            session = s;
+            break;
+        }
+        await new Promise(r => setTimeout(r, 500));
+    }
     if (!session) throw new Error('Нет активной сессии');
     
     const { error } = await App.supabase.from(tableName).delete().eq('id', entityId);
@@ -182,7 +198,15 @@ App.db.sync._resolveConflict = async function(action) {
             case 'mileage': tableName = 'mileage_log'; break;
             default: return;
         }
-        const { data: { session } } = await App.supabase.auth.getSession();
+        let session = null;
+        for (let i = 0; i < 20; i++) {
+            const { data: { session: s } } = await App.supabase.auth.getSession();
+            if (s) {
+                session = s;
+                break;
+            }
+            await new Promise(r => setTimeout(r, 500));
+        }
         if (!session) throw new Error('Нет активной сессии');
         
         const { data, error } = await App.supabase.from(tableName).select('*').eq('id', entityId).single();
