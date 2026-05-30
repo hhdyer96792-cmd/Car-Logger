@@ -2,17 +2,21 @@
 window.App = window.App || {};
 App.storage = App.storage || {};
 
+console.log('[Storage] Модуль загружен');
+
 function checkResponse({ data, error }, actionName) {
     if (error) throw error;
     if (actionName === 'delete') return;
 }
 
 async function queueAction(action) {
+    console.log('[Storage] Добавление действия в очередь:', action);
     await App.store.addPendingAction(action);
     if ('serviceWorker' in navigator && 'SyncManager' in window) {
         try {
             const registration = await navigator.serviceWorker.ready;
             await registration.sync.register('vesta-sync');
+            console.log('[Storage] Background Sync зарегистрирован');
         } catch (err) {
             console.warn('[Storage] Background Sync registration failed:', err);
         }
@@ -59,8 +63,10 @@ App.storage.saveOperation = async function(op) {
         return;
     }
     const opWithCarId = { ...op, car_id: carId };
+    if (!opWithCarId.id) opWithCarId.id = crypto.randomUUID();
+    console.log('[Storage] saveOperation, carId=' + carId + ', id=' + opWithCarId.id + ', online=' + navigator.onLine);
+    
     if (!navigator.onLine) {
-        if (!opWithCarId.id) opWithCarId.id = crypto.randomUUID();
         await queueAction({
             type: 'save',
             entityType: 'operation',
@@ -75,15 +81,22 @@ App.storage.saveOperation = async function(op) {
         refreshUIToTables();
         return;
     }
-    const res = await App.supa.saveOperation(op);
-    checkResponse(res, 'save');
-    if (res.data && res.data[0]) op.id = res.data[0].id;
-    const finalOp = { ...op, car_id: carId };
-    await App.store.saveOperationToDB(finalOp);
-    const idx = App.store.operations.findIndex(o => o.id == op.id);
-    if (idx !== -1) App.store.operations[idx] = op;
-    else App.store.operations.push(op);
-    refreshUIToTables();
+    
+    try {
+        const res = await App.supa.saveOperation(op);
+        checkResponse(res, 'save');
+        if (res.data && res.data[0]) op.id = res.data[0].id;
+        const finalOp = { ...op, car_id: carId };
+        await App.store.saveOperationToDB(finalOp);
+        const idx = App.store.operations.findIndex(o => o.id == op.id);
+        if (idx !== -1) App.store.operations[idx] = op;
+        else App.store.operations.push(op);
+        refreshUIToTables();
+        App.toast('Операция сохранена', 'success');
+    } catch (err) {
+        console.error('[Storage] Ошибка сохранения операции онлайн:', err);
+        App.toast('Ошибка сохранения операции', 'error');
+    }
 };
 
 App.storage.deleteOperation = async function(operationId) {
@@ -116,8 +129,8 @@ App.storage.addHistoryRecord = async function(rec) {
         return;
     }
     const recWithCarId = { ...rec, car_id: carId };
+    if (!recWithCarId.id) recWithCarId.id = crypto.randomUUID();
     if (!navigator.onLine) {
-        if (!recWithCarId.id) recWithCarId.id = crypto.randomUUID();
         await queueAction({
             type: 'save',
             entityType: 'history',
@@ -177,8 +190,8 @@ App.storage.savePart = async function(part) {
         return;
     }
     const partWithCarId = { ...part, car_id: carId };
+    if (!partWithCarId.id) partWithCarId.id = crypto.randomUUID();
     if (!navigator.onLine) {
-        if (!partWithCarId.id) partWithCarId.id = crypto.randomUUID();
         await queueAction({
             type: 'save',
             entityType: 'part',
@@ -234,8 +247,8 @@ App.storage.saveFuelRecord = async function(id, record) {
         return;
     }
     const recordWithCarId = { ...record, car_id: carId };
+    if (!recordWithCarId.id) recordWithCarId.id = crypto.randomUUID();
     if (!navigator.onLine) {
-        if (!recordWithCarId.id) recordWithCarId.id = crypto.randomUUID();
         await queueAction({
             type: 'save',
             entityType: 'fuel',
@@ -291,8 +304,8 @@ App.storage.saveTireRecord = async function(id, record) {
         return;
     }
     const recordWithCarId = { ...record, car_id: carId };
+    if (!recordWithCarId.id) recordWithCarId.id = crypto.randomUUID();
     if (!navigator.onLine) {
-        if (!recordWithCarId.id) recordWithCarId.id = crypto.randomUUID();
         await queueAction({
             type: 'save',
             entityType: 'tire',
@@ -349,8 +362,8 @@ App.storage.addMileageRecord = async function(date, mileage, motohours) {
         return;
     }
     const record = { date, mileage, motohours, user_id: userId, car_id: carId };
+    if (!record.id) record.id = crypto.randomUUID();
     if (!navigator.onLine) {
-        if (!record.id) record.id = crypto.randomUUID();
         await queueAction({
             type: 'save',
             entityType: 'mileage',
