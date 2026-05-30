@@ -74,7 +74,6 @@ App.ui.pages.savePushSubscription = async function(playerId) {
         const { data: { user } } = await App.supabase.auth.getUser();
         if (!user) throw new Error('User not authenticated');
         
-        // Сохраняем токен через Supabase
         if (App.supa.savePushToken) {
             await App.supa.savePushToken(playerId);
         } else {
@@ -378,7 +377,6 @@ App.ui.pages.populateSettingsFields = async function() {
         App.ui.pages.renderPremiumBlock();
     }
 
-    // ВОССТАНОВЛЕНА КАРТОЧКА УВЕДОМЛЕНИЙ С PUSH
     notificationsContainer.innerHTML = `
         <div class="card">
             <h3><i data-lucide="bell"></i> Уведомления</h3>
@@ -743,7 +741,7 @@ App.ui.pages.renderPinSettings = async function() {
     App.initIcons();
 };
 
-// ==================== PUSH-УВЕДОМЛЕНИЯ (ВОССТАНОВЛЕНА ФУНКЦИЯ) ====================
+// ==================== PUSH-УВЕДОМЛЕНИЯ ====================
 App.ui.pages.subscribeToPush = async function() {
     if (!('Notification' in window)) {
         App.ui.alertModal('Push-уведомления не поддерживаются вашим браузером.');
@@ -776,7 +774,7 @@ App.ui.pages.subscribeToPush = async function() {
                 
                 // ⚠️ ВАЖНО: замените этот ключ на реальный VAPID-ключ из вашего проекта Firebase!
                 // Ключ можно получить в настройках проекта -> Cloud Messaging -> Web configuration
-                const vapidKey = 'ВАШ_НАСТОЯЩИЙ_VAPID_КЛЮЧ_ИЗ_FIREBASE';
+                const vapidKey = 'BEUVrsWau5E4NvAwwAKmkjfK8yoDVntppWmZ2IdqseLVxuNNy47bV7eOLVYDmZ1b2P3F27eRqJLoAjW58Fh0tyY';
                 
                 const token = await messaging.getToken({ vapidKey });
                 
