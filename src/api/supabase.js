@@ -233,7 +233,7 @@ App.supa.loadMileageHistory = function() {
     }), 3, 500, 'loadMileageHistory');
 };
 
-// ========== СОХРАНЕНИЕ ДАННЫХ (С ПРОВЕРКОЙ userId И carId) ==========
+// ========== СОХРАНЕНИЕ ДАННЫХ (БЕЗ ПОВТОРНОЙ ВСТАВКИ) ==========
 App.supa.saveOperation = async function(op) {
     console.log('[Supabase] saveOperation вызван:', op);
     const userId = await App.supa.getCurrentUserId();
@@ -262,10 +262,8 @@ App.supa.saveOperation = async function(op) {
         result = await App.supa.insertRow('operations', record);
     }
     
-    // Если вставка прошла, но данные не вернулись – пытаемся получить запись по id
     if (result.error) throw result.error;
     if (!result.data || result.data.length === 0) {
-        console.log('[Supabase] Данные не вернулись, пытаемся получить запись по id:', record.id);
         const { data: fetched, error: fetchError } = await App.supabase
             .from('operations')
             .select('*')
@@ -275,15 +273,8 @@ App.supa.saveOperation = async function(op) {
             console.warn('[Supabase] Не удалось получить запись:', fetchError);
         } else if (fetched) {
             result.data = [fetched];
-            console.log('[Supabase] Запись получена:', fetched);
         } else {
-            // Если не найдена – возможно, id не подошёл (тип не uuid), пробуем вставить без id
-            console.log('[Supabase] Запись не найдена, пробуем вставить без id');
-            const recordWithoutId = { ...record };
-            delete recordWithoutId.id;
-            const { data: retryData, error: retryError } = await App.supa.insertRow('operations', recordWithoutId);
-            if (retryError) throw retryError;
-            result.data = retryData;
+            console.warn('[Supabase] Запись не найдена после вставки, возможно, проблема с RLS или типом id');
         }
     }
     console.log('[Supabase] saveOperation результат:', result);
@@ -329,14 +320,59 @@ App.supa.saveFuelRecord = async function(record) {
         } else if (fetched) {
             result.data = [fetched];
         } else {
-            const recordWithoutId = { ...data };
-            delete recordWithoutId.id;
-            const { data: retryData, error: retryError } = await App.supa.insertRow('fuel_log', recordWithoutId);
-            if (retryError) throw retryError;
-            result.data = retryData;
+            console.warn('[Supabase] Запись fuel_log не найдена после вставки');
         }
     }
     console.log('[Supabase] saveFuelRecord результат:', result);
+    return result;
+};
+
+App.supa.saveTireRecord = async function(record) {
+    console.log('[Supabase] saveTireRecord вызван:', record);
+    const userId = await App.supa.getCurrentUserId();
+    if (!userId) throw new Error('User not authenticated');
+    const carId = record.car_id || App.store.activeCarId;
+    if (!carId) throw new Error('No car_id');
+    
+    const data = {
+        id: record.id || crypto.randomUUID(),
+        date: record.date,
+        type: record.type,
+        mileage: record.mileage,
+        model: record.model || '',
+        size: record.size || '',
+        wear: record.wear || '',
+        notes: record.notes || '',
+        purchase_cost: record.purchaseCost || 0,
+        mount_cost: record.mountCost || 0,
+        is_diy: record.isDIY || false,
+        user_id: userId,
+        car_id: carId
+    };
+    
+    let result;
+    if (record.id) {
+        result = await App.supa.updateRow('tires', record.id, data);
+    } else {
+        result = await App.supa.insertRow('tires', data);
+    }
+    
+    if (result.error) throw result.error;
+    if (!result.data || result.data.length === 0) {
+        const { data: fetched, error: fetchError } = await App.supabase
+            .from('tires')
+            .select('*')
+            .eq('id', data.id)
+            .maybeSingle();
+        if (fetchError) {
+            console.warn('[Supabase] Не удалось получить запись tires:', fetchError);
+        } else if (fetched) {
+            result.data = [fetched];
+        } else {
+            console.warn('[Supabase] Запись tires не найдена после вставки');
+        }
+    }
+    console.log('[Supabase] saveTireRecord результат:', result);
     return result;
 };
 
@@ -384,67 +420,10 @@ App.supa.savePart = async function(part) {
         } else if (fetched) {
             result.data = [fetched];
         } else {
-            const recordWithoutId = { ...data };
-            delete recordWithoutId.id;
-            const { data: retryData, error: retryError } = await App.supa.insertRow('parts', recordWithoutId);
-            if (retryError) throw retryError;
-            result.data = retryData;
+            console.warn('[Supabase] Запись parts не найдена после вставки');
         }
     }
     console.log('[Supabase] savePart результат:', result);
-    return result;
-};
-
-App.supa.saveTireRecord = async function(record) {
-    console.log('[Supabase] saveTireRecord вызван:', record);
-    const userId = await App.supa.getCurrentUserId();
-    if (!userId) throw new Error('User not authenticated');
-    const carId = record.car_id || App.store.activeCarId;
-    if (!carId) throw new Error('No car_id');
-    
-    const data = {
-        id: record.id || crypto.randomUUID(),
-        date: record.date,
-        type: record.type,
-        mileage: record.mileage,
-        model: record.model || '',
-        size: record.size || '',
-        wear: record.wear || '',
-        notes: record.notes || '',
-        purchase_cost: record.purchaseCost || 0,
-        mount_cost: record.mountCost || 0,
-        is_diy: record.isDIY || false,
-        user_id: userId,
-        car_id: carId
-    };
-    
-    let result;
-    if (record.id) {
-        result = await App.supa.updateRow('tires', record.id, data);
-    } else {
-        result = await App.supa.insertRow('tires', data);
-    }
-    
-    if (result.error) throw result.error;
-    if (!result.data || result.data.length === 0) {
-        const { data: fetched, error: fetchError } = await App.supabase
-            .from('tires')
-            .select('*')
-            .eq('id', data.id)
-            .maybeSingle();
-        if (fetchError) {
-            console.warn('[Supabase] Не удалось получить запись tires:', fetchError);
-        } else if (fetched) {
-            result.data = [fetched];
-        } else {
-            const recordWithoutId = { ...data };
-            delete recordWithoutId.id;
-            const { data: retryData, error: retryError } = await App.supa.insertRow('tires', recordWithoutId);
-            if (retryError) throw retryError;
-            result.data = retryData;
-        }
-    }
-    console.log('[Supabase] saveTireRecord результат:', result);
     return result;
 };
 
@@ -489,11 +468,7 @@ App.supa.saveHistoryRecord = async function(record) {
         } else if (fetched) {
             result.data = [fetched];
         } else {
-            const recordWithoutId = { ...data };
-            delete recordWithoutId.id;
-            const { data: retryData, error: retryError } = await App.supa.insertRow('history', recordWithoutId);
-            if (retryError) throw retryError;
-            result.data = retryData;
+            console.warn('[Supabase] Запись history не найдена после вставки');
         }
     }
     console.log('[Supabase] saveHistoryRecord результат:', result);
@@ -503,16 +478,12 @@ App.supa.saveHistoryRecord = async function(record) {
 App.supa.addMileageRecord = async function(date, mileage, motohours, carId) {
     console.log('[Supabase] addMileageRecord: date=' + date + ', mileage=' + mileage + ', motohours=' + motohours + ', carId=' + carId);
     const userId = await App.supa.getCurrentUserId();
-    if (!userId) {
-        console.error('[Supabase] addMileageRecord: Нет userId');
-        throw new Error('User not authenticated');
-    }
+    if (!userId) throw new Error('User not authenticated');
     const effectiveCarId = carId || App.store.activeCarId;
-    if (!effectiveCarId) {
-        console.error('[Supabase] addMileageRecord: Нет carId');
-        throw new Error('No car_id');
-    }
+    if (!effectiveCarId) throw new Error('No car_id');
+    
     const record = {
+        id: crypto.randomUUID(),
         date: date,
         mileage: mileage,
         motohours: motohours || 0,
@@ -520,9 +491,20 @@ App.supa.addMileageRecord = async function(date, mileage, motohours, carId) {
         car_id: effectiveCarId
     };
     const result = await App.supa.insertRow('mileage_log', record);
-    if (result.error) {
-        console.error('[Supabase] addMileageRecord ошибка:', result.error);
-        throw result.error;
+    if (result.error) throw result.error;
+    if (!result.data || result.data.length === 0) {
+        const { data: fetched, error: fetchError } = await App.supabase
+            .from('mileage_log')
+            .select('*')
+            .eq('id', record.id)
+            .maybeSingle();
+        if (fetchError) {
+            console.warn('[Supabase] Не удалось получить запись mileage_log:', fetchError);
+        } else if (fetched) {
+            result.data = [fetched];
+        } else {
+            console.warn('[Supabase] Запись mileage_log не найдена после вставки');
+        }
     }
     return result;
 };
@@ -606,6 +588,7 @@ App.supa.addCarDocument = async function(doc) {
     const userId = await App.supa.getCurrentUserId();
     if (!userId) throw new Error('Not authenticated');
     const record = {
+        id: crypto.randomUUID(),
         car_id: App.store.activeCarId,
         user_id: userId,
         type: doc.type,
@@ -649,7 +632,8 @@ App.supa.createCar = function(name) {
     return App.supa.getCurrentUserId().then(userId => {
         if (!userId) throw new Error('Not authenticated');
         ensureSupabase();
-        return App.supabase.from('cars').insert({ user_id: userId, name }).select().single();
+        const record = { id: crypto.randomUUID(), user_id: userId, name };
+        return App.supabase.from('cars').insert(record).select().single();
     });
 };
 
@@ -665,7 +649,7 @@ App.supa.renameCar = function(carId, newName) {
 
 App.supa.inviteUserToCar = function(carId, email) {
     ensureSupabase();
-    return App.supabase.from('car_shares').insert({ car_id: carId, invited_email: email }).select().single();
+    return App.supabase.from('car_shares').insert({ id: crypto.randomUUID(), car_id: carId, invited_email: email }).select().single();
 };
 
 App.supa.getPendingInvites = function() {
@@ -767,21 +751,15 @@ App.supa.createCalendarToken = async function(carId) {
 App.supa.createInviteLink = async function(carId) {
     const userId = await App.supa.getCurrentUserId();
     if (!userId) throw new Error('Пользователь не авторизован');
-    try {
-        const { data, error } = await App.supabase
-            .from('car_shares')
-            .insert({ car_id: carId, invited_email: null })
-            .select('invite_code')
-            .single();
-        if (error) throw error;
-        if (!data || !data.invite_code) throw new Error('Не удалось получить invite_code');
-        const inviteCode = data.invite_code;
-        const link = window.location.origin + '/Car-K3eper/?invite=' + inviteCode;
-        return link;
-    } catch (err) {
-        console.error('[Supabase] createInviteLink error:', err);
-        throw err;
-    }
+    const { data, error } = await App.supabase
+        .from('car_shares')
+        .insert({ id: crypto.randomUUID(), car_id: carId, invited_email: null })
+        .select('invite_code')
+        .single();
+    if (error) throw error;
+    if (!data || !data.invite_code) throw new Error('Не удалось получить invite_code');
+    const inviteCode = data.invite_code;
+    return window.location.origin + '/Car-K3eper/?invite=' + inviteCode;
 };
 
 // Страховка
