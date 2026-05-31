@@ -623,4 +623,100 @@ App.storage.loadAllData = async function() {
     if (App.events.currentActiveTab) {
     App.events.switchToTab(App.events.currentActiveTab);
 }
+    // ========== АВТОМОБИЛИ (офлайн-поддержка) ==========
+App.storage.saveCar = async function(car) {
+    const carWithId = { ...car };
+    if (!carWithId.id) carWithId.id = crypto.randomUUID();
+    if (!navigator.onLine) {
+        await queueAction({
+            type: 'save',
+            entityType: 'car',
+            entityId: carWithId.id,
+            data: carWithId
+        });
+        await App.db.put('cars', carWithId);
+        App.store.cars.push(carWithId);
+        App.toast('Автомобиль сохранён локально', 'warning');
+        return carWithId;
+    }
+    try {
+        const userId = await App.supa.getCurrentUserId();
+        if (!userId) throw new Error('User not authenticated');
+        const record = { ...carWithId, user_id: userId };
+        const { data, error } = await App.supabase
+            .from('cars')
+            .upsert(record, { onConflict: 'id' })
+            .select()
+            .single();
+        if (error) throw error;
+        const finalCar = { ...data, user_id: userId };
+        await App.db.put('cars', finalCar);
+        const idx = App.store.cars.findIndex(c => c.id == finalCar.id);
+        if (idx !== -1) App.store.cars[idx] = finalCar;
+        else App.store.cars.push(finalCar);
+        App.toast('Автомобиль сохранён', 'success');
+        return finalCar;
+    } catch (err) {
+        App.toast('Ошибка сохранения автомобиля', 'error');
+        return null;
+    }
+};
+
+App.storage.deleteCar = async function(carId) {
+    if (!navigator.onLine) {
+        await queueAction({
+            type: 'delete',
+            entityType: 'car',
+            entityId: carId,
+            data: { id: carId }
+        });
+        await App.db.delete('cars', carId);
+        App.store.cars = App.store.cars.filter(c => c.id != carId);
+        App.toast('Удаление сохранено локально', 'warning');
+        return true;
+    }
+    try {
+        await App.supabase.from('cars').delete().eq('id', carId);
+        await App.db.delete('cars', carId);
+        App.store.cars = App.store.cars.filter(c => c.id != carId);
+        return true;
+    } catch (err) {
+        App.toast('Ошибка удаления автомобиля', 'error');
+        return false;
+    }
+};
+
+App.storage.renameCar = async function(carId, newName) {
+    if (!navigator.onLine) {
+        const car = App.store.cars.find(c => c.id == carId);
+        if (car) {
+            const updatedCar = { ...car, name: newName };
+            await queueAction({
+                type: 'save',
+                entityType: 'car',
+                entityId: carId,
+                data: updatedCar
+            });
+            await App.db.put('cars', updatedCar);
+            car.name = newName;
+            App.toast('Переименование сохранено локально', 'warning');
+            return true;
+        }
+        return false;
+    }
+    try {
+        const { error } = await App.supabase
+            .from('cars')
+            .update({ name: newName })
+            .eq('id', carId);
+        if (error) throw error;
+        const car = App.store.cars.find(c => c.id == carId);
+        if (car) car.name = newName;
+        await App.db.put('cars', car);
+        return true;
+    } catch (err) {
+        App.toast('Ошибка переименования автомобиля', 'error');
+        return false;
+    }
+};
 };
