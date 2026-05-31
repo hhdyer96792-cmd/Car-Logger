@@ -54,6 +54,90 @@ function refreshUIToHistory() {
     if (typeof App.ui.pages.renderDashboard === 'function') App.ui.pages.renderDashboard();
 }
 
+// ========== ДОКУМЕНТЫ АВТОМОБИЛЯ (с офлайн-поддержкой) ==========
+App.storage.addCarDocument = async function(doc) {
+    const carId = App.store.activeCarId;
+    if (!carId) {
+        App.toast('Ошибка: не выбран автомобиль', 'error');
+        return null;
+    }
+    const docWithCarId = { ...doc, car_id: carId };
+    if (!docWithCarId.id) docWithCarId.id = crypto.randomUUID();
+    if (!navigator.onLine) {
+        await queueAction({
+            type: 'save',
+            entityType: 'car_document',
+            entityId: docWithCarId.id,
+            data: docWithCarId
+        });
+        await App.db.put('car_documents', docWithCarId);
+        App.toast('Документ сохранён локально', 'warning');
+        return docWithCarId;
+    }
+    try {
+        const newDoc = await App.supa.addCarDocument(doc);
+        const finalDoc = { ...newDoc, car_id: carId };
+        await App.db.put('car_documents', finalDoc);
+        return finalDoc;
+    } catch (err) {
+        App.toast('Ошибка сохранения документа', 'error');
+        return null;
+    }
+};
+
+App.storage.deleteCarDocument = async function(docId) {
+    if (!navigator.onLine) {
+        await queueAction({
+            type: 'delete',
+            entityType: 'car_document',
+            entityId: docId,
+            data: { id: docId }
+        });
+        await App.db.delete('car_documents', docId);
+        App.toast('Удаление документа сохранено локально', 'warning');
+        return true;
+    }
+    try {
+        await App.supa.deleteCarDocument(docId);
+        await App.db.delete('car_documents', docId);
+        return true;
+    } catch (err) {
+        App.toast('Ошибка удаления документа', 'error');
+        return false;
+    }
+};
+
+// ========== ОСНОВНЫЕ ПАРАМЕТРЫ АВТОМОБИЛЯ (офлайн) ==========
+App.storage.saveVehicleStateAndSettings = async function(state, settings) {
+    const carId = App.store.activeCarId;
+    if (!carId) {
+        App.toast('Нет активного автомобиля', 'error');
+        return;
+    }
+    const data = { car_id: carId, ...state, ...settings };
+    if (!navigator.onLine) {
+        await queueAction({
+            type: 'save',
+            entityType: 'car_state_settings',
+            entityId: carId,
+            data: data
+        });
+        Object.assign(App.store.settings, state, settings);
+        await App.db.put('car_settings', { ...App.store.settings, car_id: carId });
+        App.toast('Параметры сохранены локально', 'warning');
+        return;
+    }
+    try {
+        await App.supa.saveVehicleState(state);
+        await App.supa.saveUserSettings(settings);
+        Object.assign(App.store.settings, state, settings);
+        await App.db.put('car_settings', { ...App.store.settings, car_id: carId });
+        App.toast('Параметры сохранены', 'success');
+    } catch (err) {
+        App.toast('Ошибка сохранения параметров', 'error');
+    }
+};
+
 // ========== ОПЕРАЦИИ ==========
 App.storage.saveOperation = async function(op) {
     const carId = App.store.activeCarId;
