@@ -24,36 +24,98 @@ App.ui.pages.loadCarDocuments = async function() {
     return App.ui.pages._carDocuments;
 };
 
-App.ui.pages.addCarDocument = async function(doc) {
-    if (!App.store.activeCarId) return null;
-    const newDoc = await App.storage.addCarDocument(doc);
-    if (newDoc) {
-        App.ui.pages._carDocuments.unshift({
-            id: newDoc.id,
-            type: newDoc.type,
-            date: newDoc.date,
-            photoUrl: newDoc.photoUrl,
-            amount: newDoc.amount,
-            notes: newDoc.notes || ''
-        });
-        if (App.store.isPremium && typeof App.modules.load === 'function') {
-            App.modules.load('premium/imageCache', true).then(imageCache => {
-                if (imageCache?.cachePhotoAfterUpload) {
-                    imageCache.cachePhotoAfterUpload(newDoc.photoUrl).catch(console.warn);
-                }
-            }).catch(console.warn);
-        }
-        return newDoc;
+App.ui.pages.addCar = async function() {
+    const name = await App.ui.promptModalAsync('Название автомобиля', 'Мой автомобиль');
+    if (!name) return;
+    const userId = await App.ui.pages._getUserIdSafe();
+    if (!userId) {
+        App.toast('Пользователь не авторизован', 'error');
+        return;
     }
-    return null;
+    const newCar = await App.storage.saveCar({ name, user_id: userId });
+    if (newCar) {
+        App.store.setActiveCar(newCar.id);
+        App.ui.pages.renderCarSelector();
+        App.ui.pages.updateCarSelectorOnCarTab();
+        if (typeof App.ui.pages.renderCarTab === 'function') App.ui.pages.renderCarTab();
+        App.toast('Автомобиль добавлен', 'success');
+    }
 };
 
-App.ui.pages.deleteCarDocument = async function(docId) {
-    const success = await App.storage.deleteCarDocument(docId);
-    if (success) {
-        App.ui.pages._carDocuments = App.ui.pages._carDocuments.filter(d => d.id !== docId);
+App.ui.pages.renameCar = async function() {
+    const carId = App.store.activeCarId;
+    if (!carId) { App.toast('Нет выбранного автомобиля', 'warning'); return; }
+    const userId = await App.ui.pages._getUserIdSafe();
+    const car = App.store.cars.find(c => c.id == carId);
+    if (!car || car.user_id !== userId) {
+        App.toast('Только владелец может переименовывать автомобиль', 'warning');
+        return;
     }
-    return success;
+    const newName = await App.ui.promptModalAsync('Новое название', car.name);
+    if (!newName || newName === car.name) return;
+    const success = await App.storage.renameCar(carId, newName);
+    if (success) {
+        App.ui.pages.renderCarSelector();
+        App.ui.pages.updateCarSelectorOnCarTab();
+        if (typeof App.ui.pages.renderCarTab === 'function') App.ui.pages.renderCarTab();
+        App.toast('Название обновлено', 'success');
+    }
+};
+
+App.ui.pages.deleteCar = async function() {
+    const carId = App.store.activeCarId;
+    if (!carId) { App.toast('Нет выбранного автомобиля', 'warning'); return; }
+    const userId = await App.ui.pages._getUserIdSafe();
+    const car = App.store.cars.find(c => c.id == carId);
+    if (!car || car.user_id !== userId) {
+        App.toast('Только владелец может удалять автомобиль', 'warning');
+        return;
+    }
+    const confirmed = await App.ui.confirmModalAsync('Удалить автомобиль и все его данные? Это действие необратимо.');
+    if (!confirmed) return;
+    const success = await App.storage.deleteCar(carId);
+    if (success) {
+        App.store.cars = App.store.cars.filter(c => c.id != carId);
+        if (App.store.cars.length > 0) {
+            App.store.setActiveCar(App.store.cars[0].id);
+        } else {
+            App.store.activeCarId = null;
+            localStorage.removeItem('vesta_active_car_id');
+        }
+        App.ui.pages.renderCarSelector();
+        App.ui.pages.updateCarSelectorOnCarTab();
+        App.storage.loadAllData().then(() => {
+            if (typeof App.renderAll === 'function') App.renderAll();
+        });
+        App.toast('Автомобиль удалён', 'success');
+    }
+};
+
+// Убедитесь, что эта функция существует и вызывается при обновлении списка авто
+App.ui.pages.updateCarSelectorOnCarTab = function() {
+    const selector = document.getElementById('car-page-selector');
+    if (!selector) return;
+    if (!App.store.cars || App.store.cars.length === 0) {
+        selector.innerHTML = '<option value="">-- Нет автомобилей --</option>';
+        return;
+    }
+    let html = '';
+    App.store.cars.forEach(car => {
+        const selected = (car.id === App.store.activeCarId) ? ' selected' : '';
+        html += `<option value="${car.id}"${selected}>${App.utils.escapeHtml(car.name)}</option>`;
+    });
+    selector.innerHTML = html;
+    
+    const newSelector = selector.cloneNode(true);
+    selector.parentNode.replaceChild(newSelector, selector);
+    newSelector.addEventListener('change', (e) => {
+        const carId = e.target.value;
+        if (carId) {
+            App.store.setActiveCar(carId);
+            if (typeof App.storage.loadAllData === 'function') App.storage.loadAllData();
+        }
+    });
+    App.initIcons();
 };
 
 /* ========== РЕНДЕР СЕЛЕКТОРА АВТОМОБИЛЯ ========== */
