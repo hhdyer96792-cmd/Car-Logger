@@ -193,6 +193,8 @@ App.db.sync._executeDelete = async function(action) {
         case 'tire': tableName = 'tires'; break;
         case 'part': tableName = 'parts'; break;
         case 'history': tableName = 'history'; break;
+        case 'car': tableName = 'cars'; break;
+        case 'car_document': tableName = 'car_documents'; break;
         default: throw new Error(`Unknown entityType for delete: ${entityType}`);
     }
     
@@ -214,12 +216,14 @@ App.db.sync._executeDelete = async function(action) {
     
     await App.db.delete(tableName, entityId);
     const storeKey = {
-        'operations': 'operations',
-        'fuel_log': 'fuelLog',
-        'tires': 'tireLog',
-        'parts': 'parts',
-        'history': 'serviceRecords'
-    }[tableName];
+    'operations': 'operations',
+    'fuel_log': 'fuelLog',
+    'tires': 'tireLog',
+    'parts': 'parts',
+    'history': 'serviceRecords',
+    'cars': 'cars',
+    'car_documents': 'carDocuments'
+}[tableName];
     if (storeKey && App.store[storeKey]) {
         App.store[storeKey] = App.store[storeKey].filter(i => i.id != entityId);
     }
