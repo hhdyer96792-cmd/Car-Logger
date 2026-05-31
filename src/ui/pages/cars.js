@@ -26,8 +26,8 @@ App.ui.pages.loadCarDocuments = async function() {
 
 App.ui.pages.addCarDocument = async function(doc) {
     if (!App.store.activeCarId) return null;
-    try {
-        const newDoc = await App.supa.addCarDocument(doc);
+    const newDoc = await App.storage.addCarDocument(doc);
+    if (newDoc) {
         App.ui.pages._carDocuments.unshift({
             id: newDoc.id,
             type: newDoc.type,
@@ -38,39 +38,22 @@ App.ui.pages.addCarDocument = async function(doc) {
         });
         if (App.store.isPremium && typeof App.modules.load === 'function') {
             App.modules.load('premium/imageCache', true).then(imageCache => {
-                if (imageCache && imageCache.cachePhotoAfterUpload) {
+                if (imageCache?.cachePhotoAfterUpload) {
                     imageCache.cachePhotoAfterUpload(newDoc.photoUrl).catch(console.warn);
                 }
-            }).catch(err => console.warn('[ImageCache] Failed to load module:', err));
+            }).catch(console.warn);
         }
         return newDoc;
-    } catch (e) {
-        console.error('Ошибка добавления документа:', e);
-        return null;
     }
-};
-
-App.ui.pages.updateCarDocument = async function(docId, updates) {
-    try {
-        await App.supa.updateCarDocument(docId, updates);
-        const idx = App.ui.pages._carDocuments.findIndex(d => d.id === docId);
-        if (idx !== -1) Object.assign(App.ui.pages._carDocuments[idx], updates);
-        return true;
-    } catch (e) {
-        console.error('Ошибка обновления документа:', e);
-        return false;
-    }
+    return null;
 };
 
 App.ui.pages.deleteCarDocument = async function(docId) {
-    try {
-        await App.supa.deleteCarDocument(docId);
+    const success = await App.storage.deleteCarDocument(docId);
+    if (success) {
         App.ui.pages._carDocuments = App.ui.pages._carDocuments.filter(d => d.id !== docId);
-        return true;
-    } catch (e) {
-        console.error('Ошибка удаления документа:', e);
-        return false;
     }
+    return success;
 };
 
 /* ========== РЕНДЕР СЕЛЕКТОРА АВТОМОБИЛЯ ========== */
