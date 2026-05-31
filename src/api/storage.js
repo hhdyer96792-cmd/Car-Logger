@@ -114,23 +114,23 @@ App.storage.saveVehicleStateAndSettings = async function(state, settings) {
         App.toast('Нет активного автомобиля', 'error');
         return;
     }
-    const data = { car_id: carId, ...state, ...settings };
+    // Приводим к строкам
+    const cleanState = { ...state };
+    if (cleanState.plateNumber && typeof cleanState.plateNumber !== 'string') cleanState.plateNumber = String(cleanState.plateNumber);
+    if (cleanState.vin && typeof cleanState.vin !== 'string') cleanState.vin = String(cleanState.vin);
+    
+    const data = { car_id: carId, ...cleanState, ...settings };
     if (!navigator.onLine) {
-        await queueAction({
-            type: 'save',
-            entityType: 'car_state_settings',
-            entityId: carId,
-            data: data
-        });
-        Object.assign(App.store.settings, state, settings);
+        await queueAction({ type: 'save', entityType: 'car_state_settings', entityId: carId, data });
+        Object.assign(App.store.settings, cleanState, settings);
         await App.db.put('car_settings', { ...App.store.settings, car_id: carId });
         App.toast('Параметры сохранены локально', 'warning');
         return;
     }
     try {
-        await App.supa.saveVehicleState(state);
+        await App.supa.saveVehicleState(cleanState);
         await App.supa.saveUserSettings(settings);
-        Object.assign(App.store.settings, state, settings);
+        Object.assign(App.store.settings, cleanState, settings);
         await App.db.put('car_settings', { ...App.store.settings, car_id: carId });
         App.toast('Параметры сохранены', 'success');
     } catch (err) {
