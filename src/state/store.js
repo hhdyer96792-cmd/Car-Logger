@@ -334,23 +334,26 @@ App.store = {
     saveCalendarCache: function() {},
 
     setActiveCar: function(carId) {
-        if (this.activeCarId === carId) return;
-        this.activeCarId = carId;
-        localStorage.setItem('vesta_active_car_id', carId);
-        this.loadFromIndexedDB().catch(console.error);
-        if (typeof App.storage.loadSettingsForCar === 'function') {
-            App.storage.loadSettingsForCar(carId).then(() => {
-                if (typeof App.ui.pages.renderDashboard === 'function') App.ui.pages.renderDashboard();
-                if (typeof App.ui.pages.renderTOStats === 'function') App.ui.pages.renderTOStats();
-                if (typeof App.ui.pages.renderTotalCost === 'function') App.ui.pages.renderTotalCost();
-                if (typeof App.ui.pages.renderFinanceTab === 'function') App.ui.pages.renderFinanceTab();
-                if (typeof App.ui.pages.renderTOTable === 'function') App.ui.pages.renderTOTable();
-                if (typeof App.renderAll === 'function') App.renderAll();
-            }).catch(console.error);
-        } else {
-            if (typeof App.ui.pages.renderDashboard === 'function') App.ui.pages.renderDashboard();
-        }
-    },
+    if (this.activeCarId === carId) return;
+    this.activeCarId = carId;
+    localStorage.setItem('vesta_active_car_id', carId);
+    
+    // Загружаем данные для нового автомобиля из IndexedDB
+    this.loadFromIndexedDB().catch(console.error);
+    
+    // Загружаем настройки для этого автомобиля
+    if (typeof App.storage.loadSettingsForCar === 'function') {
+        App.storage.loadSettingsForCar(carId).then(() => {
+            // Обновляем UI после загрузки настроек
+            if (typeof App.renderAll === 'function') App.renderAll();
+        }).catch(console.error);
+    }
+    
+    // Если мы онлайн – подгружаем свежие данные с сервера
+    if (navigator.onLine && typeof App.storage.loadAllData === 'function') {
+        App.storage.loadAllData().catch(console.error);
+    }
+},
     
     loadCars: function() {
         const self = this;
