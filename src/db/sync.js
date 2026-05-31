@@ -76,6 +76,44 @@ App.db.sync._executeAction = async function(action) {
             tableName = 'mileage_log';
             supabaseMethod = (record) => App.supa.addMileageRecord(record.date, record.mileage, record.motohours, record.car_id);
             break;
+case 'car_document':
+    // Вставка или обновление документа
+    const { data: docData, error: docError } = await App.supabase
+        .from('car_documents')
+        .upsert(data, { onConflict: 'id' })
+        .select()
+        .single();
+    if (docError) throw docError;
+    if (docData.id !== entityId) {
+        await App.db.sync._updateLocalId(entityType, entityId, docData.id);
+    }
+    return { success: true };
+
+case 'car_state_settings':
+    // Обновляем vehicle_state и user_settings
+    await App.supa.saveVehicleState({
+        currentMileage: data.currentMileage,
+        currentMotohours: data.currentMotohours,
+        avgDailyMileage: data.avgDailyMileage,
+        avgDailyMotohours: data.avgDailyMotohours,
+        carBrand: data.carBrand,
+        carModel: data.carModel,
+        carYear: data.carYear,
+        plateNumber: data.plateNumber,
+        vin: data.vin,
+        baseMileage: data.baseMileage,
+        baseMotohours: data.baseMotohours,
+        purchaseDate: data.purchaseDate,
+        purchaseCost: data.purchaseCost
+    });
+    await App.supa.saveUserSettings({
+        telegramToken: data.telegramToken,
+        telegramChatId: data.telegramChatId,
+        notificationMethod: data.notificationMethod,
+        reminderDays: data.reminderDays
+    });
+    Object.assign(App.store.settings, data);
+    return { success: true };
         case 'car_settings':
             console.log('[Sync] Сохраняем настройки автомобиля');
             await App.supa.saveUserSettings({
