@@ -719,4 +719,3 @@ App.storage.renameCar = async function(carId, newName) {
         return false;
     }
 };
-};
