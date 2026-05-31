@@ -233,15 +233,10 @@ App.supa.loadMileageHistory = function() {
     }), 3, 500, 'loadMileageHistory');
 };
 
-// ========== СОХРАНЕНИЕ ДАННЫХ (БЕЗ ПОВТОРНОЙ ВСТАВКИ) ==========
+// ========== СОХРАНЕНИЕ С UPSERT ==========
 App.supa.saveOperation = async function(op) {
-    console.log('[Supabase] saveOperation вызван:', op);
     const userId = await App.supa.getCurrentUserId();
-    if (!userId) throw new Error('User not authenticated');
     const carId = op.car_id || App.store.activeCarId;
-    if (!carId) throw new Error('No car_id');
-    
-    // Пытаемся вставить с переданным ID (если есть)
     const record = {
         id: op.id || crypto.randomUUID(),
         category: op.category,
@@ -255,50 +250,18 @@ App.supa.saveOperation = async function(op) {
         user_id: userId,
         car_id: carId
     };
-    
-    let result;
-    if (op.id) {
-        result = await App.supa.updateRow('operations', op.id, record);
-    } else {
-        result = await App.supa.insertRow('operations', record);
-    }
-    
-    if (result.error) throw result.error;
-    
-    // Если данные не вернулись – пробуем получить запись по ID
-    if (!result.data || result.data.length === 0) {
-        const { data: fetched, error: fetchError } = await App.supabase
-            .from('operations')
-            .select('*')
-            .eq('id', record.id)
-            .maybeSingle();
-        if (fetchError || !fetched) {
-            // Если не найдена – возможно, ID не подошёл (например, строка вместо UUID)
-            // Пробуем вставить без указания ID, пусть БД сама сгенерирует
-            console.warn('[Supabase] Запись не найдена, пробуем вставить без ID');
-            const { id: _, ...recordWithoutId } = record;
-            const insertResult = await App.supabase
-                .from('operations')
-                .insert(recordWithoutId)
-                .select()
-                .single();
-            if (insertResult.error) throw insertResult.error;
-            result.data = [insertResult.data];
-        } else {
-            result.data = [fetched];
-        }
-    }
-    console.log('[Supabase] saveOperation результат:', result);
-    return result;
+    const { data, error } = await App.supabase
+        .from('operations')
+        .upsert(record, { onConflict: 'id' })
+        .select()
+        .single();
+    if (error) throw error;
+    return { data: [data], error: null };
 };
 
 App.supa.saveFuelRecord = async function(record) {
-    console.log('[Supabase] saveFuelRecord вызван:', record);
     const userId = await App.supa.getCurrentUserId();
-    if (!userId) throw new Error('User not authenticated');
     const carId = record.car_id || App.store.activeCarId;
-    if (!carId) throw new Error('No car_id');
-    
     const data = {
         id: record.id || crypto.randomUUID(),
         date: record.date,
@@ -311,45 +274,18 @@ App.supa.saveFuelRecord = async function(record) {
         user_id: userId,
         car_id: carId
     };
-    
-    let result;
-    if (record.id) {
-        result = await App.supa.updateRow('fuel_log', record.id, data);
-    } else {
-        result = await App.supa.insertRow('fuel_log', data);
-    }
-    
-    if (result.error) throw result.error;
-    if (!result.data || result.data.length === 0) {
-        const { data: fetched, error: fetchError } = await App.supabase
-            .from('fuel_log')
-            .select('*')
-            .eq('id', data.id)
-            .maybeSingle();
-        if (fetchError || !fetched) {
-            const { id: _, ...recordWithoutId } = data;
-            const insertResult = await App.supabase
-                .from('fuel_log')
-                .insert(recordWithoutId)
-                .select()
-                .single();
-            if (insertResult.error) throw insertResult.error;
-            result.data = [insertResult.data];
-        } else {
-            result.data = [fetched];
-        }
-    }
-    console.log('[Supabase] saveFuelRecord результат:', result);
-    return result;
+    const { data: result, error } = await App.supabase
+        .from('fuel_log')
+        .upsert(data, { onConflict: 'id' })
+        .select()
+        .single();
+    if (error) throw error;
+    return { data: [result], error: null };
 };
 
 App.supa.saveTireRecord = async function(record) {
-    console.log('[Supabase] saveTireRecord вызван:', record);
     const userId = await App.supa.getCurrentUserId();
-    if (!userId) throw new Error('User not authenticated');
     const carId = record.car_id || App.store.activeCarId;
-    if (!carId) throw new Error('No car_id');
-    
     const data = {
         id: record.id || crypto.randomUUID(),
         date: record.date,
@@ -365,45 +301,18 @@ App.supa.saveTireRecord = async function(record) {
         user_id: userId,
         car_id: carId
     };
-    
-    let result;
-    if (record.id) {
-        result = await App.supa.updateRow('tires', record.id, data);
-    } else {
-        result = await App.supa.insertRow('tires', data);
-    }
-    
-    if (result.error) throw result.error;
-    if (!result.data || result.data.length === 0) {
-        const { data: fetched, error: fetchError } = await App.supabase
-            .from('tires')
-            .select('*')
-            .eq('id', data.id)
-            .maybeSingle();
-        if (fetchError || !fetched) {
-            const { id: _, ...recordWithoutId } = data;
-            const insertResult = await App.supabase
-                .from('tires')
-                .insert(recordWithoutId)
-                .select()
-                .single();
-            if (insertResult.error) throw insertResult.error;
-            result.data = [insertResult.data];
-        } else {
-            result.data = [fetched];
-        }
-    }
-    console.log('[Supabase] saveTireRecord результат:', result);
-    return result;
+    const { data: result, error } = await App.supabase
+        .from('tires')
+        .upsert(data, { onConflict: 'id' })
+        .select()
+        .single();
+    if (error) throw error;
+    return { data: [result], error: null };
 };
 
 App.supa.savePart = async function(part) {
-    console.log('[Supabase] savePart вызван:', part);
     const userId = await App.supa.getCurrentUserId();
-    if (!userId) throw new Error('User not authenticated');
     const carId = part.car_id || App.store.activeCarId;
-    if (!carId) throw new Error('No car_id');
-    
     const data = {
         id: part.id || crypto.randomUUID(),
         operation: part.operation || '',
@@ -419,47 +328,18 @@ App.supa.savePart = async function(part) {
         user_id: userId,
         car_id: carId
     };
-    
-    let result;
-    if (part.id && part.id !== part.uuid) {
-        result = await App.supa.updateRow('parts', part.uuid || part.id, data);
-    } else if (part.id) {
-        result = await App.supa.updateRow('parts', part.id, data);
-    } else {
-        result = await App.supa.insertRow('parts', data);
-    }
-    
-    if (result.error) throw result.error;
-    if (!result.data || result.data.length === 0) {
-        const { data: fetched, error: fetchError } = await App.supabase
-            .from('parts')
-            .select('*')
-            .eq('id', data.id)
-            .maybeSingle();
-        if (fetchError || !fetched) {
-            const { id: _, ...recordWithoutId } = data;
-            const insertResult = await App.supabase
-                .from('parts')
-                .insert(recordWithoutId)
-                .select()
-                .single();
-            if (insertResult.error) throw insertResult.error;
-            result.data = [insertResult.data];
-        } else {
-            result.data = [fetched];
-        }
-    }
-    console.log('[Supabase] savePart результат:', result);
-    return result;
+    const { data: result, error } = await App.supabase
+        .from('parts')
+        .upsert(data, { onConflict: 'id' })
+        .select()
+        .single();
+    if (error) throw error;
+    return { data: [result], error: null };
 };
 
 App.supa.saveHistoryRecord = async function(record) {
-    console.log('[Supabase] saveHistoryRecord вызван:', record);
     const userId = await App.supa.getCurrentUserId();
-    if (!userId) throw new Error('User not authenticated');
     const carId = record.car_id || App.store.activeCarId;
-    if (!carId) throw new Error('No car_id');
-    
     const data = {
         id: record.id || crypto.randomUUID(),
         operation_id: record.operation_id,
@@ -474,45 +354,18 @@ App.supa.saveHistoryRecord = async function(record) {
         user_id: userId,
         car_id: carId
     };
-    
-    let result;
-    if (record.id) {
-        result = await App.supa.updateRow('history', record.id, data);
-    } else {
-        result = await App.supa.insertRow('history', data);
-    }
-    
-    if (result.error) throw result.error;
-    if (!result.data || result.data.length === 0) {
-        const { data: fetched, error: fetchError } = await App.supabase
-            .from('history')
-            .select('*')
-            .eq('id', data.id)
-            .maybeSingle();
-        if (fetchError || !fetched) {
-            const { id: _, ...recordWithoutId } = data;
-            const insertResult = await App.supabase
-                .from('history')
-                .insert(recordWithoutId)
-                .select()
-                .single();
-            if (insertResult.error) throw insertResult.error;
-            result.data = [insertResult.data];
-        } else {
-            result.data = [fetched];
-        }
-    }
-    console.log('[Supabase] saveHistoryRecord результат:', result);
-    return result;
+    const { data: result, error } = await App.supabase
+        .from('history')
+        .upsert(data, { onConflict: 'id' })
+        .select()
+        .single();
+    if (error) throw error;
+    return { data: [result], error: null };
 };
 
 App.supa.addMileageRecord = async function(date, mileage, motohours, carId) {
-    console.log('[Supabase] addMileageRecord: date=' + date + ', mileage=' + mileage + ', motohours=' + motohours + ', carId=' + carId);
     const userId = await App.supa.getCurrentUserId();
-    if (!userId) throw new Error('User not authenticated');
     const effectiveCarId = carId || App.store.activeCarId;
-    if (!effectiveCarId) throw new Error('No car_id');
-    
     const record = {
         id: crypto.randomUUID(),
         date: date,
@@ -521,29 +374,13 @@ App.supa.addMileageRecord = async function(date, mileage, motohours, carId) {
         user_id: userId,
         car_id: effectiveCarId
     };
-    
-    let result = await App.supa.insertRow('mileage_log', record);
-    if (result.error) throw result.error;
-    if (!result.data || result.data.length === 0) {
-        const { data: fetched, error: fetchError } = await App.supabase
-            .from('mileage_log')
-            .select('*')
-            .eq('id', record.id)
-            .maybeSingle();
-        if (fetchError || !fetched) {
-            const { id: _, ...recordWithoutId } = record;
-            const insertResult = await App.supabase
-                .from('mileage_log')
-                .insert(recordWithoutId)
-                .select()
-                .single();
-            if (insertResult.error) throw insertResult.error;
-            result.data = [insertResult.data];
-        } else {
-            result.data = [fetched];
-        }
-    }
-    return result;
+    const { data: result, error } = await App.supabase
+        .from('mileage_log')
+        .upsert(record, { onConflict: 'id' })
+        .select()
+        .single();
+    if (error) throw error;
+    return { data: [result], error: null };
 };
 
 // ========== UPSERT ==========
