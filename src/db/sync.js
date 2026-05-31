@@ -104,23 +104,22 @@ App.db.sync._executeAction = async function(action) {
     }
     
     if (type === 'save' || type === 'update') {
-        try {
-            console.log(`[Sync] Вызываем supabaseMethod для ${entityType}`);
-            const result = await supabaseMethod(data);
-            console.log(`[Sync] Результат supabaseMethod:`, JSON.stringify(result));
-            if (result.error) throw result.error;
-            // Обновляем локальный ID, если сервер вернул новый
-            if (result.data && result.data[0] && result.data[0].id && result.data[0].id !== entityId) {
-                console.log(`[Sync] Обновляем локальный ID с ${entityId} на ${result.data[0].id}`);
-                await App.db.sync._updateLocalId(entityType, entityId, result.data[0].id);
-            }
-            console.log(`[Sync] Действие ${action.id} выполнено успешно`);
-            return { success: true };
-        } catch (err) {
-            console.error(`[Sync] Ошибка при выполнении ${action.id}:`, err);
-            throw err;
+    try {
+        const result = await supabaseMethod(data);
+        if (result.error) throw result.error;
+        // Проверяем, что данные реально вставлены
+        if (!result.data || result.data.length === 0) {
+            throw new Error('Сервер не вернул данные после вставки. Возможно, проблема с RLS или типом id.');
         }
+        if (result.data[0].id && result.data[0].id !== entityId) {
+            await App.db.sync._updateLocalId(entityType, entityId, result.data[0].id);
+        }
+        return { success: true };
+    } catch (err) {
+        console.error(`[Sync] Ошибка при выполнении ${action.id}:`, err);
+        throw err;
     }
+}
     return { success: true };
 };
 
