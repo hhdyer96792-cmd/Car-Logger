@@ -524,6 +524,9 @@ App.storage.loadSettingsForCar = async function(carId) {
             if (masterKey && cached.telegramToken && typeof cached.telegramToken === 'object') {
                 decrypted = await App.db.encryption.decryptSettings(cached, masterKey);
             }
+            // Принудительно преобразуем поля в строки, если они вдруг объекты
+            decrypted.plateNumber = decrypted.plateNumber && typeof decrypted.plateNumber === 'object' ? '' : String(decrypted.plateNumber || '');
+            decrypted.vin = decrypted.vin && typeof decrypted.vin === 'object' ? '' : String(decrypted.vin || '');
             Object.assign(App.store.settings, decrypted);
             return decrypted;
         }
@@ -531,6 +534,9 @@ App.storage.loadSettingsForCar = async function(carId) {
             const settings = await App.supa.loadSettings();
             if (settings) {
                 const settingsWithCar = { ...settings, car_id: carId };
+                // Убедимся, что поля строковые
+                settingsWithCar.plateNumber = String(settingsWithCar.plateNumber || '');
+                settingsWithCar.vin = String(settingsWithCar.vin || '');
                 const masterKey = App.db.encryption.getMasterKey();
                 if (masterKey) {
                     const encrypted = await App.db.encryption.encryptSettings(settingsWithCar, masterKey);
@@ -543,6 +549,8 @@ App.storage.loadSettingsForCar = async function(carId) {
             }
         }
         const defaultSettings = { ...App.defaults.settings, car_id: carId };
+        defaultSettings.plateNumber = '';
+        defaultSettings.vin = '';
         Object.assign(App.store.settings, defaultSettings);
         await App.db.put('car_settings', defaultSettings);
         return defaultSettings;
