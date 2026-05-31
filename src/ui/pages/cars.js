@@ -24,6 +24,51 @@ App.ui.pages.loadCarDocuments = async function() {
     return App.ui.pages._carDocuments;
 };
 
+App.ui.pages.addCarDocument = async function(doc) {
+    if (!App.store.activeCarId) return null;
+    const newDoc = await App.storage.addCarDocument(doc);
+    if (newDoc) {
+        App.ui.pages._carDocuments.unshift({
+            id: newDoc.id,
+            type: newDoc.type,
+            date: newDoc.date,
+            photoUrl: newDoc.photoUrl,
+            amount: newDoc.amount,
+            notes: newDoc.notes || ''
+        });
+        if (App.store.isPremium && typeof App.modules.load === 'function') {
+            App.modules.load('premium/imageCache', true).then(imageCache => {
+                if (imageCache?.cachePhotoAfterUpload) {
+                    imageCache.cachePhotoAfterUpload(newDoc.photoUrl).catch(console.warn);
+                }
+            }).catch(console.warn);
+        }
+        return newDoc;
+    }
+    return null;
+};
+
+App.ui.pages.updateCarDocument = async function(docId, updates) {
+    try {
+        await App.supa.updateCarDocument(docId, updates);
+        const idx = App.ui.pages._carDocuments.findIndex(d => d.id === docId);
+        if (idx !== -1) Object.assign(App.ui.pages._carDocuments[idx], updates);
+        return true;
+    } catch (e) {
+        console.error('Ошибка обновления документа:', e);
+        return false;
+    }
+};
+
+App.ui.pages.deleteCarDocument = async function(docId) {
+    const success = await App.storage.deleteCarDocument(docId);
+    if (success) {
+        App.ui.pages._carDocuments = App.ui.pages._carDocuments.filter(d => d.id !== docId);
+    }
+    return success;
+};
+
+/* ========== CRUD АВТОМОБИЛЕЙ (через storage.js) ========== */
 App.ui.pages.addCar = async function() {
     const name = await App.ui.promptModalAsync('Название автомобиля', 'Мой автомобиль');
     if (!name) return;
@@ -91,7 +136,7 @@ App.ui.pages.deleteCar = async function() {
     }
 };
 
-// Убедитесь, что эта функция существует и вызывается при обновлении списка авто
+// Обновление селектора авто на вкладке "Автомобиль"
 App.ui.pages.updateCarSelectorOnCarTab = function() {
     const selector = document.getElementById('car-page-selector');
     if (!selector) return;
@@ -105,7 +150,7 @@ App.ui.pages.updateCarSelectorOnCarTab = function() {
         html += `<option value="${car.id}"${selected}>${App.utils.escapeHtml(car.name)}</option>`;
     });
     selector.innerHTML = html;
-    
+
     const newSelector = selector.cloneNode(true);
     selector.parentNode.replaceChild(newSelector, selector);
     newSelector.addEventListener('change', (e) => {
@@ -177,92 +222,7 @@ App.ui.pages.renderCarSelector = function() {
     App.initIcons();
 };
 
-/* ========== CRUD АВТОМОБИЛЕЙ ========== */
-App.ui.pages.addCar = function() {
-    App.ui.promptModal('Название автомобиля', 'Мой автомобиль', function(name) {
-        if (!name) return;
-        App.supa.createCar(name).then(function(res) {
-            var car = res.data;
-            if (!car) {
-                console.warn('createCar вернул пустой ответ, перезагружаем список');
-                return App.store.loadCars().then(function() {
-                    App.ui.pages.renderCarSelector();
-                });
-            }
-            App.store.cars.push(car);
-            App.store.setActiveCar(car.id);
-            App.ui.pages.renderCarSelector();
-            if (App.realtime && App.realtime.subscribeToCar) {
-                App.realtime.subscribeToCar(car.id);
-            }
-            App.storage.loadAllData().then(function() {
-                if (typeof App.renderAll === 'function') App.renderAll();
-                if (typeof App.ui.pages.renderCarTab === 'function') App.ui.pages.renderCarTab();
-            });
-            App.toast('Автомобиль добавлен', 'success');
-        }).catch(function(err) {
-            console.error(err);
-            App.toast('Ошибка создания авто', 'error');
-        });
-    });
-};
-
-App.ui.pages.renameCar = async function() {
-    var carId = App.store.activeCarId;
-    if (!carId) { App.toast('Нет выбранного автомобиля', 'warning'); return; }
-    var userId = await App.ui.pages._getUserIdSafe();
-    var car = App.store.cars.find(c => c.id == carId);
-    if (!car || car.user_id !== userId) {
-        App.toast('Только владелец может переименовывать автомобиль', 'warning');
-        return;
-    }
-    App.ui.promptModal('Новое название', car.name, async function(newName) {
-        if (!newName || newName === car.name) return;
-        try {
-            await App.supa.renameCar(carId, newName);
-            car.name = newName;
-            App.ui.pages.renderCarSelector();
-            if (typeof App.ui.pages.renderCarTab === 'function') App.ui.pages.renderCarTab();
-            App.toast('Название обновлено', 'success');
-        } catch (err) {
-            console.error(err);
-            App.toast('Ошибка переименования', 'error');
-        }
-    });
-};
-
-App.ui.pages.deleteCar = async function() {
-    var carId = App.store.activeCarId;
-    if (!carId) { App.toast('Нет выбранного автомобиля', 'warning'); return; }
-    var userId = await App.ui.pages._getUserIdSafe();
-    var car = App.store.cars.find(c => c.id == carId);
-    if (!car || car.user_id !== userId) {
-        App.toast('Только владелец может удалять автомобиль', 'warning');
-        return;
-    }
-    App.ui.confirmModal('Удалить автомобиль и все его данные? Это действие необратимо.', async function() {
-        try {
-            await App.supa.deleteCar(carId);
-            App.store.cars = App.store.cars.filter(c => c.id != carId);
-            App.store.activeCarId = null;
-            App.ui.pages.renderCarSelector();
-            App.store.operations = [];
-            App.store.fuelLog = [];
-            App.store.tireLog = [];
-            App.store.parts = [];
-            App.store.serviceRecords = [];
-            App.store.mileageHistory = [];
-            if (typeof App.renderAll === 'function') App.renderAll();
-            if (typeof App.ui.pages.renderCarTab === 'function') App.ui.pages.renderCarTab();
-            App.toast('Автомобиль удалён', 'success');
-        } catch (err) {
-            console.error(err);
-            App.toast('Ошибка удаления', 'error');
-        }
-    });
-};
-
-/* ========== ПРИГЛАШЕНИЯ (ИСПРАВЛЕНА: однократная привязка через делегирование) ========== */
+/* ========== ПРИГЛАШЕНИЯ (делегирование) ========== */
 App.ui.pages.inviteUser = async function() {
     var carId = App.store.activeCarId;
     if (!carId) {
@@ -649,8 +609,6 @@ function setupInviteDelegation() {
     });
     console.log('[Cars] Делегирование для кнопки приглашения настроено');
 }
-
-// Вызываем однократно
 if (!window._inviteDelegationSet) {
     setupInviteDelegation();
     window._inviteDelegationSet = true;
