@@ -528,4 +528,7 @@ App.storage.loadAllData = async function() {
         console.error(e);
         App.toast('Ошибка загрузки данных', 'error');
     }
+    if (App.events.currentActiveTab) {
+    App.events.switchToTab(App.events.currentActiveTab);
+}
 };
