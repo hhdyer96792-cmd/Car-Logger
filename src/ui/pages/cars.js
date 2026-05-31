@@ -634,33 +634,32 @@ App.ui.pages.renderBasicParams = async function() {
     App.store.purchaseCost = purchaseCost;
     App.ui.pages.updateOwnershipCost();
 
-    var saveParamsBtn = document.getElementById('save-params-btn');
-    if (saveParamsBtn) {
-        saveParamsBtn.onclick = async function() {
-            var newBaseMileage = parseInt(document.getElementById('set-base-mileage')?.value) || 0;
-            var newBaseMotohours = parseInt(document.getElementById('set-base-motohours')?.value) || 0;
-            var dateStr = document.getElementById('purchase-date')?.value || '';
-            var newPurchaseDate = dateStr ? App.utils.ddmmYYYYtoISO(dateStr) : null;
-            var newPurchaseCost = parseFloat(document.getElementById('purchase-cost')?.value) || 0;
+    const saveParamsBtn = document.getElementById('save-params-btn');
+if (saveParamsBtn) {
+    saveParamsBtn.onclick = async function() {
+        const newBaseMileage = parseInt(document.getElementById('set-base-mileage')?.value) || 0;
+        const newBaseMotohours = parseInt(document.getElementById('set-base-motohours')?.value) || 0;
+        const dateStr = document.getElementById('purchase-date')?.value || '';
+        const newPurchaseDate = dateStr ? App.utils.ddmmYYYYtoISO(dateStr) : null;
+        const newPurchaseCost = parseFloat(document.getElementById('purchase-cost')?.value) || 0;
 
-            if (App.store.activeCarId && App.supa && typeof App.supa.updateVehicleState === 'function') {
-                await App.supa.updateVehicleState(App.store.activeCarId, {
-                    baseMileage: newBaseMileage,
-                    baseMotohours: newBaseMotohours,
-                    purchaseDate: newPurchaseDate,
-                    purchaseCost: newPurchaseCost
-                });
-            }
-
-            App.store.baseMileage = newBaseMileage;
-            App.store.baseMotohours = newBaseMotohours;
-            App.store.purchaseDate = newPurchaseDate;
-            App.store.purchaseCost = newPurchaseCost;
-            App.store.calculateOwnershipDays();
-            App.ui.pages.updateOwnershipCost();
-            App.toast('Параметры сохранены', 'success');
+        const state = {
+            baseMileage: newBaseMileage,
+            baseMotohours: newBaseMotohours,
+            purchaseDate: newPurchaseDate,
+            purchaseCost: newPurchaseCost
         };
-    }
+        await App.storage.saveVehicleStateAndSettings(state, {});
+        
+        App.store.baseMileage = newBaseMileage;
+        App.store.baseMotohours = newBaseMotohours;
+        App.store.purchaseDate = newPurchaseDate;
+        App.store.purchaseCost = newPurchaseCost;
+        App.store.calculateOwnershipDays();
+        App.ui.pages.updateOwnershipCost();
+        App.toast('Параметры сохранены', 'success');
+    };
+}
 
     var fields = [
         document.getElementById('set-base-mileage'),
