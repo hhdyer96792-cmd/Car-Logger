@@ -208,9 +208,8 @@ App.ui.pages.updateFinanceForecast = function() {
 
 // ---------- Линейный график динамики с прогнозом (ленивая инициализация) ----------
 App.ui.pages.renderDynamicsChart = function() {
-    if (!isChartAvailable()) return;
     var canvas = document.getElementById('financeDynamicsChart');
-    if (!canvas) return;
+    if (!canvas) return; // ✅ добавлена проверка
     var ctx = canvas.getContext('2d');
 
     // Получаем данные
@@ -276,9 +275,8 @@ App.ui.pages.renderDynamicsChart = function() {
 
 // ---------- Гистограмма общих затрат (ленивая) ----------
 App.ui.pages.renderCostHistogram = function() {
-    if (!isChartAvailable()) return;
     var canvas = document.getElementById('financeCostHistogram');
-    if (!canvas) return;
+    if (!canvas) return; // ✅ добавлена проверка
     var ctx = canvas.getContext('2d');
 
     var period = App.ui.pages.financePeriod;
@@ -360,9 +358,8 @@ App.ui.pages.renderCostHistogram = function() {
 
 // ---------- Круговая диаграмма распределения (ленивая) ----------
 App.ui.pages.renderFinancePie = function() {
-    if (!isChartAvailable()) return;
     var canvas = document.getElementById('financePieChart');
-    if (!canvas) return;
+    if (!canvas) return; // ✅ добавлена проверка
     var ctx = canvas.getContext('2d');
 
     var period = App.ui.pages.financePeriod;
