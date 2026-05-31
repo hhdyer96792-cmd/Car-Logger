@@ -141,7 +141,6 @@ App.db.sync._executeAction = async function(action) {
             Object.assign(App.store.settings, data);
             return { success: true };
         case 'car':
-            // Синхронизация автомобилей
             if (type === 'save') {
                 const { data: carData, error: carError } = await App.supabase
                     .from('cars')
@@ -151,6 +150,11 @@ App.db.sync._executeAction = async function(action) {
                 if (carError) throw carError;
                 if (carData.id !== entityId) {
                     await App.db.sync._updateLocalId(entityType, entityId, carData);
+                } else {
+                    const idx = App.store.cars.findIndex(c => c.id == carData.id);
+                    if (idx !== -1) App.store.cars[idx] = carData;
+                    else App.store.cars.push(carData);
+                    await App.db.put('cars', carData);
                 }
             } else if (type === 'delete') {
                 await App.supabase.from('cars').delete().eq('id', entityId);
@@ -193,8 +197,6 @@ App.db.sync._executeDelete = async function(action) {
         case 'tire': tableName = 'tires'; break;
         case 'part': tableName = 'parts'; break;
         case 'history': tableName = 'history'; break;
-        case 'car': tableName = 'cars'; break;
-        case 'car_document': tableName = 'car_documents'; break;
         default: throw new Error(`Unknown entityType for delete: ${entityType}`);
     }
     
@@ -216,14 +218,12 @@ App.db.sync._executeDelete = async function(action) {
     
     await App.db.delete(tableName, entityId);
     const storeKey = {
-    'operations': 'operations',
-    'fuel_log': 'fuelLog',
-    'tires': 'tireLog',
-    'parts': 'parts',
-    'history': 'serviceRecords',
-    'cars': 'cars',
-    'car_documents': 'carDocuments'
-}[tableName];
+        'operations': 'operations',
+        'fuel_log': 'fuelLog',
+        'tires': 'tireLog',
+        'parts': 'parts',
+        'history': 'serviceRecords'
+    }[tableName];
     if (storeKey && App.store[storeKey]) {
         App.store[storeKey] = App.store[storeKey].filter(i => i.id != entityId);
     }
@@ -380,6 +380,7 @@ App.db.sync.processSyncQueue = async function() {
             } catch (err) {
                 console.error(`[Sync] Ошибка действия ${action.id}:`, err);
                 if (err.status === 409 || (err.message && err.message.includes('conflict'))) {
+                    console.log('[Sync] Конфликт, разрешаем...');
                     await App.db.sync._resolveConflict(action);
                     await App.db.delete('pending_actions', action.id);
                     const idx = App.store.pendingActions.findIndex(a => a.id === action.id);
