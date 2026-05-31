@@ -1,4 +1,5 @@
-// src/db/sync.js
+// src/db/sync.js (полный файл с исправлениями)
+
 window.App = window.App || {};
 App.db = App.db || {};
 App.db.sync = App.db.sync || {};
@@ -52,29 +53,27 @@ App.db.sync._executeAction = async function(action) {
     
     switch (entityType) {
         case 'operation':
-            tableName = 'operations';
-            supabaseMethod = App.supa.saveOperation;
-            break;
         case 'fuel':
-            tableName = 'fuel_log';
-            supabaseMethod = App.supa.saveFuelRecord;
-            break;
         case 'tire':
-            tableName = 'tires';
-            supabaseMethod = App.supa.saveTireRecord;
-            break;
         case 'part':
-            tableName = 'parts';
-            supabaseMethod = App.supa.savePart;
-            break;
         case 'history':
-            tableName = 'history';
-            supabaseMethod = App.supa.saveHistoryRecord;
-            break;
         case 'mileage':
-            tableName = 'mileage_log';
-            supabaseMethod = (record) => App.supa.addMileageRecord(record.date, record.mileage, record.motohours, record.car_id);
-            break;
+            const map = {
+                'operation': () => App.supa.saveOperation(data),
+                'fuel': () => App.supa.saveFuelRecord(data),
+                'tire': () => App.supa.saveTireRecord(data),
+                'part': () => App.supa.savePart(data),
+                'history': () => App.supa.saveHistoryRecord(data),
+                'mileage': () => App.supa.addMileageRecord(data.date, data.mileage, data.motohours, data.car_id)
+            };
+            const supabaseMethodCall = map[entityType];
+            if (!supabaseMethodCall) throw new Error(`No method for ${entityType}`);
+            const result = await supabaseMethodCall();
+            if (result.error) throw result.error;
+            if (result.data && result.data[0] && result.data[0].id !== entityId) {
+                await App.db.sync._updateLocalId(entityType, entityId, result.data[0]);
+            }
+            return { success: true };
         case 'car_document':
             const { data: docData, error: docError } = await App.supabase
                 .from('car_documents')
@@ -87,13 +86,10 @@ App.db.sync._executeAction = async function(action) {
             }
             return { success: true };
         case 'car_state_settings':
+            // Приведение типов
             const cleanedData = { ...data };
-            if (cleanedData.plateNumber && typeof cleanedData.plateNumber !== 'string') {
-                cleanedData.plateNumber = String(cleanedData.plateNumber);
-            }
-            if (cleanedData.vin && typeof cleanedData.vin !== 'string') {
-                cleanedData.vin = String(cleanedData.vin);
-            }
+            if (cleanedData.plateNumber && typeof cleanedData.plateNumber !== 'string') cleanedData.plateNumber = String(cleanedData.plateNumber);
+            if (cleanedData.vin && typeof cleanedData.vin !== 'string') cleanedData.vin = String(cleanedData.vin);
             await App.supa.saveVehicleState({
                 currentMileage: cleanedData.currentMileage,
                 currentMotohours: cleanedData.currentMotohours,
@@ -116,11 +112,8 @@ App.db.sync._executeAction = async function(action) {
                 reminderDays: cleanedData.reminderDays
             });
             Object.assign(App.store.settings, cleanedData);
-            App.store.settings.plateNumber = String(App.store.settings.plateNumber || '');
-            App.store.settings.vin = String(App.store.settings.vin || '');
             return { success: true };
         case 'car_settings':
-            console.log('[Sync] Сохраняем настройки автомобиля');
             await App.supa.saveUserSettings({
                 telegramToken: data.telegramToken,
                 telegramChatId: data.telegramChatId,
@@ -151,6 +144,7 @@ App.db.sync._executeAction = async function(action) {
                 if (carData.id !== entityId) {
                     await App.db.sync._updateLocalId(entityType, entityId, carData);
                 } else {
+                    // Заменяем существующую запись
                     const idx = App.store.cars.findIndex(c => c.id == carData.id);
                     if (idx !== -1) App.store.cars[idx] = carData;
                     else App.store.cars.push(carData);
@@ -168,24 +162,6 @@ App.db.sync._executeAction = async function(action) {
         default:
             throw new Error(`Unknown entityType: ${entityType}`);
     }
-    
-    if (type === 'save' || type === 'update') {
-        try {
-            const result = await supabaseMethod(data);
-            if (result.error) throw result.error;
-            if (!result.data || result.data.length === 0) {
-                throw new Error('Сервер не вернул данные после вставки. Возможно, проблема с RLS или типом id.');
-            }
-            if (result.data[0].id && result.data[0].id !== entityId) {
-                await App.db.sync._updateLocalId(entityType, entityId, result.data[0]);
-            }
-            return { success: true };
-        } catch (err) {
-            console.error(`[Sync] Ошибка при выполнении ${action.id}:`, err);
-            throw err;
-        }
-    }
-    return { success: true };
 };
 
 App.db.sync._executeDelete = async function(action) {
@@ -242,11 +218,13 @@ App.db.sync._updateLocalId = async function(entityType, oldId, serverRecord) {
         case 'car': storeArray = App.store.cars; storeName = 'cars'; break;
         default: return;
     }
+    // Найти и удалить старую запись по старому ID
     const idx = storeArray.findIndex(i => i.id == oldId);
     if (idx !== -1) {
         storeArray.splice(idx, 1);
         await App.db.delete(storeName, oldId);
     }
+    // Добавить новую запись с серверным ID
     storeArray.push(serverRecord);
     await App.db.put(storeName, serverRecord);
 };
@@ -303,32 +281,13 @@ App.db.sync._resolveConflict = async function(action) {
 App.db.sync._updateLocalFromServer = async function(entityType, serverData) {
     let storeArray, storeName;
     switch (entityType) {
-        case 'operation':
-            storeArray = App.store.operations;
-            storeName = 'operations';
-            break;
-        case 'fuel':
-            storeArray = App.store.fuelLog;
-            storeName = 'fuel_log';
-            break;
-        case 'tire':
-            storeArray = App.store.tireLog;
-            storeName = 'tires';
-            break;
-        case 'part':
-            storeArray = App.store.parts;
-            storeName = 'parts';
-            break;
-        case 'history':
-            storeArray = App.store.serviceRecords;
-            storeName = 'service_records';
-            break;
-        case 'mileage':
-            storeArray = App.store.mileageHistory;
-            storeName = 'mileage_log';
-            break;
-        default:
-            return;
+        case 'operation': storeArray = App.store.operations; storeName = 'operations'; break;
+        case 'fuel': storeArray = App.store.fuelLog; storeName = 'fuel_log'; break;
+        case 'tire': storeArray = App.store.tireLog; storeName = 'tires'; break;
+        case 'part': storeArray = App.store.parts; storeName = 'parts'; break;
+        case 'history': storeArray = App.store.serviceRecords; storeName = 'service_records'; break;
+        case 'mileage': storeArray = App.store.mileageHistory; storeName = 'mileage_log'; break;
+        default: return;
     }
     const idx = storeArray.findIndex(i => i.id == serverData.id);
     if (idx !== -1) {
@@ -356,7 +315,10 @@ App.db.sync.processSyncQueue = async function() {
     App.db.sync._isRunning = true;
     try {
         const pending = await App.db.getAll('pending_actions');
-        if (!pending.length) return;
+        if (!pending.length) {
+            console.log('[Sync] Нет отложенных действий');
+            return;
+        }
         console.log(`[Sync] Начинаем синхронизацию ${pending.length} действий`);
         for (const action of pending) {
             try {
@@ -365,6 +327,7 @@ App.db.sync.processSyncQueue = async function() {
                 const idx = App.store.pendingActions.findIndex(a => a.id === action.id);
                 if (idx !== -1) App.store.pendingActions.splice(idx, 1);
                 
+                // Принудительно перезагружаем store и перерисовываем UI
                 await App.store.loadFromIndexedDB();
                 if (typeof App.renderAll === 'function') App.renderAll();
                 if (typeof App.ui.pages.renderTOTable === 'function') App.ui.pages.renderTOTable();
