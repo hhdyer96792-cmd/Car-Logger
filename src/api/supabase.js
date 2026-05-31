@@ -241,6 +241,7 @@ App.supa.saveOperation = async function(op) {
     const carId = op.car_id || App.store.activeCarId;
     if (!carId) throw new Error('No car_id');
     
+    // Пытаемся вставить с переданным ID (если есть)
     const record = {
         id: op.id || crypto.randomUUID(),
         category: op.category,
@@ -263,6 +264,8 @@ App.supa.saveOperation = async function(op) {
     }
     
     if (result.error) throw result.error;
+    
+    // Если данные не вернулись – пробуем получить запись по ID
     if (!result.data || result.data.length === 0) {
         const { data: fetched, error: fetchError } = await App.supabase
             .from('operations')
@@ -270,9 +273,20 @@ App.supa.saveOperation = async function(op) {
             .eq('id', record.id)
             .maybeSingle();
         if (fetchError || !fetched) {
-            throw new Error(`Не удалось сохранить операцию: запись с id ${record.id} не найдена на сервере после вставки (проверьте RLS и тип id)`);
+            // Если не найдена – возможно, ID не подошёл (например, строка вместо UUID)
+            // Пробуем вставить без указания ID, пусть БД сама сгенерирует
+            console.warn('[Supabase] Запись не найдена, пробуем вставить без ID');
+            const { id: _, ...recordWithoutId } = record;
+            const insertResult = await App.supabase
+                .from('operations')
+                .insert(recordWithoutId)
+                .select()
+                .single();
+            if (insertResult.error) throw insertResult.error;
+            result.data = [insertResult.data];
+        } else {
+            result.data = [fetched];
         }
-        result.data = [fetched];
     }
     console.log('[Supabase] saveOperation результат:', result);
     return result;
@@ -313,9 +327,17 @@ App.supa.saveFuelRecord = async function(record) {
             .eq('id', data.id)
             .maybeSingle();
         if (fetchError || !fetched) {
-            throw new Error(`Не удалось сохранить заправку: запись с id ${data.id} не найдена на сервере после вставки (проверьте RLS и тип id)`);
+            const { id: _, ...recordWithoutId } = data;
+            const insertResult = await App.supabase
+                .from('fuel_log')
+                .insert(recordWithoutId)
+                .select()
+                .single();
+            if (insertResult.error) throw insertResult.error;
+            result.data = [insertResult.data];
+        } else {
+            result.data = [fetched];
         }
-        result.data = [fetched];
     }
     console.log('[Supabase] saveFuelRecord результат:', result);
     return result;
@@ -359,9 +381,17 @@ App.supa.saveTireRecord = async function(record) {
             .eq('id', data.id)
             .maybeSingle();
         if (fetchError || !fetched) {
-            throw new Error(`Не удалось сохранить шины: запись с id ${data.id} не найдена на сервере после вставки (проверьте RLS и тип id)`);
+            const { id: _, ...recordWithoutId } = data;
+            const insertResult = await App.supabase
+                .from('tires')
+                .insert(recordWithoutId)
+                .select()
+                .single();
+            if (insertResult.error) throw insertResult.error;
+            result.data = [insertResult.data];
+        } else {
+            result.data = [fetched];
         }
-        result.data = [fetched];
     }
     console.log('[Supabase] saveTireRecord результат:', result);
     return result;
@@ -407,9 +437,17 @@ App.supa.savePart = async function(part) {
             .eq('id', data.id)
             .maybeSingle();
         if (fetchError || !fetched) {
-            throw new Error(`Не удалось сохранить запчасть: запись с id ${data.id} не найдена на сервере после вставки (проверьте RLS и тип id)`);
+            const { id: _, ...recordWithoutId } = data;
+            const insertResult = await App.supabase
+                .from('parts')
+                .insert(recordWithoutId)
+                .select()
+                .single();
+            if (insertResult.error) throw insertResult.error;
+            result.data = [insertResult.data];
+        } else {
+            result.data = [fetched];
         }
-        result.data = [fetched];
     }
     console.log('[Supabase] savePart результат:', result);
     return result;
@@ -452,9 +490,17 @@ App.supa.saveHistoryRecord = async function(record) {
             .eq('id', data.id)
             .maybeSingle();
         if (fetchError || !fetched) {
-            throw new Error(`Не удалось сохранить запись истории: запись с id ${data.id} не найдена на сервере после вставки (проверьте RLS и тип id)`);
+            const { id: _, ...recordWithoutId } = data;
+            const insertResult = await App.supabase
+                .from('history')
+                .insert(recordWithoutId)
+                .select()
+                .single();
+            if (insertResult.error) throw insertResult.error;
+            result.data = [insertResult.data];
+        } else {
+            result.data = [fetched];
         }
-        result.data = [fetched];
     }
     console.log('[Supabase] saveHistoryRecord результат:', result);
     return result;
@@ -475,7 +521,8 @@ App.supa.addMileageRecord = async function(date, mileage, motohours, carId) {
         user_id: userId,
         car_id: effectiveCarId
     };
-    const result = await App.supa.insertRow('mileage_log', record);
+    
+    let result = await App.supa.insertRow('mileage_log', record);
     if (result.error) throw result.error;
     if (!result.data || result.data.length === 0) {
         const { data: fetched, error: fetchError } = await App.supabase
@@ -484,9 +531,17 @@ App.supa.addMileageRecord = async function(date, mileage, motohours, carId) {
             .eq('id', record.id)
             .maybeSingle();
         if (fetchError || !fetched) {
-            throw new Error(`Не удалось сохранить запись пробега: запись с id ${record.id} не найдена на сервере после вставки (проверьте RLS и тип id)`);
+            const { id: _, ...recordWithoutId } = record;
+            const insertResult = await App.supabase
+                .from('mileage_log')
+                .insert(recordWithoutId)
+                .select()
+                .single();
+            if (insertResult.error) throw insertResult.error;
+            result.data = [insertResult.data];
+        } else {
+            result.data = [fetched];
         }
-        result.data = [fetched];
     }
     return result;
 };
