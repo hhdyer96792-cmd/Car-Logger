@@ -375,24 +375,27 @@ App.ui.pages.renderCarTab = function() {
     document.getElementById('add-car-btn').onclick = App.ui.pages.addCar;
     document.getElementById('rename-car-btn').onclick = App.ui.pages.renameCar;
     document.getElementById('delete-car-btn').onclick = App.ui.pages.deleteCar;
-    document.getElementById('save-car-details-btn').onclick = function() {
-        var brand = document.getElementById('car-brand')?.value?.trim();
-        var model = document.getElementById('car-model')?.value?.trim();
-        var year = parseInt(document.getElementById('car-year')?.value) || null;
-        var plate = document.getElementById('car-plate')?.value?.trim();
-        var vin = document.getElementById('car-vin')?.value?.trim();
-        if (brand !== undefined) App.store.settings.carBrand = brand || '';
-        if (model !== undefined) App.store.settings.carModel = model || '';
-        App.store.settings.carYear = year;
-        if (plate !== undefined) App.store.settings.plateNumber = plate || '';
-        if (vin !== undefined) App.store.settings.vin = vin || '';
-        App.storage.saveSettings(App.store.settings).then(function() {
-            App.toast('Данные автомобиля сохранены', 'success');
-        }).catch(function(err) {
-            console.error(err);
-            App.toast('Ошибка сохранения', 'error');
-        });
-    };
+    document.getElementById('save-car-details-btn').onclick = async function() {
+    const brand = document.getElementById('car-brand')?.value?.trim() || '';
+    const model = document.getElementById('car-model')?.value?.trim() || '';
+    const year = parseInt(document.getElementById('car-year')?.value) || null;
+    const plate = document.getElementById('car-plate')?.value?.trim() || '';
+    const vin = document.getElementById('car-vin')?.value?.trim() || '';
+    
+    // Обновляем локально
+    App.store.settings.carBrand = brand;
+    App.store.settings.carModel = model;
+    App.store.settings.carYear = year;
+    App.store.settings.plateNumber = plate;
+    App.store.settings.vin = vin;
+    
+    // Сохраняем через общий метод (офлайн/онлайн)
+    await App.storage.saveVehicleStateAndSettings(
+        { carBrand: brand, carModel: model, carYear: year, plateNumber: plate, vin: vin },
+        {} // настройки уведомлений не меняются
+    );
+    App.toast('Данные автомобиля сохранены', 'success');
+};
 
     if (App.store.activeCarId) {
         App.ui.pages.loadCarDetailsWithRetry(App.store.activeCarId);
