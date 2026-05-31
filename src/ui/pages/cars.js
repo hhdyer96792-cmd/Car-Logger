@@ -83,6 +83,8 @@ App.ui.pages.addCar = async function() {
         App.ui.pages.renderCarSelector();
         App.ui.pages.updateCarSelectorOnCarTab();
         if (typeof App.ui.pages.renderCarTab === 'function') App.ui.pages.renderCarTab();
+        // Принудительно обновляем данные автомобиля
+        await App.storage.loadAllData();
         App.toast('Автомобиль добавлен', 'success');
     }
 };
@@ -100,6 +102,7 @@ App.ui.pages.renameCar = async function() {
     if (!newName || newName === car.name) return;
     const success = await App.storage.renameCar(carId, newName);
     if (success) {
+        // Обновляем селекторы и вкладку
         App.ui.pages.renderCarSelector();
         App.ui.pages.updateCarSelectorOnCarTab();
         if (typeof App.ui.pages.renderCarTab === 'function') App.ui.pages.renderCarTab();
@@ -129,9 +132,9 @@ App.ui.pages.deleteCar = async function() {
         }
         App.ui.pages.renderCarSelector();
         App.ui.pages.updateCarSelectorOnCarTab();
-        App.storage.loadAllData().then(() => {
-            if (typeof App.renderAll === 'function') App.renderAll();
-        });
+        // Принудительно перезагружаем все данные (чтобы очистить записи удалённого авто)
+        await App.storage.loadAllData();
+        if (typeof App.renderAll === 'function') App.renderAll();
         App.toast('Автомобиль удалён', 'success');
     }
 };
