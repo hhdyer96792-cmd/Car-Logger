@@ -38,7 +38,6 @@ App.db.sync._executeAction = async function(action) {
     
     console.log(`[Sync] Выполнение действия ${action.id}, тип=${type}, сущность=${entityType}, данные:`, data);
     
-    // Ожидание сессии до 10 секунд
     let session = null;
     for (let i = 0; i < 20; i++) {
         const { data: { session: s } } = await App.supabase.auth.getSession();
@@ -84,11 +83,10 @@ App.db.sync._executeAction = async function(action) {
                 .single();
             if (docError) throw docError;
             if (docData.id !== entityId) {
-                await App.db.sync._updateLocalId(entityType, entityId, docData.id);
+                await App.db.sync._updateLocalId(entityType, entityId, docData);
             }
             return { success: true };
         case 'car_state_settings':
-            // Приводим строковые поля к строке (защита от [object Object])
             const cleanedData = { ...data };
             if (cleanedData.plateNumber && typeof cleanedData.plateNumber !== 'string') {
                 cleanedData.plateNumber = String(cleanedData.plateNumber);
@@ -118,7 +116,6 @@ App.db.sync._executeAction = async function(action) {
                 reminderDays: cleanedData.reminderDays
             });
             Object.assign(App.store.settings, cleanedData);
-            // Ещё раз приводим на всякий случай
             App.store.settings.plateNumber = String(App.store.settings.plateNumber || '');
             App.store.settings.vin = String(App.store.settings.vin || '');
             return { success: true };
@@ -143,6 +140,25 @@ App.db.sync._executeAction = async function(action) {
             });
             Object.assign(App.store.settings, data);
             return { success: true };
+        case 'car':
+            // Синхронизация автомобилей
+            if (type === 'save') {
+                const { data: carData, error: carError } = await App.supabase
+                    .from('cars')
+                    .upsert(data, { onConflict: 'id' })
+                    .select()
+                    .single();
+                if (carError) throw carError;
+                if (carData.id !== entityId) {
+                    await App.db.sync._updateLocalId(entityType, entityId, carData);
+                }
+            } else if (type === 'delete') {
+                await App.supabase.from('cars').delete().eq('id', entityId);
+                await App.db.delete('cars', entityId);
+                const idx = App.store.cars.findIndex(c => c.id == entityId);
+                if (idx !== -1) App.store.cars.splice(idx, 1);
+            }
+            return { success: true };
         case 'delete':
             return await App.db.sync._executeDelete(action);
         default:
@@ -157,7 +173,7 @@ App.db.sync._executeAction = async function(action) {
                 throw new Error('Сервер не вернул данные после вставки. Возможно, проблема с RLS или типом id.');
             }
             if (result.data[0].id && result.data[0].id !== entityId) {
-                await App.db.sync._updateLocalId(entityType, entityId, result.data[0].id);
+                await App.db.sync._updateLocalId(entityType, entityId, result.data[0]);
             }
             return { success: true };
         } catch (err) {
@@ -210,7 +226,7 @@ App.db.sync._executeDelete = async function(action) {
     return { success: true };
 };
 
-App.db.sync._updateLocalId = async function(entityType, oldId, newId) {
+App.db.sync._updateLocalId = async function(entityType, oldId, serverRecord) {
     let storeArray, storeName;
     switch (entityType) {
         case 'operation': storeArray = App.store.operations; storeName = 'operations'; break;
@@ -218,22 +234,18 @@ App.db.sync._updateLocalId = async function(entityType, oldId, newId) {
         case 'tire': storeArray = App.store.tireLog; storeName = 'tires'; break;
         case 'part': storeArray = App.store.parts; storeName = 'parts'; break;
         case 'history': storeArray = App.store.serviceRecords; storeName = 'service_records'; break;
-        case 'mileage':
-            storeArray = App.store.mileageHistory;
-            storeName = 'mileage_log';
-            break;
+        case 'mileage': storeArray = App.store.mileageHistory; storeName = 'mileage_log'; break;
+        case 'car': storeArray = App.store.cars; storeName = 'cars'; break;
         default: return;
     }
-    const item = storeArray.find(i => i.id == oldId);
-    if (item) {
-        item.id = newId;
-        // Удаляем старую запись из IndexedDB
+    const idx = storeArray.findIndex(i => i.id == oldId);
+    if (idx !== -1) {
+        storeArray.splice(idx, 1);
         await App.db.delete(storeName, oldId);
-        // Сохраняем обновлённую
-        await App.db.put(storeName, item);
     }
+    storeArray.push(serverRecord);
+    await App.db.put(storeName, serverRecord);
 };
-
 
 App.db.sync._resolveConflict = async function(action) {
     const { entityType, entityId } = action;
@@ -340,34 +352,30 @@ App.db.sync.processSyncQueue = async function() {
     App.db.sync._isRunning = true;
     try {
         const pending = await App.db.getAll('pending_actions');
-        if (!pending.length) {
-            console.log('[Sync] Нет отложенных действий');
-            return;
-        }
+        if (!pending.length) return;
         console.log(`[Sync] Начинаем синхронизацию ${pending.length} действий`);
         for (const action of pending) {
             try {
                 await App.db.sync._executeAction(action);
                 await App.db.delete('pending_actions', action.id);
-const idx = App.store.pendingActions.findIndex(a => a.id === action.id);
-if (idx !== -1) App.store.pendingActions.splice(idx, 1);
+                const idx = App.store.pendingActions.findIndex(a => a.id === action.id);
+                if (idx !== -1) App.store.pendingActions.splice(idx, 1);
                 
-               // Принудительно обновляем store из IndexedDB и перерисовываем UI
-await App.store.loadFromIndexedDB();
-if (typeof App.renderAll === 'function') App.renderAll();
-// Дополнительная перерисовка вкладок
-if (typeof App.ui.pages.renderTOTable === 'function') App.ui.pages.renderTOTable();
-if (typeof App.ui.pages.renderFuelTab === 'function') App.ui.pages.renderFuelTab();
-if (typeof App.ui.pages.renderPartsTab === 'function') App.ui.pages.renderPartsTab();
-if (typeof App.ui.pages.renderTiresTab === 'function') App.ui.pages.renderTiresTab();
-if (typeof App.ui.pages.renderHistoryCards === 'function') App.ui.pages.renderHistoryCards();
-if (typeof App.ui.pages.renderDashboard === 'function') App.ui.pages.renderDashboard();
-
-console.log(`[Sync] Действие ${action.id} удалено из очереди, UI обновлён`);
+                await App.store.loadFromIndexedDB();
+                if (typeof App.renderAll === 'function') App.renderAll();
+                if (typeof App.ui.pages.renderTOTable === 'function') App.ui.pages.renderTOTable();
+                if (typeof App.ui.pages.renderFuelTab === 'function') App.ui.pages.renderFuelTab();
+                if (typeof App.ui.pages.renderPartsTab === 'function') App.ui.pages.renderPartsTab();
+                if (typeof App.ui.pages.renderTiresTab === 'function') App.ui.pages.renderTiresTab();
+                if (typeof App.ui.pages.renderHistoryCards === 'function') App.ui.pages.renderHistoryCards();
+                if (typeof App.ui.pages.renderDashboard === 'function') App.ui.pages.renderDashboard();
+                if (typeof App.ui.pages.renderCarSelector === 'function') App.ui.pages.renderCarSelector();
+                if (typeof App.ui.pages.updateCarSelectorOnCarTab === 'function') App.ui.pages.updateCarSelectorOnCarTab();
+                
+                console.log(`[Sync] Действие ${action.id} удалено из очереди, UI обновлён`);
             } catch (err) {
                 console.error(`[Sync] Ошибка действия ${action.id}:`, err);
                 if (err.status === 409 || (err.message && err.message.includes('conflict'))) {
-                    console.log('[Sync] Конфликт, разрешаем...');
                     await App.db.sync._resolveConflict(action);
                     await App.db.delete('pending_actions', action.id);
                     const idx = App.store.pendingActions.findIndex(a => a.id === action.id);
