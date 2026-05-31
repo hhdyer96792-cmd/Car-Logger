@@ -363,6 +363,7 @@ App.ui.pages.checkPendingInvites = function() {
                     App.store.loadCars().then(function() {
                         App.ui.pages.renderCarSelector();
                         App.storage.loadAllData();
+                        App.ui.pages.updateCarSelectorOnCarTab();
                     });
                 }).catch(function(err) {
                     console.error(err);
