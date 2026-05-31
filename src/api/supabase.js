@@ -269,13 +269,10 @@ App.supa.saveOperation = async function(op) {
             .select('*')
             .eq('id', record.id)
             .maybeSingle();
-        if (fetchError) {
-            console.warn('[Supabase] Не удалось получить запись:', fetchError);
-        } else if (fetched) {
-            result.data = [fetched];
-        } else {
-            console.warn('[Supabase] Запись не найдена после вставки, возможно, проблема с RLS или типом id');
+        if (fetchError || !fetched) {
+            throw new Error(`Не удалось сохранить операцию: запись с id ${record.id} не найдена на сервере после вставки (проверьте RLS и тип id)`);
         }
+        result.data = [fetched];
     }
     console.log('[Supabase] saveOperation результат:', result);
     return result;
@@ -315,13 +312,10 @@ App.supa.saveFuelRecord = async function(record) {
             .select('*')
             .eq('id', data.id)
             .maybeSingle();
-        if (fetchError) {
-            console.warn('[Supabase] Не удалось получить запись fuel_log:', fetchError);
-        } else if (fetched) {
-            result.data = [fetched];
-        } else {
-            console.warn('[Supabase] Запись fuel_log не найдена после вставки');
+        if (fetchError || !fetched) {
+            throw new Error(`Не удалось сохранить заправку: запись с id ${data.id} не найдена на сервере после вставки (проверьте RLS и тип id)`);
         }
+        result.data = [fetched];
     }
     console.log('[Supabase] saveFuelRecord результат:', result);
     return result;
@@ -364,13 +358,10 @@ App.supa.saveTireRecord = async function(record) {
             .select('*')
             .eq('id', data.id)
             .maybeSingle();
-        if (fetchError) {
-            console.warn('[Supabase] Не удалось получить запись tires:', fetchError);
-        } else if (fetched) {
-            result.data = [fetched];
-        } else {
-            console.warn('[Supabase] Запись tires не найдена после вставки');
+        if (fetchError || !fetched) {
+            throw new Error(`Не удалось сохранить шины: запись с id ${data.id} не найдена на сервере после вставки (проверьте RLS и тип id)`);
         }
+        result.data = [fetched];
     }
     console.log('[Supabase] saveTireRecord результат:', result);
     return result;
@@ -415,13 +406,10 @@ App.supa.savePart = async function(part) {
             .select('*')
             .eq('id', data.id)
             .maybeSingle();
-        if (fetchError) {
-            console.warn('[Supabase] Не удалось получить запись parts:', fetchError);
-        } else if (fetched) {
-            result.data = [fetched];
-        } else {
-            console.warn('[Supabase] Запись parts не найдена после вставки');
+        if (fetchError || !fetched) {
+            throw new Error(`Не удалось сохранить запчасть: запись с id ${data.id} не найдена на сервере после вставки (проверьте RLS и тип id)`);
         }
+        result.data = [fetched];
     }
     console.log('[Supabase] savePart результат:', result);
     return result;
@@ -463,13 +451,10 @@ App.supa.saveHistoryRecord = async function(record) {
             .select('*')
             .eq('id', data.id)
             .maybeSingle();
-        if (fetchError) {
-            console.warn('[Supabase] Не удалось получить запись history:', fetchError);
-        } else if (fetched) {
-            result.data = [fetched];
-        } else {
-            console.warn('[Supabase] Запись history не найдена после вставки');
+        if (fetchError || !fetched) {
+            throw new Error(`Не удалось сохранить запись истории: запись с id ${data.id} не найдена на сервере после вставки (проверьте RLS и тип id)`);
         }
+        result.data = [fetched];
     }
     console.log('[Supabase] saveHistoryRecord результат:', result);
     return result;
@@ -498,13 +483,10 @@ App.supa.addMileageRecord = async function(date, mileage, motohours, carId) {
             .select('*')
             .eq('id', record.id)
             .maybeSingle();
-        if (fetchError) {
-            console.warn('[Supabase] Не удалось получить запись mileage_log:', fetchError);
-        } else if (fetched) {
-            result.data = [fetched];
-        } else {
-            console.warn('[Supabase] Запись mileage_log не найдена после вставки');
+        if (fetchError || !fetched) {
+            throw new Error(`Не удалось сохранить запись пробега: запись с id ${record.id} не найдена на сервере после вставки (проверьте RLS и тип id)`);
         }
+        result.data = [fetched];
     }
     return result;
 };
