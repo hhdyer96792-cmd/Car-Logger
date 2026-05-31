@@ -375,6 +375,7 @@ App.db.sync.processSyncQueue = async function() {
                 if (typeof App.ui.pages.renderDashboard === 'function') App.ui.pages.renderDashboard();
                 if (typeof App.ui.pages.renderCarSelector === 'function') App.ui.pages.renderCarSelector();
                 if (typeof App.ui.pages.updateCarSelectorOnCarTab === 'function') App.ui.pages.updateCarSelectorOnCarTab();
+                if (typeof App.ui.pages.renderCarTab === 'function') App.ui.pages.renderCarTab();
                 
                 console.log(`[Sync] Действие ${action.id} удалено из очереди, UI обновлён`);
             } catch (err) {
@@ -392,7 +393,6 @@ App.db.sync.processSyncQueue = async function() {
                     await App.db.sync._updatePendingAction(action, newRetryCount, err.message);
                     if (newRetryCount < MAX_RETRIES) {
                         const delay = App.db.sync._getDelay(newRetryCount);
-                        console.log(`[Sync] Повторная попытка через ${delay} мс (${newRetryCount}/${MAX_RETRIES})`);
                         setTimeout(() => { if (navigator.onLine) App.db.sync.processSyncQueue(); }, delay);
                     }
                 }
