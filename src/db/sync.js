@@ -175,22 +175,23 @@ App.db.sync._executeDelete = async function(action) {
         default: throw new Error(`Unknown entityType for delete: ${entityType}`);
     }
     
-    console.log(`[Sync] Удаление ${entityType} с ID ${entityId}`);
+    // Проверяем, есть ли запись на сервере (чтобы не получить 404)
+    const { data: existing, error: fetchError } = await App.supabase
+        .from(tableName)
+        .select('id')
+        .eq('id', entityId)
+        .maybeSingle();
     
-    let session = null;
-    for (let i = 0; i < 20; i++) {
-        const { data: { session: s } } = await App.supabase.auth.getSession();
-        if (s) {
-            session = s;
-            break;
-        }
-        await new Promise(r => setTimeout(r, 500));
+    if (fetchError && fetchError.status !== 404) {
+        throw fetchError;
     }
-    if (!session) throw new Error('Нет активной сессии');
     
-    const { error } = await App.supabase.from(tableName).delete().eq('id', entityId);
-    if (error) throw error;
+    if (existing) {
+        const { error } = await App.supabase.from(tableName).delete().eq('id', entityId);
+        if (error) throw error;
+    }
     
+    // Удаляем локально
     await App.db.delete(tableName, entityId);
     const storeKey = {
         'operations': 'operations',
