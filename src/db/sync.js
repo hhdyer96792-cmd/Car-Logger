@@ -158,13 +158,18 @@ App.db.sync._executeDelete = async function(action) {
         default: throw new Error(`Unknown entityType for delete: ${entityType}`);
     }
     
-    console.log(`[Sync] Удаление на сервере: ${tableName} id=${entityId}`);
+    const carId = App.store.activeCarId;
+    console.log(`[Sync] Удаление на сервере: ${tableName} id=${entityId}, car_id=${carId}`);
     
-    // Пытаемся удалить на сервере, игнорируем 404
     let deleted = false;
     for (let attempt = 1; attempt <= 3; attempt++) {
         try {
-            const { error, status } = await App.supabase.from(tableName).delete().eq('id', entityId);
+            let query = App.supabase.from(tableName).delete().eq('id', entityId);
+            // Добавляем условие по car_id (кроме таблицы cars, где car_id нет)
+            if (carId && tableName !== 'cars') {
+                query = query.eq('car_id', carId);
+            }
+            const { error } = await query;
             if (error) {
                 if (error.status === 404) {
                     console.log(`[Sync] Запись ${entityId} не найдена на сервере, считаем удалённой`);
@@ -184,10 +189,9 @@ App.db.sync._executeDelete = async function(action) {
     }
     
     if (!deleted) {
-        console.warn(`[Sync] Не удалось удалить запись ${entityId} на сервере, но удаляем локально`);
+        console.warn(`[Sync] Не удалось удалить запись ${entityId} на сервере, удаляем локально`);
     }
     
-    // Удаляем локально в любом случае
     await App.db.delete(tableName, entityId);
     const storeKey = {
         'operations': 'operations',
