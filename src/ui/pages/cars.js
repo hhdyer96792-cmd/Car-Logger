@@ -2,6 +2,49 @@
 window.App = window.App || {};
 App.ui.pages = App.ui.pages || {};
 
+// Делегирование для кнопок автомобиля (не теряется после перерисовки)
+document.body.addEventListener('click', (e) => {
+    const target = e.target.closest('#add-car-btn');
+    if (target) {
+        e.preventDefault();
+        App.ui.pages.addCar();
+        return;
+    }
+    const renameTarget = e.target.closest('#rename-car-btn');
+    if (renameTarget) {
+        e.preventDefault();
+        App.ui.pages.renameCar();
+        return;
+    }
+    const deleteTarget = e.target.closest('#delete-car-btn');
+    if (deleteTarget) {
+        e.preventDefault();
+        App.ui.pages.deleteCar();
+        return;
+    }
+    const saveDetailsTarget = e.target.closest('#save-car-details-btn');
+    if (saveDetailsTarget) {
+        e.preventDefault();
+        // Сохраняем данные автомобиля
+        const brand = document.getElementById('car-brand')?.value?.trim();
+        const model = document.getElementById('car-model')?.value?.trim();
+        const year = parseInt(document.getElementById('car-year')?.value) || null;
+        const plate = document.getElementById('car-plate')?.value?.trim();
+        const vin = document.getElementById('car-vin')?.value?.trim();
+        if (brand !== undefined) App.store.settings.carBrand = brand || '';
+        if (model !== undefined) App.store.settings.carModel = model || '';
+        App.store.settings.carYear = year;
+        if (plate !== undefined) App.store.settings.plateNumber = plate || '';
+        if (vin !== undefined) App.store.settings.vin = vin || '';
+        App.storage.saveSettings(App.store.settings).then(() => {
+            App.toast('Данные автомобиля сохранены', 'success');
+        }).catch(err => {
+            console.error(err);
+            App.toast('Ошибка сохранения', 'error');
+        });
+    }
+});
+
 /* ========== ЛОКАЛЬНЫЙ КЭШ ДОКУМЕНТОВ ========== */
 App.ui.pages._carDocuments = [];
 
