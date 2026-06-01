@@ -11,7 +11,7 @@ function checkResponse({ data, error }, actionName) {
 
 async function queueAction(action) {
     await App.store.addPendingAction(action);
-    // Обновляем UI, чтобы показать иконку ожидания (один раз)
+    // Обновляем UI после добавления в очередь
     if (action.entityType === 'fuel') refreshUIToFuel();
     else if (action.entityType === 'operation') refreshUIToTables();
     else if (action.entityType === 'part') refreshUIToParts();
@@ -19,6 +19,10 @@ async function queueAction(action) {
     else if (action.entityType === 'history') refreshUIToHistory();
     else if (action.entityType === 'mileage') refreshUIToMileage();
     else if (action.entityType === 'car_settings') refreshUIToSettings();
+    else if (action.entityType === 'car') {
+        if (typeof App.ui.pages.renderCarSelector === 'function') App.ui.pages.renderCarSelector();
+        if (typeof App.ui.pages.renderCarTab === 'function') App.ui.pages.renderCarTab();
+    }
     
     if ('serviceWorker' in navigator && 'SyncManager' in window) {
         try {
@@ -66,16 +70,18 @@ App.storage.saveCar = async function(car) {
     const carWithId = { ...car };
     if (!carWithId.id) carWithId.id = crypto.randomUUID();
     if (!navigator.onLine) {
+        // Сначала обновляем локальные данные
+        await App.db.put('cars', carWithId);
+        const idx = App.store.cars.findIndex(c => c.id == carWithId.id);
+        if (idx !== -1) App.store.cars[idx] = carWithId;
+        else App.store.cars.push(carWithId);
+        // Затем добавляем в очередь и обновляем UI
         await queueAction({
             type: 'save',
             entityType: 'car',
             entityId: carWithId.id,
             data: carWithId
         });
-        await App.db.put('cars', carWithId);
-        const idx = App.store.cars.findIndex(c => c.id == carWithId.id);
-        if (idx !== -1) App.store.cars[idx] = carWithId;
-        else App.store.cars.push(carWithId);
         App.toast('Автомобиль сохранён локально', 'warning');
         return carWithId;
     }
@@ -105,14 +111,16 @@ App.storage.saveCar = async function(car) {
 
 App.storage.deleteCar = async function(carId) {
     if (!navigator.onLine) {
+        // Сначала удаляем локально
+        await App.db.delete('cars', carId);
+        App.store.cars = App.store.cars.filter(c => c.id != carId);
+        // Затем добавляем в очередь
         await queueAction({
             type: 'delete',
             entityType: 'car',
             entityId: carId,
             data: { id: carId }
         });
-        await App.db.delete('cars', carId);
-        App.store.cars = App.store.cars.filter(c => c.id != carId);
         App.toast('Удаление сохранено локально', 'warning');
         return true;
     }
@@ -133,14 +141,16 @@ App.storage.renameCar = async function(carId, newName) {
         const car = App.store.cars.find(c => c.id == carId);
         if (car) {
             const updatedCar = { ...car, name: newName };
+            // Сначала обновляем локально
+            await App.db.put('cars', updatedCar);
+            car.name = newName;
+            // Затем добавляем в очередь
             await queueAction({
                 type: 'save',
                 entityType: 'car',
                 entityId: carId,
                 data: updatedCar
             });
-            await App.db.put('cars', updatedCar);
-            car.name = newName;
             App.toast('Переименование сохранено локально', 'warning');
             return true;
         }
@@ -174,13 +184,13 @@ App.storage.addCarDocument = async function(doc) {
     const docWithCarId = { ...doc, car_id: carId };
     if (!docWithCarId.id) docWithCarId.id = crypto.randomUUID();
     if (!navigator.onLine) {
+        await App.db.put('car_documents', docWithCarId);
         await queueAction({
             type: 'save',
             entityType: 'car_document',
             entityId: docWithCarId.id,
             data: docWithCarId
         });
-        await App.db.put('car_documents', docWithCarId);
         App.toast('Документ сохранён локально', 'warning');
         return docWithCarId;
     }
@@ -197,13 +207,13 @@ App.storage.addCarDocument = async function(doc) {
 
 App.storage.deleteCarDocument = async function(docId) {
     if (!navigator.onLine) {
+        await App.db.delete('car_documents', docId);
         await queueAction({
             type: 'delete',
             entityType: 'car_document',
             entityId: docId,
             data: { id: docId }
         });
-        await App.db.delete('car_documents', docId);
         App.toast('Удаление документа сохранено локально', 'warning');
         return true;
     }
@@ -229,9 +239,9 @@ App.storage.saveVehicleStateAndSettings = async function(state, settings) {
     if (cleanState.vin && typeof cleanState.vin !== 'string') cleanState.vin = String(cleanState.vin);
     const data = { car_id: carId, ...cleanState, ...settings };
     if (!navigator.onLine) {
-        await queueAction({ type: 'save', entityType: 'car_state_settings', entityId: carId, data });
         Object.assign(App.store.settings, cleanState, settings);
         await App.db.put('car_settings', { ...App.store.settings, car_id: carId });
+        await queueAction({ type: 'save', entityType: 'car_settings', entityId: carId, data });
         App.toast('Параметры сохранены локально', 'warning');
         return;
     }
@@ -259,16 +269,18 @@ App.storage.saveOperation = async function(op) {
     console.log('[Storage] saveOperation, carId=' + carId + ', id=' + opWithCarId.id + ', online=' + navigator.onLine);
     
     if (!navigator.onLine) {
+        // Сначала обновляем локальные данные
+        await App.store.saveOperationToDB(opWithCarId);
+        const idx = App.store.operations.findIndex(o => o.id == opWithCarId.id);
+        if (idx !== -1) App.store.operations[idx] = opWithCarId;
+        else App.store.operations.push(opWithCarId);
+        // Затем добавляем в очередь и обновляем UI
         await queueAction({
             type: 'save',
             entityType: 'operation',
             entityId: opWithCarId.id,
             data: opWithCarId
         });
-        await App.store.saveOperationToDB(opWithCarId);
-        const idx = App.store.operations.findIndex(o => o.id == opWithCarId.id);
-        if (idx !== -1) App.store.operations[idx] = opWithCarId;
-        else App.store.operations.push(opWithCarId);
         App.toast('Операция сохранена локально', 'warning');
         return;
     }
@@ -292,14 +304,16 @@ App.storage.saveOperation = async function(op) {
 
 App.storage.deleteOperation = async function(operationId) {
     if (!navigator.onLine) {
+        // Сначала удаляем локально
+        await App.db.delete('operations', operationId);
+        App.store.operations = App.store.operations.filter(o => o.id != operationId);
+        // Затем добавляем в очередь
         await queueAction({
             type: 'delete',
             entityType: 'operation',
             entityId: operationId,
             data: { id: operationId }
         });
-        await App.db.delete('operations', operationId);
-        App.store.operations = App.store.operations.filter(o => o.id != operationId);
         App.toast('Удаление сохранено локально', 'warning');
         refreshUIToTables();
         return;
@@ -322,14 +336,16 @@ App.storage.addHistoryRecord = async function(rec) {
     const recWithCarId = { ...rec, car_id: carId };
     if (!recWithCarId.id) recWithCarId.id = crypto.randomUUID();
     if (!navigator.onLine) {
+        // Сначала обновляем локально
+        await App.store.saveHistoryRecordToDB(recWithCarId);
+        App.store.serviceRecords.push(recWithCarId);
+        // Затем добавляем в очередь
         await queueAction({
             type: 'save',
             entityType: 'history',
             entityId: recWithCarId.id,
             data: recWithCarId
         });
-        await App.store.saveHistoryRecordToDB(recWithCarId);
-        App.store.serviceRecords.push(recWithCarId);
         App.toast('Запись сохранена локально', 'warning');
         refreshUIToHistory();
         return;
@@ -353,14 +369,14 @@ App.storage.deleteHistoryRecord = async function(rowIndex) {
     const record = App.store.serviceRecords.find(r => r.rowIndex == rowIndex);
     if (!record) return;
     if (!navigator.onLine) {
+        await App.db.delete('service_records', record.id);
+        App.store.serviceRecords = App.store.serviceRecords.filter(r => r.id != record.id);
         await queueAction({
             type: 'delete',
             entityType: 'history',
             entityId: record.id,
             data: { id: record.id }
         });
-        await App.db.delete('service_records', record.id);
-        App.store.serviceRecords = App.store.serviceRecords.filter(r => r.id != record.id);
         App.toast('Удаление сохранено локально', 'warning');
         refreshUIToHistory();
         return;
@@ -383,16 +399,16 @@ App.storage.savePart = async function(part) {
     const partWithCarId = { ...part, car_id: carId };
     if (!partWithCarId.id) partWithCarId.id = crypto.randomUUID();
     if (!navigator.onLine) {
+        await App.store.savePartToDB(partWithCarId);
+        const idx = App.store.parts.findIndex(p => p.id == partWithCarId.id);
+        if (idx !== -1) App.store.parts[idx] = partWithCarId;
+        else App.store.parts.push(partWithCarId);
         await queueAction({
             type: 'save',
             entityType: 'part',
             entityId: partWithCarId.id,
             data: partWithCarId
         });
-        await App.store.savePartToDB(partWithCarId);
-        const idx = App.store.parts.findIndex(p => p.id == partWithCarId.id);
-        if (idx !== -1) App.store.parts[idx] = partWithCarId;
-        else App.store.parts.push(partWithCarId);
         App.toast('Запчасть сохранена локально', 'warning');
         return;
     }
@@ -409,14 +425,14 @@ App.storage.savePart = async function(part) {
 
 App.storage.deletePart = async function(partId) {
     if (!navigator.onLine) {
+        await App.db.delete('parts', partId);
+        App.store.parts = App.store.parts.filter(p => p.id != partId);
         await queueAction({
             type: 'delete',
             entityType: 'part',
             entityId: partId,
             data: { id: partId }
         });
-        await App.db.delete('parts', partId);
-        App.store.parts = App.store.parts.filter(p => p.id != partId);
         App.toast('Удаление сохранено локально', 'warning');
         refreshUIToParts();
         return;
@@ -439,16 +455,16 @@ App.storage.saveFuelRecord = async function(id, record) {
     const recordWithCarId = { ...record, car_id: carId };
     if (!recordWithCarId.id) recordWithCarId.id = crypto.randomUUID();
     if (!navigator.onLine) {
+        await App.store.saveFuelRecordToDB(recordWithCarId);
+        const idx = App.store.fuelLog.findIndex(f => f.id == recordWithCarId.id);
+        if (idx !== -1) App.store.fuelLog[idx] = recordWithCarId;
+        else App.store.fuelLog.push(recordWithCarId);
         await queueAction({
             type: 'save',
             entityType: 'fuel',
             entityId: recordWithCarId.id,
             data: recordWithCarId
         });
-        await App.store.saveFuelRecordToDB(recordWithCarId);
-        const idx = App.store.fuelLog.findIndex(f => f.id == recordWithCarId.id);
-        if (idx !== -1) App.store.fuelLog[idx] = recordWithCarId;
-        else App.store.fuelLog.push(recordWithCarId);
         App.toast('Заправка сохранена локально', 'warning');
         return;
     }
@@ -465,14 +481,14 @@ App.storage.saveFuelRecord = async function(id, record) {
 
 App.storage.deleteFuelRecord = async function(id) {
     if (!navigator.onLine) {
+        await App.db.delete('fuel_log', id);
+        App.store.fuelLog = App.store.fuelLog.filter(f => f.id != id);
         await queueAction({
             type: 'delete',
             entityType: 'fuel',
             entityId: id,
             data: { id: id }
         });
-        await App.db.delete('fuel_log', id);
-        App.store.fuelLog = App.store.fuelLog.filter(f => f.id != id);
         App.toast('Удаление сохранено локально', 'warning');
         refreshUIToFuel();
         return;
@@ -495,18 +511,19 @@ App.storage.saveTireRecord = async function(id, record) {
     const recordWithCarId = { ...record, car_id: carId };
     if (!recordWithCarId.id) recordWithCarId.id = crypto.randomUUID();
     if (!navigator.onLine) {
+        // Сначала обновляем локальные данные
+        await App.store.saveTireRecordToDB(recordWithCarId);
+        const idx = App.store.tireLog.findIndex(t => t.id == recordWithCarId.id);
+        if (idx !== -1) App.store.tireLog[idx] = recordWithCarId;
+        else App.store.tireLog.push(recordWithCarId);
+        // Затем добавляем в очередь и обновляем UI
         await queueAction({
             type: 'save',
             entityType: 'tire',
             entityId: recordWithCarId.id,
             data: recordWithCarId
         });
-        await App.store.saveTireRecordToDB(recordWithCarId);
-        const idx = App.store.tireLog.findIndex(t => t.id == recordWithCarId.id);
-        if (idx !== -1) App.store.tireLog[idx] = recordWithCarId;
-        else App.store.tireLog.push(recordWithCarId);
         App.toast('Шины сохранены локально', 'warning');
-        // UI обновляется внутри queueAction, не вызываем повторно
         return;
     }
     const res = await App.supa.saveTireRecord(record);
@@ -522,14 +539,14 @@ App.storage.saveTireRecord = async function(id, record) {
 
 App.storage.deleteTireRecord = async function(id) {
     if (!navigator.onLine) {
+        await App.db.delete('tires', id);
+        App.store.tireLog = App.store.tireLog.filter(t => t.id != id);
         await queueAction({
             type: 'delete',
             entityType: 'tire',
             entityId: id,
             data: { id: id }
         });
-        await App.db.delete('tires', id);
-        App.store.tireLog = App.store.tireLog.filter(t => t.id != id);
         App.toast('Удаление сохранено локально', 'warning');
         refreshUIToTires();
         return;
@@ -553,14 +570,14 @@ App.storage.addMileageRecord = async function(date, mileage, motohours) {
     const record = { date, mileage, motohours, user_id: userId, car_id: carId };
     if (!record.id) record.id = crypto.randomUUID();
     if (!navigator.onLine) {
+        await App.store.saveMileageRecordToDB(record);
+        App.store.mileageHistory.push(record);
         await queueAction({
             type: 'save',
             entityType: 'mileage',
             entityId: record.id,
             data: record
         });
-        await App.store.saveMileageRecordToDB(record);
-        App.store.mileageHistory.push(record);
         App.toast('Запись пробега сохранена локально', 'warning');
         refreshUIToMileage();
         return;
@@ -583,14 +600,14 @@ App.storage.saveSettings = async function(settings) {
     const settingsWithCar = { ...settings, car_id: carId };
     
     if (!navigator.onLine) {
+        Object.assign(App.store.settings, settings);
+        await App.db.put('car_settings', settingsWithCar);
         await queueAction({
             type: 'save',
             entityType: 'car_settings',
             entityId: carId,
             data: settingsWithCar
         });
-        Object.assign(App.store.settings, settings);
-        await App.db.put('car_settings', settingsWithCar);
         App.toast('Настройки сохранены локально', 'warning');
         refreshUIToSettings();
         return;
