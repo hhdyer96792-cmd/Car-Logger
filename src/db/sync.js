@@ -161,8 +161,9 @@ App.db.sync._executeDelete = async function(action) {
     const carId = App.store.activeCarId;
     console.log(`[Sync] Удаление на сервере: ${tableName} id=${entityId}, car_id=${carId}`);
     
+    let lastError = null;
     let deleted = false;
-    for (let attempt = 1; attempt <= 3; attempt++) {
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
         try {
             let query = App.supabase.from(tableName).delete().eq('id', entityId);
             // Добавляем условие по car_id (кроме таблицы cars, где car_id нет)
@@ -182,14 +183,20 @@ App.db.sync._executeDelete = async function(action) {
             console.log(`[Sync] Удаление на сервере успешно для ${entityId}`);
             break;
         } catch (err) {
+            lastError = err;
             console.error(`[Sync] Попытка ${attempt} удаления на сервере не удалась:`, err);
-            if (attempt === 3) throw err;
+            if (attempt === MAX_RETRIES) {
+                // После всех попыток выбрасываем ошибку, чтобы действие не было удалено из очереди
+                throw new Error(`Не удалось удалить запись ${entityId} на сервере после ${MAX_RETRIES} попыток: ${err.message}`);
+            }
             await new Promise(r => setTimeout(r, 1000 * attempt));
         }
     }
     
+    // Если удаление на сервере не произошло, но мы не выбросили ошибку (например, 404)
+    // всё равно удаляем локально
     if (!deleted) {
-        console.warn(`[Sync] Не удалось удалить запись ${entityId} на сервере, удаляем локально`);
+        console.warn(`[Sync] Запись ${entityId} не найдена на сервере, удаляем только локально`);
     }
     
     await App.db.delete(tableName, entityId);
@@ -258,9 +265,9 @@ App.db.sync.processSyncQueue = async function() {
                 // Принудительно перезагружаем все данные из IndexedDB
                 await App.store.loadFromIndexedDB();
                 // Принудительная перерисовка текущей вкладки после каждого успешного действия
-if (typeof App.events !== 'undefined' && App.events.currentActiveTab) {
-    App.events.switchToTab(App.events.currentActiveTab);
-}
+                if (typeof App.events !== 'undefined' && App.events.currentActiveTab) {
+                    App.events.switchToTab(App.events.currentActiveTab);
+                }
                 // Полная перерисовка UI
                 if (typeof App.renderAll === 'function') App.renderAll();
                 console.log(`[Sync] Действие ${action.id} выполнено, UI обновлён`);
