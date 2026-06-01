@@ -23,6 +23,10 @@ async function queueAction(action) {
         if (typeof App.ui.pages.renderCarSelector === 'function') App.ui.pages.renderCarSelector();
         if (typeof App.ui.pages.renderCarTab === 'function') App.ui.pages.renderCarTab();
     }
+
+     if (typeof App.events !== 'undefined' && App.events.currentActiveTab) {
+        App.events.switchToTab(App.events.currentActiveTab);
+    }
     
     if ('serviceWorker' in navigator && 'SyncManager' in window) {
         try {
