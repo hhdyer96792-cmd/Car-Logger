@@ -228,7 +228,7 @@ App.ui.pages.renderTireCalculator = function() {
     });
 };
 
-// ---------- МОДАЛЬНОЕ ОКНО (с добавленными дисками) ----------
+// ---------- МОДАЛЬНОЕ ОКНО (с защитой от двойного сохранения) ----------
 App.ui.pages.openTireModal = function(record) {
     var isEdit = !!(record && record.id);
     var defaultDate = record ? App.utils.isoToDDMMYYYY(record.date) : App.utils.isoToDDMMYYYY(new Date().toISOString().split('T')[0]);
@@ -270,7 +270,7 @@ App.ui.pages.openTireModal = function(record) {
                 '<label>Размерность</label><input type="text" name="size" placeholder="205/55R16" oninput="App.ui.pages.formatTireInput(this)" value="' + App.utils.escapeHtml(record ? (record.size || '') : '') + '">' +
                 '<label>Стоимость покупки (₽)</label><input type="number" name="purchaseCost" step="0.01" value="' + (record ? (record.purchaseCost || '') : '') + '">' +
             '</div>' +
-            '<div class="modal-actions"><button type="submit" class="primary-btn">Сохранить</button><button type="button" class="cancel-btn secondary-btn">Отмена</button></div>' +
+            '<div class="modal-actions"><button type="submit" class="primary-btn" id="tire-submit-btn">Сохранить</button><button type="button" class="cancel-btn secondary-btn">Отмена</button></div>' +
         '</form>';
 
     var modal = App.ui.createModal(isEdit ? '<i data-lucide="circle"></i> Редактировать запись шин' : '<i data-lucide="circle"></i> Сменить резину', content);
@@ -303,13 +303,24 @@ App.ui.pages.openTireModal = function(record) {
     }
 
     var form = modal.querySelector('#tire-form');
+    var submitBtn = modal.querySelector('#tire-submit-btn');
+    var isSubmitting = false; // защита от двойного нажатия
+
     form.onsubmit = function(e) {
         e.preventDefault();
+        if (isSubmitting) return;
+        isSubmitting = true;
+        if (submitBtn) submitBtn.disabled = true;
+
         var formEl = e.target;
         var d = Object.fromEntries(new FormData(formEl));
         var isNew = d.isNewSet === 'on';
         var currentMileage = App.utils.validateNumberInput(formEl.querySelector('[name="currentMileage"]'), false);
-        if (currentMileage === null) return;
+        if (currentMileage === null) {
+            isSubmitting = false;
+            if (submitBtn) submitBtn.disabled = false;
+            return;
+        }
 
         var mountCost = App.utils.validateNumberInput(formEl.querySelector('[name="mountCost"]'), true, true) || 0;
         var purchaseCost = App.utils.validateNumberInput(formEl.querySelector('[name="purchaseCost"]'), true, true) || 0;
@@ -339,22 +350,25 @@ App.ui.pages.openTireModal = function(record) {
         };
 
         if (App.config.USE_SUPABASE) {
-    App.storage.saveTireRecord(d.id, rowData)
-        .then(function(res) {
-            if (res && res.data && res.data.length > 0) rowData.id = res.data[0].id;
-            if (isEdit) {
-                var idx = App.store.tireLog.findIndex(function(t) { return t.id == d.id; });
-                if (idx !== -1) App.store.tireLog[idx] = rowData;
-            } else {
-                App.store.tireLog.push(rowData);
-            }
-            App.store.saveToLocalStorage();
-            // Убираем дублирующий вызов — refreshUIToTires уже есть в storage.js
-            App.toast(isEdit ? 'Запись о шинах обновлена' : 'Резина добавлена', 'success');
-        }).catch(function(err) {
-            console.error(err);
-            App.toast('Ошибка сохранения в Supabase', 'error');
-        });
+            App.storage.saveTireRecord(d.id, rowData)
+                .then(function(res) {
+                    if (res && res.data && res.data.length > 0) rowData.id = res.data[0].id;
+                    if (isEdit) {
+                        var idx = App.store.tireLog.findIndex(function(t) { return t.id == d.id; });
+                        if (idx !== -1) App.store.tireLog[idx] = rowData;
+                    } else {
+                        App.store.tireLog.push(rowData);
+                    }
+                    App.store.saveToLocalStorage();
+                    // storage.js уже вызывает refreshUIToTires(), поэтому здесь не вызываем
+                    App.toast(isEdit ? 'Запись о шинах обновлена' : 'Резина добавлена', 'success');
+                }).catch(function(err) {
+                    console.error(err);
+                    App.toast('Ошибка сохранения в Supabase', 'error');
+                }).finally(function() {
+                    isSubmitting = false;
+                    if (submitBtn) submitBtn.disabled = false;
+                });
         } else {
             if (isEdit) {
                 var idx = App.store.tireLog.findIndex(function(t) { return t.id == d.id; });
@@ -365,6 +379,8 @@ App.ui.pages.openTireModal = function(record) {
             App.store.saveToLocalStorage();
             App.ui.pages.renderTiresTab();
             App.toast(isEdit ? 'Запись о шинах обновлена' : 'Резина добавлена', 'success');
+            isSubmitting = false;
+            if (submitBtn) submitBtn.disabled = false;
         }
     };
 
