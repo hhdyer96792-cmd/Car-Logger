@@ -159,16 +159,35 @@ App.db.sync._executeDelete = async function(action) {
     }
     
     console.log(`[Sync] Удаление на сервере: ${tableName} id=${entityId}`);
-    try {
-        const { error } = await App.supabase.from(tableName).delete().eq('id', entityId);
-        if (error && error.status !== 404) throw error;
-        console.log(`[Sync] Удаление на сервере успешно для ${entityId}`);
-    } catch (err) {
-        console.error(`[Sync] Ошибка при удалении на сервере:`, err);
-        throw err;
+    
+    // Пытаемся удалить на сервере, игнорируем 404
+    let deleted = false;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+            const { error, status } = await App.supabase.from(tableName).delete().eq('id', entityId);
+            if (error) {
+                if (error.status === 404) {
+                    console.log(`[Sync] Запись ${entityId} не найдена на сервере, считаем удалённой`);
+                    deleted = true;
+                    break;
+                }
+                throw error;
+            }
+            deleted = true;
+            console.log(`[Sync] Удаление на сервере успешно для ${entityId}`);
+            break;
+        } catch (err) {
+            console.error(`[Sync] Попытка ${attempt} удаления на сервере не удалась:`, err);
+            if (attempt === 3) throw err;
+            await new Promise(r => setTimeout(r, 1000 * attempt));
+        }
     }
     
-    // Удаляем локально
+    if (!deleted) {
+        console.warn(`[Sync] Не удалось удалить запись ${entityId} на сервере, но удаляем локально`);
+    }
+    
+    // Удаляем локально в любом случае
     await App.db.delete(tableName, entityId);
     const storeKey = {
         'operations': 'operations',
@@ -234,6 +253,10 @@ App.db.sync.processSyncQueue = async function() {
                 await App.db.delete('pending_actions', action.id);
                 // Принудительно перезагружаем все данные из IndexedDB
                 await App.store.loadFromIndexedDB();
+                // Принудительная перерисовка текущей вкладки после каждого успешного действия
+if (typeof App.events !== 'undefined' && App.events.currentActiveTab) {
+    App.events.switchToTab(App.events.currentActiveTab);
+}
                 // Полная перерисовка UI
                 if (typeof App.renderAll === 'function') App.renderAll();
                 console.log(`[Sync] Действие ${action.id} выполнено, UI обновлён`);
