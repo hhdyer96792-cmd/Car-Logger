@@ -86,11 +86,9 @@ App.db.sync._executeAction = async function(action) {
         }
         case 'car_state_settings':
         case 'car_settings': {
-            // Очищаем данные от возможных объектов
             const cleanedData = { ...data };
             if (cleanedData.plateNumber && typeof cleanedData.plateNumber !== 'string') cleanedData.plateNumber = String(cleanedData.plateNumber);
             if (cleanedData.vin && typeof cleanedData.vin !== 'string') cleanedData.vin = String(cleanedData.vin);
-            // Сохраняем в Supabase
             await App.supa.saveVehicleState({
                 currentMileage: cleanedData.currentMileage,
                 currentMotohours: cleanedData.currentMotohours,
@@ -112,9 +110,7 @@ App.db.sync._executeAction = async function(action) {
                 notificationMethod: cleanedData.notificationMethod,
                 reminderDays: cleanedData.reminderDays
             });
-            // Обновляем локальные настройки
             Object.assign(App.store.settings, cleanedData);
-            // Дополнительно перезагружаем настройки из БД (на случай, если сервер изменил значения)
             if (typeof App.storage.loadSettingsForCar === 'function') {
                 await App.storage.loadSettingsForCar(App.store.activeCarId);
             }
@@ -137,10 +133,8 @@ App.db.sync._executeAction = async function(action) {
                     await App.db.put('cars', carData);
                 }
             } else if (type === 'delete') {
-                // Удаляем на сервере (игнорируем 404)
                 const { error } = await App.supabase.from('cars').delete().eq('id', entityId);
                 if (error && error.status !== 404) throw error;
-                // Удаляем локально
                 await App.db.delete('cars', entityId);
                 const idx = App.store.cars.findIndex(c => c.id == entityId);
                 if (idx !== -1) App.store.cars.splice(idx, 1);
@@ -166,13 +160,18 @@ App.db.sync._executeDelete = async function(action) {
         default: throw new Error(`Unknown entityType for delete: ${entityType}`);
     }
     
-    // ВСЕГДА пытаемся удалить на сервере, даже если записи нет (ошибка 404 не фатальна)
+    console.log(`[Sync] Удаление на сервере: ${tableName} id=${entityId}`);
     try {
         const { error } = await App.supabase.from(tableName).delete().eq('id', entityId);
-        if (error && error.status !== 404) throw error;
+        if (error) {
+            console.error(`[Sync] Ошибка удаления на сервере: ${error.message}`, error);
+            if (error.status !== 404) throw error;
+        } else {
+            console.log(`[Sync] Успешно удалено на сервере: ${entityId}`);
+        }
     } catch (err) {
-        console.warn(`[Sync] Ошибка при удалении на сервере ${entityType} ${entityId}:`, err);
-        // Не прерываем синхронизацию, пробуем удалить локально
+        console.error(`[Sync] Критическая ошибка при удалении на сервере:`, err);
+        throw err;
     }
     
     // Удаляем локально в любом случае
@@ -187,6 +186,7 @@ App.db.sync._executeDelete = async function(action) {
     if (storeKey && App.store[storeKey]) {
         App.store[storeKey] = App.store[storeKey].filter(i => i.id != entityId);
     }
+    console.log(`[Sync] Локальное удаление завершено для ${entityType} ${entityId}`);
     return { success: true };
 };
 
@@ -202,13 +202,11 @@ App.db.sync._updateLocalId = async function(entityType, oldId, serverRecord) {
         case 'car': storeArray = App.store.cars; storeName = 'cars'; break;
         default: return;
     }
-    // Удаляем старую запись (если существует)
     const idx = storeArray.findIndex(i => i.id == oldId);
     if (idx !== -1) {
         storeArray.splice(idx, 1);
         await App.db.delete(storeName, oldId);
     }
-    // Добавляем новую запись
     storeArray.push(serverRecord);
     await App.db.put(storeName, serverRecord);
 };
@@ -239,7 +237,6 @@ App.db.sync._resolveConflict = async function(action) {
         
         const { data, error } = await App.supabase.from(tableName).select('*').eq('id', entityId).single();
         if (error && error.status === 404) {
-            // На сервере нет — удаляем локально
             await App.db.delete(tableName, entityId);
             const storeKey = {
                 'operations': 'operations',
@@ -300,6 +297,16 @@ App.db.sync.processSyncQueue = async function() {
     App.db.sync._isRunning = true;
     try {
         let pending = await App.db.getAll('pending_actions');
+        // Удаляем дубликаты по id из очереди
+        const uniquePending = [];
+        const seenIds = new Set();
+        for (const p of pending.sort((a,b) => a.timestamp - b.timestamp)) {
+            if (!seenIds.has(p.id)) {
+                seenIds.add(p.id);
+                uniquePending.push(p);
+            }
+        }
+        pending = uniquePending;
         if (!pending.length) {
             console.log('[Sync] Нет отложенных действий');
             return;
@@ -308,15 +315,18 @@ App.db.sync.processSyncQueue = async function() {
         for (const action of pending) {
             try {
                 await App.db.sync._executeAction(action);
+                // Удаляем действие из очереди, проверяя успешность удаления
                 await App.db.delete('pending_actions', action.id);
-                // Обновляем локальную копию pendingActions
+                const check = await App.db.getById('pending_actions', action.id);
+                if (check) {
+                    console.error(`[Sync] Не удалось удалить действие ${action.id} из очереди, повторяем`);
+                    await App.db.delete('pending_actions', action.id);
+                }
                 const idx = App.store.pendingActions.findIndex(a => a.id === action.id);
                 if (idx !== -1) App.store.pendingActions.splice(idx, 1);
                 
-                // Принудительно перезагружаем store (включая pendingActions) из IndexedDB
                 await App.store.loadFromIndexedDB();
                 
-                // Полная перерисовка UI
                 if (typeof App.renderAll === 'function') App.renderAll();
                 if (typeof App.ui.pages.renderTOTable === 'function') App.ui.pages.renderTOTable();
                 if (typeof App.ui.pages.renderFuelTab === 'function') App.ui.pages.renderFuelTab();
