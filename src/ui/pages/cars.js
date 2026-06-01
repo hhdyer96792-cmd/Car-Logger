@@ -177,15 +177,17 @@ App.ui.pages.renameCar = async function() {
         // Офлайн-режим: сохраняем действие в очередь
         if (!navigator.onLine) {
             await App.store.addPendingAction({
-                type: 'rename_car',
+                type: 'save',
                 entityType: 'car',
                 entityId: carId,
-                data: { id: carId, name: newName, oldName: car.name }
+                data: { ...car, name: newName }
             });
             car.name = newName;
             await App.db.put('cars', car);
+            // Обновляем UI
             App.ui.pages.renderCarSelector();
             if (typeof App.ui.pages.updateCarSelectorOnCarTab === 'function') App.ui.pages.updateCarSelectorOnCarTab();
+            if (typeof App.ui.pages.renderCarTab === 'function') App.ui.pages.renderCarTab();
             App.toast('Название обновлено локально, синхронизируется позже', 'warning');
             return;
         }
@@ -195,6 +197,7 @@ App.ui.pages.renameCar = async function() {
             car.name = newName;
             App.ui.pages.renderCarSelector();
             if (typeof App.ui.pages.updateCarSelectorOnCarTab === 'function') App.ui.pages.updateCarSelectorOnCarTab();
+            if (typeof App.ui.pages.renderCarTab === 'function') App.ui.pages.renderCarTab();
             App.toast('Название обновлено', 'success');
         } catch (err) {
             console.error(err);
@@ -214,7 +217,6 @@ App.ui.pages.deleteCar = async function() {
     }
     App.ui.confirmModal('Удалить автомобиль и все его данные? Это действие необратимо.', async function() {
         if (!navigator.onLine) {
-            // Офлайн: помечаем на удаление
             await App.store.addPendingAction({
                 type: 'delete',
                 entityType: 'car',
@@ -225,6 +227,7 @@ App.ui.pages.deleteCar = async function() {
             App.store.activeCarId = null;
             await App.db.delete('cars', carId);
             App.ui.pages.renderCarSelector();
+            if (typeof App.ui.pages.updateCarSelectorOnCarTab === 'function') App.ui.pages.updateCarSelectorOnCarTab();
             App.toast('Автомобиль помечен на удаление, синхронизируется позже', 'warning');
             return;
         }
@@ -234,6 +237,7 @@ App.ui.pages.deleteCar = async function() {
             App.store.cars = App.store.cars.filter(c => c.id != carId);
             App.store.activeCarId = null;
             App.ui.pages.renderCarSelector();
+            if (typeof App.ui.pages.updateCarSelectorOnCarTab === 'function') App.ui.pages.updateCarSelectorOnCarTab();
             App.store.operations = [];
             App.store.fuelLog = [];
             App.store.tireLog = [];
@@ -250,7 +254,7 @@ App.ui.pages.deleteCar = async function() {
     });
 };
 
-/* ========== ПРИГЛАШЕНИЯ (ИСПРАВЛЕНА: однократная привязка через делегирование) ========== */
+/* ========== ПРИГЛАШЕНИЯ ========== */
 App.ui.pages.inviteUser = async function() {
     var carId = App.store.activeCarId;
     if (!carId) {
@@ -258,17 +262,7 @@ App.ui.pages.inviteUser = async function() {
         return;
     }
     try {
-        console.log('[Invite] Вызов App.supa.createInviteLink для carId:', carId);
-        if (!App.supa.createInviteLink) {
-            console.error('[Invite] App.supa.createInviteLink не определён');
-            App.toast('Функция приглашения временно недоступна', 'error');
-            return;
-        }
         const inviteLink = await App.supa.createInviteLink(carId);
-        console.log('[Invite] Ссылка получена:', inviteLink);
-        if (!inviteLink) {
-            throw new Error('Не удалось создать ссылку');
-        }
         var copyHtml = '<div style="margin-top:12px;">' +
             '<p class="hint">Ссылка для приглашения:</p>' +
             '<input type="text" value="' + inviteLink + '" readonly style="width:100%;" id="invite-link-input">' +
@@ -422,7 +416,6 @@ App.ui.pages.renderCarTab = function() {
         };
     }
 
-    // Используем делегирование для кнопок (чтобы они работали после перерисовки)
     const addCarBtn = document.getElementById('add-car-btn');
     if (addCarBtn) addCarBtn.onclick = App.ui.pages.addCar;
     const renameCarBtn = document.getElementById('rename-car-btn');
@@ -489,7 +482,6 @@ App.ui.pages.renderCarTab = function() {
     if (vinContainer) {
         var oldVinInput = document.getElementById('car-vin');
         if (!oldVinInput) {
-            console.warn('[Cars] Поле car-vin не найдено, создаём динамически');
             var newVinInput = document.createElement('input');
             newVinInput.type = 'text';
             newVinInput.id = 'car-vin';
@@ -620,7 +612,6 @@ App.ui.pages.loadCarDetails = function(carId) {
     }
     
     var s = App.store.settings;
-    // Исправление: гарантируем, что значения строковые
     brandField.value = (s.carBrand || '').toString();
     modelField.value = (s.carModel || '').toString();
     yearField.value = s.carYear || '';
@@ -646,7 +637,7 @@ if (!window._inviteDelegationSet) {
     window._inviteDelegationSet = true;
 }
 
-/* ========== ОСНОВНЫЕ ПАРАМЕТРЫ (с исправлением [object Object]) ========== */
+/* ========== ОСНОВНЫЕ ПАРАМЕТРЫ ========== */
 App.ui.pages.renderBasicParams = async function() {
     let baseMileage = 0, baseMotohours = 0, purchaseDate = '', purchaseCost = 0;
     if (App.store.activeCarId && App.supa && typeof App.supa.getVehicleState === 'function') {
@@ -848,7 +839,7 @@ App.ui.pages.renderExportBlock = function() {
     }
 };
 
-/* ========== ДОКУМЕНТЫ (без изменений, но оставлен код) ========== */
+/* ========== ДОКУМЕНТЫ ========== */
 App.ui.pages.renderDocuments = function() {
     var container = document.getElementById('documents-accordions');
     if (!container) return;
@@ -1432,8 +1423,8 @@ App.ui.pages.renderSharingListForCarTab = function() {
         var avgCostPerKm = App.store.settings.currentMileage ? totalCost / App.store.settings.currentMileage : 0;
         var reportHtml = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Сервисная история</title><style>body{font-family:sans-serif;margin:20px}h1{color:#3498db}h2{border-bottom:1px solid #ccc}table{width:100%;border-collapse:collapse;margin-bottom:20px}td,th{border:1px solid #ddd;padding:8px}th{background:#f2f2f2}.stat-card{display:inline-block;background:#f9f9f9;padding:10px;margin:5px;border-radius:8px}</style></head><body><h1>Сервисная история</h1><p><strong>Дата:</strong>' + new Date().toLocaleDateString('ru-RU') + '</p><p><strong>Пробег:</strong>' + App.store.settings.currentMileage.toLocaleString() + ' км</p><h2>Расходы</h2><div>' +
             '<div class="stat-card">ТО: ' + totalMaintenance.toFixed(2) + ' ₽</div><div class="stat-card">Топливо: ' + totalFuel.toFixed(2) + ' ₽</div><div class="stat-card">Всего: ' + totalCost.toFixed(2) + ' ₽</div><div class="stat-card">1 км: ' + avgCostPerKm.toFixed(2) + ' ₽</div></div><h2>Операции</h2><table><thead><tr><th>Категория</th><th>Операция</th><th>Интервал км</th><th>Интервал мес</th><th>Последнее ТО</th><th>Последний пробег</th></tr></thead><tbody>';
-        App.store.operations.forEach(function(op) { reportHtml += '<tr><td>' + App.utils.escapeHtml(op.category) + '</td><td>' + App.utils.escapeHtml(op.name) + '</td><td>' + (op.intervalKm || '—') + '</td><td>' + (op.intervalMonths || '—') + '</td><td>' + (op.lastDate || '—') + '</td><td>' + (op.lastMileage || '—') + '</td></table>'; });
-        reportHtml += '</tbody></table><h2>История ТО</h2><tr><thead><tr><th>Дата</th><th>Операция</th><th>Пробег</th><th>Запчасти</th><th>Работа</th><th>DIY</th><th>Прим.</th></tr></thead><tbody>';
+        App.store.operations.forEach(function(op) { reportHtml += '<tr><td>' + App.utils.escapeHtml(op.category) + '<tr><td>' + App.utils.escapeHtml(op.name) + '</td><td>' + (op.intervalKm || '—') + '</td><td>' + (op.intervalMonths || '—') + '</td><td>' + (op.lastDate || '—') + '</td><td>' + (op.lastMileage || '—') + '</td></tr>'; });
+        reportHtml += '</tbody></table><h2>История ТО</h2><table><thead><tr><th>Дата</th><th>Операция</th><th>Пробег</th><th>Запчасти</th><th>Работа</th><th>DIY</th><th>Прим.</th></tr></thead><tbody>';
         App.store.serviceRecords.sort(function(a,b){return new Date(b.date)-new Date(a.date);}).forEach(function(rec){ var op=App.store.operations.find(function(o){return o.id==rec.operation_id;}); reportHtml+='<tr><td>'+ (rec.date||'')+'</td><td>'+ App.utils.escapeHtml(op?op.name:'Неизвестно')+'</td><td>'+ (rec.mileage||'')+'</td><td>'+ (rec.parts_cost||'0')+'</td><td>'+ (rec.work_cost||'0')+'</td><td>'+ (rec.is_diy===true?'Да':'Нет')+'</td><td>'+ (rec.notes||'')+'</td></tr>'; });
         reportHtml += '</tbody></table></body></html>';
         var element = document.createElement('div');
