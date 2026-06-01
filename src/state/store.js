@@ -1,4 +1,4 @@
-// src/state/store.js (полностью, с защитой от дублей)
+// src/state/store.js
 window.App = window.App || {};
 
 App.store = {
@@ -50,7 +50,7 @@ App.store = {
         );
     },
 
-    // ========== ЗАГРУЗКА ИЗ INDEXEDDB С УСТРАНЕНИЕМ ДУБЛЕЙ ==========
+    // ========== ЗАГРУЗКА ИЗ INDEXEDDB БЕЗ ДУБЛЕЙ ==========
     loadFromIndexedDB: async function() {
         if (!App.db || !App.db._db) {
             console.warn('[Store] IndexedDB не инициализирована, загружаю из localStorage (fallback)');
@@ -69,7 +69,7 @@ App.store = {
             const allMileage = await App.db.getAll('mileage_log');
 
             if (carId) {
-                // Устранение дублей по id через Map
+                // Используем Map для устранения дублей по id
                 const opsMap = new Map();
                 allOps.filter(op => op.car_id == carId).forEach(op => {
                     if (!opsMap.has(op.id)) opsMap.set(op.id, op);
@@ -193,10 +193,11 @@ App.store = {
                 localStorage.setItem('vesta_active_car_id', this.activeCarId);
             }
 
+            // ========== ВАЖНО: перезагружаем pendingActions из БД ==========
             const pending = await App.db.getAll('pending_actions');
             this.pendingActions = pending.sort((a, b) => a.timestamp - b.timestamp);
 
-            // Загрузка настроек с защитой от [object Object]
+            // ========== ЗАГРУЗКА НАСТРОЕК С ДЕШИФРОВКОЙ ==========
             if (this.activeCarId) {
                 const carSettings = await App.db.getById('car_settings', this.activeCarId);
                 if (carSettings) {
@@ -205,6 +206,7 @@ App.store = {
                     if (masterKey && carSettings.telegramToken && typeof carSettings.telegramToken === 'object') {
                         decrypted = await App.db.encryption.decryptSettings(carSettings, masterKey);
                     }
+                    // Принудительно преобразуем поля в строки (защита от [object Object])
                     if (decrypted.plateNumber && typeof decrypted.plateNumber !== 'string') {
                         decrypted.plateNumber = String(decrypted.plateNumber);
                     }
@@ -315,6 +317,7 @@ App.store = {
         };
         this.pendingActions.push(newAction);
         await App.db.put('pending_actions', newAction);
+        console.log('[Store] Добавлено действие в очередь:', newAction.id, newAction.type, newAction.entityType);
     },
     clearPendingActions: async function() {
         await App.db.clear('pending_actions');
@@ -324,7 +327,6 @@ App.store = {
         await App.db.delete('pending_actions', actionId);
         this.pendingActions = this.pendingActions.filter(a => a.id !== actionId);
     },
-
     forceReloadPendingActions: async function() {
         const pending = await App.db.getAll('pending_actions');
         this.pendingActions = pending.sort((a, b) => a.timestamp - b.timestamp);
@@ -361,14 +363,18 @@ App.store = {
         this.activeCarId = carId;
         localStorage.setItem('vesta_active_car_id', carId);
         
+        // Загружаем данные для нового автомобиля из IndexedDB
         this.loadFromIndexedDB().catch(console.error);
         
+        // Загружаем настройки для этого автомобиля
         if (typeof App.storage.loadSettingsForCar === 'function') {
             App.storage.loadSettingsForCar(carId).then(() => {
+                // Обновляем UI после загрузки настроек
                 if (typeof App.renderAll === 'function') App.renderAll();
             }).catch(console.error);
         }
         
+        // Если мы онлайн – подгружаем свежие данные с сервера
         if (navigator.onLine && typeof App.storage.loadAllData === 'function') {
             App.storage.loadAllData().catch(console.error);
         }
