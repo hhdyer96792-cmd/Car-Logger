@@ -810,7 +810,7 @@
         App.storage.loadAllData().catch(console.error);
     }
     
-    // 3. Обновление UI, если остались несинхронизированные записи
+    // 3. Обновление UI всех вкладок, если остались несинхронизированные записи
     if (App.store.pendingActions && App.store.pendingActions.length > 0) {
         if (typeof App.ui.pages.renderFuelTab === 'function') App.ui.pages.renderFuelTab();
         if (typeof App.ui.pages.renderPartsTab === 'function') App.ui.pages.renderPartsTab();
@@ -818,6 +818,8 @@
         if (typeof App.ui.pages.renderDashboard === 'function') App.ui.pages.renderDashboard();
         if (typeof App.ui.pages.renderTiresTab === 'function') App.ui.pages.renderTiresTab();
         if (typeof App.ui.pages.renderHistoryCards === 'function') App.ui.pages.renderHistoryCards();
+        if (typeof App.ui.pages.renderCarTab === 'function') App.ui.pages.renderCarTab();
+        if (typeof App.ui.pages.renderCarSelector === 'function') App.ui.pages.renderCarSelector();
     }
     
     handleOnlineSession();
