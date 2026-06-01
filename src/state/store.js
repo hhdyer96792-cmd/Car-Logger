@@ -50,6 +50,21 @@ App.store = {
         );
     },
 
+ // ========== ДОБАВЛЕННЫЙ МЕТОД ==========
+    /**
+     * Проверяет, находится ли запись в очереди ожидания синхронизации
+     * @param {string} recordId - ID записи
+     * @returns {boolean} true если запись ожидает синхронизации
+     */
+    isRecordPending: function(recordId) {
+        if (!recordId) return false;
+        return this.pendingActions.some(action => 
+            action.entityId == recordId && 
+            (action.type === 'save' || action.type === 'update')
+        );
+    },
+
+
     // ========== ЗАГРУЗКА ИЗ INDEXEDDB БЕЗ ДУБЛЕЙ ==========
     loadFromIndexedDB: async function() {
     if (!App.db || !App.db._db) {
