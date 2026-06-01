@@ -464,36 +464,7 @@ App.ui.pages.renderCarTab = function() {
             }
         };
     }
-
-    // Используем onclick (гарантированная привязка) для кнопок
-    const addCarBtn = document.getElementById('add-car-btn');
-    if (addCarBtn) addCarBtn.onclick = () => App.ui.pages.addCar();
-    const renameCarBtn = document.getElementById('rename-car-btn');
-    if (renameCarBtn) renameCarBtn.onclick = () => App.ui.pages.renameCar();
-    const deleteCarBtn = document.getElementById('delete-car-btn');
-    if (deleteCarBtn) deleteCarBtn.onclick = () => App.ui.pages.deleteCar();
-    const saveCarDetailsBtn = document.getElementById('save-car-details-btn');
-    if (saveCarDetailsBtn) {
-        saveCarDetailsBtn.onclick = function() {
-            var brand = document.getElementById('car-brand')?.value?.trim();
-            var model = document.getElementById('car-model')?.value?.trim();
-            var year = parseInt(document.getElementById('car-year')?.value) || null;
-            var plate = document.getElementById('car-plate')?.value?.trim();
-            var vin = document.getElementById('car-vin')?.value?.trim();
-            if (brand !== undefined) App.store.settings.carBrand = brand || '';
-            if (model !== undefined) App.store.settings.carModel = model || '';
-            App.store.settings.carYear = year;
-            if (plate !== undefined) App.store.settings.plateNumber = plate || '';
-            if (vin !== undefined) App.store.settings.vin = vin || '';
-            App.storage.saveSettings(App.store.settings).then(function() {
-                App.toast('Данные автомобиля сохранены', 'success');
-            }).catch(function(err) {
-                console.error(err);
-                App.toast('Ошибка сохранения', 'error');
-            });
-        };
-    }
-
+  
     if (App.store.activeCarId) {
         App.ui.pages.loadCarDetailsWithRetry(App.store.activeCarId);
     } else {
