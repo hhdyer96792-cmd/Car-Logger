@@ -32,6 +32,19 @@ App.db.sync._updatePendingAction = async function(action, retryCount, errorMessa
     }
 };
 
+// Вспомогательная функция для удаления из очереди pending create/update
+async function cancelPendingSave(entityId) {
+    const pending = await App.db.getAll('pending_actions');
+    const toRemove = pending.filter(a => a.entityId === entityId && (a.type === 'save' || a.type === 'update'));
+    for (const action of toRemove) {
+        await App.db.delete('pending_actions', action.id);
+        const idx = App.store.pendingActions.findIndex(a => a.id === action.id);
+        if (idx !== -1) App.store.pendingActions.splice(idx, 1);
+        console.log(`[Sync] Отменено pending действие ${action.id} (type=${action.type}) для ID ${entityId}`);
+    }
+    return toRemove.length > 0;
+}
+
 App.db.sync._executeAction = async function(action) {
     const { type, entityType, entityId, data } = action;
     let supabaseMethod, tableName;
@@ -49,6 +62,12 @@ App.db.sync._executeAction = async function(action) {
     }
     if (!session) throw new Error('Нет активной сессии после ожидания');
     console.log(`[Sync] Сессия получена, access_token: ${session.access_token ? 'present' : 'missing'}`);
+    
+    // Если это удаление, сначала отменяем все pending save/update для этого ID
+    if (type === 'delete') {
+        await cancelPendingSave(entityId);
+        return await App.db.sync._executeDelete(action);
+    }
     
     switch (entityType) {
         case 'operation':
@@ -147,16 +166,8 @@ App.db.sync._executeAction = async function(action) {
                     else App.store.cars.push(carData);
                     await App.db.put('cars', carData);
                 }
-            } else if (type === 'delete') {
-                const { error } = await App.supabase.from('cars').delete().eq('id', entityId);
-                if (error) throw error;
-                await App.db.delete('cars', entityId);
-                const idx = App.store.cars.findIndex(c => c.id == entityId);
-                if (idx !== -1) App.store.cars.splice(idx, 1);
             }
             return { success: true };
-        case 'delete':
-            return await App.db.sync._executeDelete(action);
         default:
             throw new Error(`Unknown entityType: ${entityType}`);
     }
@@ -171,6 +182,8 @@ App.db.sync._executeDelete = async function(action) {
         case 'tire': tableName = 'tires'; break;
         case 'part': tableName = 'parts'; break;
         case 'history': tableName = 'history'; break;
+        case 'car': tableName = 'cars'; break;
+        case 'car_document': tableName = 'car_documents'; break;
         default: throw new Error(`Unknown entityType for delete: ${entityType}`);
     }
     
@@ -196,15 +209,23 @@ App.db.sync._executeDelete = async function(action) {
         'fuel_log': 'fuelLog',
         'tires': 'tireLog',
         'parts': 'parts',
-        'history': 'serviceRecords'
+        'history': 'serviceRecords',
+        'cars': 'cars',
+        'car_documents': '_carDocuments'
     }[tableName];
-    if (storeKey && App.store[storeKey]) {
+    if (storeKey === '_carDocuments') {
+        const idx = App.ui.pages._carDocuments.findIndex(d => d.id == entityId);
+        if (idx !== -1) App.ui.pages._carDocuments.splice(idx, 1);
+    } else if (storeKey && App.store[storeKey]) {
         App.store[storeKey] = App.store[storeKey].filter(i => i.id != entityId);
     }
     return { success: true };
 };
 
 App.db.sync._updateLocalId = async function(entityType, oldId, serverRecord) {
+    // Если ID не изменился – ничего не делаем
+    if (oldId === serverRecord.id) return;
+    
     let storeArray, storeName;
     switch (entityType) {
         case 'operation': storeArray = App.store.operations; storeName = 'operations'; break;
@@ -374,7 +395,6 @@ App.db.sync.processSyncQueue = async function() {
                     await App.db.sync._updatePendingAction(action, newRetryCount, err.message);
                     if (newRetryCount < MAX_RETRIES) {
                         const delay = App.db.sync._getDelay(newRetryCount);
-                        console.log(`[Sync] Повторная попытка через ${delay} мс (${newRetryCount}/${MAX_RETRIES})`);
                         setTimeout(() => { if (navigator.onLine) App.db.sync.processSyncQueue(); }, delay);
                     }
                 }
