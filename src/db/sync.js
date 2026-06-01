@@ -35,11 +35,9 @@ App.db.sync._updatePendingAction = async function(action, retryCount, errorMessa
 
 App.db.sync._executeAction = async function(action) {
     const { type, entityType, entityId, data } = action;
-    let supabaseMethod, tableName;
     
     console.log(`[Sync] Выполнение действия ${action.id}, тип=${type}, сущность=${entityType}, данные:`, data);
     
-    // Ожидание сессии
     let session = null;
     for (let i = 0; i < 20; i++) {
         const { data: { session: s } } = await App.supabase.auth.getSession();
@@ -75,64 +73,7 @@ App.db.sync._executeAction = async function(action) {
                 await App.db.sync._updateLocalId(entityType, entityId, result.data[0]);
             }
             return { success: true };
-        case 'car_document':
-            const { data: docData, error: docError } = await App.supabase
-                .from('car_documents')
-                .upsert(data, { onConflict: 'id' })
-                .select()
-                .single();
-            if (docError) throw docError;
-            if (docData.id !== entityId) {
-                await App.db.sync._updateLocalId(entityType, entityId, docData);
-            }
-            return { success: true };
-        case 'car_state_settings':
-            const cleanedData = { ...data };
-            if (cleanedData.plateNumber && typeof cleanedData.plateNumber !== 'string') cleanedData.plateNumber = String(cleanedData.plateNumber);
-            if (cleanedData.vin && typeof cleanedData.vin !== 'string') cleanedData.vin = String(cleanedData.vin);
-            await App.supa.saveVehicleState({
-                currentMileage: cleanedData.currentMileage,
-                currentMotohours: cleanedData.currentMotohours,
-                avgDailyMileage: cleanedData.avgDailyMileage,
-                avgDailyMotohours: cleanedData.avgDailyMotohours,
-                carBrand: cleanedData.carBrand,
-                carModel: cleanedData.carModel,
-                carYear: cleanedData.carYear,
-                plateNumber: cleanedData.plateNumber,
-                vin: cleanedData.vin,
-                baseMileage: cleanedData.baseMileage,
-                baseMotohours: cleanedData.baseMotohours,
-                purchaseDate: cleanedData.purchaseDate,
-                purchaseCost: cleanedData.purchaseCost
-            });
-            await App.supa.saveUserSettings({
-                telegramToken: cleanedData.telegramToken,
-                telegramChatId: cleanedData.telegramChatId,
-                notificationMethod: cleanedData.notificationMethod,
-                reminderDays: cleanedData.reminderDays
-            });
-            Object.assign(App.store.settings, cleanedData);
-            return { success: true };
-        case 'car_settings':
-            await App.supa.saveUserSettings({
-                telegramToken: data.telegramToken,
-                telegramChatId: data.telegramChatId,
-                notificationMethod: data.notificationMethod,
-                reminderDays: data.reminderDays
-            });
-            await App.supa.saveVehicleState({
-                currentMileage: data.currentMileage,
-                currentMotohours: data.currentMotohours,
-                avgDailyMileage: data.avgDailyMileage,
-                avgDailyMotohours: data.avgDailyMotohours,
-                carBrand: data.carBrand,
-                carModel: data.carModel,
-                carYear: data.carYear,
-                plateNumber: data.plateNumber,
-                vin: data.vin
-            });
-            Object.assign(App.store.settings, data);
-            return { success: true };
+            
         case 'car':
             if (type === 'save') {
                 const { data: carData, error: carError } = await App.supabase
@@ -156,8 +97,10 @@ App.db.sync._executeAction = async function(action) {
                 if (idx !== -1) App.store.cars.splice(idx, 1);
             }
             return { success: true };
+            
         case 'delete':
             return await App.db.sync._executeDelete(action);
+            
         default:
             throw new Error(`Unknown entityType: ${entityType}`);
     }
@@ -175,7 +118,6 @@ App.db.sync._executeDelete = async function(action) {
         default: throw new Error(`Unknown entityType for delete: ${entityType}`);
     }
     
-    // Проверяем, есть ли запись на сервере (чтобы не получить 404)
     const { data: existing, error: fetchError } = await App.supabase
         .from(tableName)
         .select('id')
@@ -191,7 +133,6 @@ App.db.sync._executeDelete = async function(action) {
         if (error) throw error;
     }
     
-    // Удаляем локально
     await App.db.delete(tableName, entityId);
     const storeKey = {
         'operations': 'operations',
@@ -206,7 +147,6 @@ App.db.sync._executeDelete = async function(action) {
     return { success: true };
 };
 
-// ОБНОВЛЁННАЯ ФУНКЦИЯ _updateLocalId (гарантированное удаление старой записи)
 App.db.sync._updateLocalId = async function(entityType, oldId, serverRecord) {
     let storeArray, storeName;
     switch (entityType) {
@@ -219,14 +159,12 @@ App.db.sync._updateLocalId = async function(entityType, oldId, serverRecord) {
         case 'car': storeArray = App.store.cars; storeName = 'cars'; break;
         default: return;
     }
-    // Удаляем старую запись (если существует)
     const idx = storeArray.findIndex(i => i.id == oldId);
     if (idx !== -1) {
         storeArray.splice(idx, 1);
         await App.db.delete(storeName, oldId);
         console.log(`[Sync] Удалена старая запись ${entityType} с id ${oldId}`);
     }
-    // Добавляем новую запись
     storeArray.push(serverRecord);
     await App.db.put(storeName, serverRecord);
     console.log(`[Sync] Добавлена новая запись ${entityType} с id ${serverRecord.id}`);
@@ -301,7 +239,6 @@ App.db.sync._updateLocalFromServer = async function(entityType, serverData) {
     await App.db.put(storeName, serverData);
 };
 
-// ОСНОВНАЯ ФУНКЦИЯ СИНХРОНИЗАЦИИ (с принудительным обновлением pendingActions)
 App.db.sync.processSyncQueue = async function() {
     if (!App.db._db) {
         console.log('[Sync] База данных не инициализирована, повтор через 1с');
@@ -318,7 +255,6 @@ App.db.sync.processSyncQueue = async function() {
     }
     App.db.sync._isRunning = true;
     try {
-        // Получаем актуальные отложенные действия из БД
         let pending = await App.db.getAll('pending_actions');
         if (!pending.length) {
             console.log('[Sync] Нет отложенных действий');
@@ -329,14 +265,11 @@ App.db.sync.processSyncQueue = async function() {
             try {
                 await App.db.sync._executeAction(action);
                 await App.db.delete('pending_actions', action.id);
-                // Обновляем локальную копию pendingActions
                 const idx = App.store.pendingActions.findIndex(a => a.id === action.id);
                 if (idx !== -1) App.store.pendingActions.splice(idx, 1);
                 
-                // Принудительно перезагружаем store (включая pendingActions) из IndexedDB
                 await App.store.loadFromIndexedDB();
                 
-                // Полная перерисовка UI
                 if (typeof App.renderAll === 'function') App.renderAll();
                 if (typeof App.ui.pages.renderTOTable === 'function') App.ui.pages.renderTOTable();
                 if (typeof App.ui.pages.renderFuelTab === 'function') App.ui.pages.renderFuelTab();
