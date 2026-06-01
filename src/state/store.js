@@ -50,7 +50,7 @@ App.store = {
         );
     },
 
-    // ========== ЗАГРУЗКА ИЗ INDEXEDDB БЕЗ ДУБЛЕЙ ==========
+    // ========== ЗАГРУЗКА ИЗ INDEXEDDB ==========
     loadFromIndexedDB: async function() {
         if (!App.db || !App.db._db) {
             console.warn('[Store] IndexedDB не инициализирована, загружаю из localStorage (fallback)');
@@ -197,7 +197,23 @@ App.store = {
             const pending = await App.db.getAll('pending_actions');
             this.pendingActions = pending.sort((a, b) => a.timestamp - b.timestamp);
 
-            // ========== ЗАГРУЗКА НАСТРОЕК С ДЕШИФРОВКОЙ ==========
+            // ========== ФИЛЬТРУЕМ ЗАПИСИ, ПОМЕЧЕННЫЕ НА УДАЛЕНИЕ ==========
+            const pendingDeleteIds = this.pendingActions
+                .filter(a => a.type === 'delete')
+                .map(a => a.entityId);
+            
+            if (pendingDeleteIds.length) {
+                this.operations = this.operations.filter(op => !pendingDeleteIds.includes(op.id));
+                this.fuelLog = this.fuelLog.filter(f => !pendingDeleteIds.includes(f.id));
+                this.tireLog = this.tireLog.filter(t => !pendingDeleteIds.includes(t.id));
+                this.parts = this.parts.filter(p => !pendingDeleteIds.includes(p.id));
+                this.serviceRecords = this.serviceRecords.filter(h => !pendingDeleteIds.includes(h.id));
+                this.mileageHistory = this.mileageHistory.filter(m => !pendingDeleteIds.includes(m.id));
+                this.cars = this.cars.filter(c => !pendingDeleteIds.includes(c.id));
+                console.log('[Store] Отфильтровано записей, ожидающих удаления:', pendingDeleteIds.length);
+            }
+
+            // ========== ЗАГРУЗКА НАСТРОЕК ==========
             if (this.activeCarId) {
                 const carSettings = await App.db.getById('car_settings', this.activeCarId);
                 if (carSettings) {
@@ -206,7 +222,6 @@ App.store = {
                     if (masterKey && carSettings.telegramToken && typeof carSettings.telegramToken === 'object') {
                         decrypted = await App.db.encryption.decryptSettings(carSettings, masterKey);
                     }
-                    // Принудительно преобразуем поля в строки (защита от [object Object])
                     if (decrypted.plateNumber && typeof decrypted.plateNumber !== 'string') {
                         decrypted.plateNumber = String(decrypted.plateNumber);
                     }
@@ -363,18 +378,14 @@ App.store = {
         this.activeCarId = carId;
         localStorage.setItem('vesta_active_car_id', carId);
         
-        // Загружаем данные для нового автомобиля из IndexedDB
         this.loadFromIndexedDB().catch(console.error);
         
-        // Загружаем настройки для этого автомобиля
         if (typeof App.storage.loadSettingsForCar === 'function') {
             App.storage.loadSettingsForCar(carId).then(() => {
-                // Обновляем UI после загрузки настроек
                 if (typeof App.renderAll === 'function') App.renderAll();
             }).catch(console.error);
         }
         
-        // Если мы онлайн – подгружаем свежие данные с сервера
         if (navigator.onLine && typeof App.storage.loadAllData === 'function') {
             App.storage.loadAllData().catch(console.error);
         }
