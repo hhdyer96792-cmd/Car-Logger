@@ -615,17 +615,21 @@ App.ui.pages.loadCarDetails = function(carId) {
     var plateField = document.getElementById('car-plate');
     var vinField = document.getElementById('car-vin');
     
-    if (!brandField || !modelField || !yearField || !plateField) {
-        return;
-    }
+    if (!brandField || !modelField || !yearField || !plateField) return;
     
     var s = App.store.settings;
-    // Исправление: гарантируем, что значения строковые (защита от [object Object])
     brandField.value = (s.carBrand || '').toString();
     modelField.value = (s.carModel || '').toString();
     yearField.value = s.carYear || '';
-    plateField.value = (typeof s.plateNumber === 'object') ? '' : (s.plateNumber || '').toString();
-    if (vinField) vinField.value = (typeof s.vin === 'object') ? '' : (s.vin || '').toString();
+    
+    // Защита от объектов
+    const plateValue = s.plateNumber;
+    plateField.value = (plateValue && typeof plateValue === 'object') ? '' : (plateValue || '').toString();
+    
+    if (vinField) {
+        const vinValue = s.vin;
+        vinField.value = (vinValue && typeof vinValue === 'object') ? '' : (vinValue || '').toString();
+    }
 };
 
 /* ========== ДЕЛЕГИРОВАНИЕ СОБЫТИЙ ДЛЯ КНОПКИ ПРИГЛАШЕНИЯ ========== */
