@@ -1,4 +1,5 @@
-// src/db/sync.js
+// src/db/sync.js (заменить содержимое файла полностью)
+
 window.App = window.App || {};
 App.db = App.db || {};
 App.db.sync = App.db.sync || {};
@@ -38,6 +39,7 @@ App.db.sync._executeAction = async function(action) {
     
     console.log(`[Sync] Выполнение действия ${action.id}, тип=${type}, сущность=${entityType}, данные:`, data);
     
+    // Ожидание сессии
     let session = null;
     for (let i = 0; i < 20; i++) {
         const { data: { session: s } } = await App.supabase.auth.getSession();
@@ -203,6 +205,7 @@ App.db.sync._executeDelete = async function(action) {
     return { success: true };
 };
 
+// ОБНОВЛЁННАЯ ФУНКЦИЯ _updateLocalId (гарантированное удаление старой записи)
 App.db.sync._updateLocalId = async function(entityType, oldId, serverRecord) {
     let storeArray, storeName;
     switch (entityType) {
@@ -215,15 +218,17 @@ App.db.sync._updateLocalId = async function(entityType, oldId, serverRecord) {
         case 'car': storeArray = App.store.cars; storeName = 'cars'; break;
         default: return;
     }
-    // Найти и удалить старую запись по старому ID
+    // Удаляем старую запись (если существует)
     const idx = storeArray.findIndex(i => i.id == oldId);
     if (idx !== -1) {
         storeArray.splice(idx, 1);
         await App.db.delete(storeName, oldId);
+        console.log(`[Sync] Удалена старая запись ${entityType} с id ${oldId}`);
     }
-    // Добавить новую запись с серверным ID
+    // Добавляем новую запись
     storeArray.push(serverRecord);
     await App.db.put(storeName, serverRecord);
+    console.log(`[Sync] Добавлена новая запись ${entityType} с id ${serverRecord.id}`);
 };
 
 App.db.sync._resolveConflict = async function(action) {
@@ -295,6 +300,7 @@ App.db.sync._updateLocalFromServer = async function(entityType, serverData) {
     await App.db.put(storeName, serverData);
 };
 
+// ОСНОВНАЯ ФУНКЦИЯ СИНХРОНИЗАЦИИ (с принудительным обновлением pendingActions)
 App.db.sync.processSyncQueue = async function() {
     if (!App.db._db) {
         console.log('[Sync] База данных не инициализирована, повтор через 1с');
@@ -311,7 +317,8 @@ App.db.sync.processSyncQueue = async function() {
     }
     App.db.sync._isRunning = true;
     try {
-        const pending = await App.db.getAll('pending_actions');
+        // Получаем актуальные отложенные действия из БД
+        let pending = await App.db.getAll('pending_actions');
         if (!pending.length) {
             console.log('[Sync] Нет отложенных действий');
             return;
@@ -321,11 +328,14 @@ App.db.sync.processSyncQueue = async function() {
             try {
                 await App.db.sync._executeAction(action);
                 await App.db.delete('pending_actions', action.id);
+                // Обновляем локальную копию pendingActions
                 const idx = App.store.pendingActions.findIndex(a => a.id === action.id);
                 if (idx !== -1) App.store.pendingActions.splice(idx, 1);
                 
-                // Принудительно перезагружаем store и перерисовываем UI
+                // Принудительно перезагружаем store (включая pendingActions) из IndexedDB
                 await App.store.loadFromIndexedDB();
+                
+                // Полная перерисовка UI
                 if (typeof App.renderAll === 'function') App.renderAll();
                 if (typeof App.ui.pages.renderTOTable === 'function') App.ui.pages.renderTOTable();
                 if (typeof App.ui.pages.renderFuelTab === 'function') App.ui.pages.renderFuelTab();
