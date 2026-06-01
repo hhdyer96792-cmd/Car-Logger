@@ -1,5 +1,4 @@
-// src/db/sync.js (полный файл с исправлениями)
-
+// src/db/sync.js
 window.App = window.App || {};
 App.db = App.db || {};
 App.db.sync = App.db.sync || {};
@@ -86,7 +85,6 @@ App.db.sync._executeAction = async function(action) {
             }
             return { success: true };
         case 'car_state_settings':
-            // Приведение типов
             const cleanedData = { ...data };
             if (cleanedData.plateNumber && typeof cleanedData.plateNumber !== 'string') cleanedData.plateNumber = String(cleanedData.plateNumber);
             if (cleanedData.vin && typeof cleanedData.vin !== 'string') cleanedData.vin = String(cleanedData.vin);
@@ -144,14 +142,14 @@ App.db.sync._executeAction = async function(action) {
                 if (carData.id !== entityId) {
                     await App.db.sync._updateLocalId(entityType, entityId, carData);
                 } else {
-                    // Заменяем существующую запись
                     const idx = App.store.cars.findIndex(c => c.id == carData.id);
                     if (idx !== -1) App.store.cars[idx] = carData;
                     else App.store.cars.push(carData);
                     await App.db.put('cars', carData);
                 }
             } else if (type === 'delete') {
-                await App.supabase.from('cars').delete().eq('id', entityId);
+                const { error } = await App.supabase.from('cars').delete().eq('id', entityId);
+                if (error) throw error;
                 await App.db.delete('cars', entityId);
                 const idx = App.store.cars.findIndex(c => c.id == entityId);
                 if (idx !== -1) App.store.cars.splice(idx, 1);
@@ -216,15 +214,16 @@ App.db.sync._updateLocalId = async function(entityType, oldId, serverRecord) {
         case 'history': storeArray = App.store.serviceRecords; storeName = 'service_records'; break;
         case 'mileage': storeArray = App.store.mileageHistory; storeName = 'mileage_log'; break;
         case 'car': storeArray = App.store.cars; storeName = 'cars'; break;
+        case 'car_document': storeArray = App.ui.pages._carDocuments; storeName = 'car_documents'; break;
         default: return;
     }
-    // Найти и удалить старую запись по старому ID
+    // Удаляем старую запись по старому ID
     const idx = storeArray.findIndex(i => i.id == oldId);
     if (idx !== -1) {
         storeArray.splice(idx, 1);
         await App.db.delete(storeName, oldId);
     }
-    // Добавить новую запись с серверным ID
+    // Добавляем новую запись с серверным ID
     storeArray.push(serverRecord);
     await App.db.put(storeName, serverRecord);
 };
@@ -281,13 +280,32 @@ App.db.sync._resolveConflict = async function(action) {
 App.db.sync._updateLocalFromServer = async function(entityType, serverData) {
     let storeArray, storeName;
     switch (entityType) {
-        case 'operation': storeArray = App.store.operations; storeName = 'operations'; break;
-        case 'fuel': storeArray = App.store.fuelLog; storeName = 'fuel_log'; break;
-        case 'tire': storeArray = App.store.tireLog; storeName = 'tires'; break;
-        case 'part': storeArray = App.store.parts; storeName = 'parts'; break;
-        case 'history': storeArray = App.store.serviceRecords; storeName = 'service_records'; break;
-        case 'mileage': storeArray = App.store.mileageHistory; storeName = 'mileage_log'; break;
-        default: return;
+        case 'operation':
+            storeArray = App.store.operations;
+            storeName = 'operations';
+            break;
+        case 'fuel':
+            storeArray = App.store.fuelLog;
+            storeName = 'fuel_log';
+            break;
+        case 'tire':
+            storeArray = App.store.tireLog;
+            storeName = 'tires';
+            break;
+        case 'part':
+            storeArray = App.store.parts;
+            storeName = 'parts';
+            break;
+        case 'history':
+            storeArray = App.store.serviceRecords;
+            storeName = 'service_records';
+            break;
+        case 'mileage':
+            storeArray = App.store.mileageHistory;
+            storeName = 'mileage_log';
+            break;
+        default:
+            return;
     }
     const idx = storeArray.findIndex(i => i.id == serverData.id);
     if (idx !== -1) {
@@ -356,6 +374,7 @@ App.db.sync.processSyncQueue = async function() {
                     await App.db.sync._updatePendingAction(action, newRetryCount, err.message);
                     if (newRetryCount < MAX_RETRIES) {
                         const delay = App.db.sync._getDelay(newRetryCount);
+                        console.log(`[Sync] Повторная попытка через ${delay} мс (${newRetryCount}/${MAX_RETRIES})`);
                         setTimeout(() => { if (navigator.onLine) App.db.sync.processSyncQueue(); }, delay);
                     }
                 }
