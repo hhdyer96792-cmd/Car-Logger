@@ -1,4 +1,4 @@
-// src/db/sync.js (полностью, с учётом всех исправлений)
+// src/db/sync.js
 window.App = window.App || {};
 App.db = App.db || {};
 App.db.sync = App.db.sync || {};
@@ -34,10 +34,9 @@ App.db.sync._updatePendingAction = async function(action, retryCount, errorMessa
 
 App.db.sync._executeAction = async function(action) {
     const { type, entityType, entityId, data } = action;
-    let supabaseMethod, tableName;
-    
     console.log(`[Sync] Выполнение действия ${action.id}, тип=${type}, сущность=${entityType}, данные:`, data);
     
+    // Ожидание сессии
     let session = null;
     for (let i = 0; i < 20; i++) {
         const { data: { session: s } } = await App.supabase.auth.getSession();
@@ -55,7 +54,7 @@ App.db.sync._executeAction = async function(action) {
         case 'tire':
         case 'part':
         case 'history':
-        case 'mileage':
+        case 'mileage': {
             const map = {
                 'operation': () => App.supa.saveOperation(data),
                 'fuel': () => App.supa.saveFuelRecord(data),
@@ -72,7 +71,8 @@ App.db.sync._executeAction = async function(action) {
                 await App.db.sync._updateLocalId(entityType, entityId, result.data[0]);
             }
             return { success: true };
-        case 'car_document':
+        }
+        case 'car_document': {
             const { data: docData, error: docError } = await App.supabase
                 .from('car_documents')
                 .upsert(data, { onConflict: 'id' })
@@ -83,10 +83,14 @@ App.db.sync._executeAction = async function(action) {
                 await App.db.sync._updateLocalId(entityType, entityId, docData);
             }
             return { success: true };
+        }
         case 'car_state_settings':
+        case 'car_settings': {
+            // Очищаем данные от возможных объектов
             const cleanedData = { ...data };
             if (cleanedData.plateNumber && typeof cleanedData.plateNumber !== 'string') cleanedData.plateNumber = String(cleanedData.plateNumber);
             if (cleanedData.vin && typeof cleanedData.vin !== 'string') cleanedData.vin = String(cleanedData.vin);
+            // Сохраняем в Supabase
             await App.supa.saveVehicleState({
                 currentMileage: cleanedData.currentMileage,
                 currentMotohours: cleanedData.currentMotohours,
@@ -108,29 +112,15 @@ App.db.sync._executeAction = async function(action) {
                 notificationMethod: cleanedData.notificationMethod,
                 reminderDays: cleanedData.reminderDays
             });
+            // Обновляем локальные настройки
             Object.assign(App.store.settings, cleanedData);
+            // Дополнительно перезагружаем настройки из БД (на случай, если сервер изменил значения)
+            if (typeof App.storage.loadSettingsForCar === 'function') {
+                await App.storage.loadSettingsForCar(App.store.activeCarId);
+            }
             return { success: true };
-        case 'car_settings':
-            await App.supa.saveUserSettings({
-                telegramToken: data.telegramToken,
-                telegramChatId: data.telegramChatId,
-                notificationMethod: data.notificationMethod,
-                reminderDays: data.reminderDays
-            });
-            await App.supa.saveVehicleState({
-                currentMileage: data.currentMileage,
-                currentMotohours: data.currentMotohours,
-                avgDailyMileage: data.avgDailyMileage,
-                avgDailyMotohours: data.avgDailyMotohours,
-                carBrand: data.carBrand,
-                carModel: data.carModel,
-                carYear: data.carYear,
-                plateNumber: data.plateNumber,
-                vin: data.vin
-            });
-            Object.assign(App.store.settings, data);
-            return { success: true };
-        case 'car':
+        }
+        case 'car': {
             if (type === 'save') {
                 const { data: carData, error: carError } = await App.supabase
                     .from('cars')
@@ -147,12 +137,16 @@ App.db.sync._executeAction = async function(action) {
                     await App.db.put('cars', carData);
                 }
             } else if (type === 'delete') {
-                await App.supabase.from('cars').delete().eq('id', entityId);
+                // Удаляем на сервере (игнорируем 404)
+                const { error } = await App.supabase.from('cars').delete().eq('id', entityId);
+                if (error && error.status !== 404) throw error;
+                // Удаляем локально
                 await App.db.delete('cars', entityId);
                 const idx = App.store.cars.findIndex(c => c.id == entityId);
                 if (idx !== -1) App.store.cars.splice(idx, 1);
             }
             return { success: true };
+        }
         case 'delete':
             return await App.db.sync._executeDelete(action);
         default:
@@ -172,21 +166,16 @@ App.db.sync._executeDelete = async function(action) {
         default: throw new Error(`Unknown entityType for delete: ${entityType}`);
     }
     
-    const { data: existing, error: fetchError } = await App.supabase
-        .from(tableName)
-        .select('id')
-        .eq('id', entityId)
-        .maybeSingle();
-    
-    if (fetchError && fetchError.status !== 404) {
-        throw fetchError;
-    }
-    
-    if (existing) {
+    // ВСЕГДА пытаемся удалить на сервере, даже если записи нет (ошибка 404 не фатальна)
+    try {
         const { error } = await App.supabase.from(tableName).delete().eq('id', entityId);
-        if (error) throw error;
+        if (error && error.status !== 404) throw error;
+    } catch (err) {
+        console.warn(`[Sync] Ошибка при удалении на сервере ${entityType} ${entityId}:`, err);
+        // Не прерываем синхронизацию, пробуем удалить локально
     }
     
+    // Удаляем локально в любом случае
     await App.db.delete(tableName, entityId);
     const storeKey = {
         'operations': 'operations',
@@ -213,11 +202,13 @@ App.db.sync._updateLocalId = async function(entityType, oldId, serverRecord) {
         case 'car': storeArray = App.store.cars; storeName = 'cars'; break;
         default: return;
     }
+    // Удаляем старую запись (если существует)
     const idx = storeArray.findIndex(i => i.id == oldId);
     if (idx !== -1) {
         storeArray.splice(idx, 1);
         await App.db.delete(storeName, oldId);
     }
+    // Добавляем новую запись
     storeArray.push(serverRecord);
     await App.db.put(storeName, serverRecord);
 };
@@ -248,6 +239,7 @@ App.db.sync._resolveConflict = async function(action) {
         
         const { data, error } = await App.supabase.from(tableName).select('*').eq('id', entityId).single();
         if (error && error.status === 404) {
+            // На сервере нет — удаляем локально
             await App.db.delete(tableName, entityId);
             const storeKey = {
                 'operations': 'operations',
@@ -317,10 +309,11 @@ App.db.sync.processSyncQueue = async function() {
             try {
                 await App.db.sync._executeAction(action);
                 await App.db.delete('pending_actions', action.id);
+                // Обновляем локальную копию pendingActions
                 const idx = App.store.pendingActions.findIndex(a => a.id === action.id);
                 if (idx !== -1) App.store.pendingActions.splice(idx, 1);
                 
-                // Принудительно перезагружаем store из IndexedDB
+                // Принудительно перезагружаем store (включая pendingActions) из IndexedDB
                 await App.store.loadFromIndexedDB();
                 
                 // Полная перерисовка UI
