@@ -1,5 +1,4 @@
-// src/db/sync.js (заменить содержимое файла полностью)
-
+// src/db/sync.js (полностью, с учётом всех исправлений)
 window.App = window.App || {};
 App.db = App.db || {};
 App.db.sync = App.db.sync || {};
@@ -35,6 +34,7 @@ App.db.sync._updatePendingAction = async function(action, retryCount, errorMessa
 
 App.db.sync._executeAction = async function(action) {
     const { type, entityType, entityId, data } = action;
+    let supabaseMethod, tableName;
     
     console.log(`[Sync] Выполнение действия ${action.id}, тип=${type}, сущность=${entityType}, данные:`, data);
     
@@ -48,7 +48,6 @@ App.db.sync._executeAction = async function(action) {
         await new Promise(r => setTimeout(r, 500));
     }
     if (!session) throw new Error('Нет активной сессии после ожидания');
-    console.log(`[Sync] Сессия получена, access_token: ${session.access_token ? 'present' : 'missing'}`);
     
     switch (entityType) {
         case 'operation':
@@ -73,7 +72,64 @@ App.db.sync._executeAction = async function(action) {
                 await App.db.sync._updateLocalId(entityType, entityId, result.data[0]);
             }
             return { success: true };
-            
+        case 'car_document':
+            const { data: docData, error: docError } = await App.supabase
+                .from('car_documents')
+                .upsert(data, { onConflict: 'id' })
+                .select()
+                .single();
+            if (docError) throw docError;
+            if (docData.id !== entityId) {
+                await App.db.sync._updateLocalId(entityType, entityId, docData);
+            }
+            return { success: true };
+        case 'car_state_settings':
+            const cleanedData = { ...data };
+            if (cleanedData.plateNumber && typeof cleanedData.plateNumber !== 'string') cleanedData.plateNumber = String(cleanedData.plateNumber);
+            if (cleanedData.vin && typeof cleanedData.vin !== 'string') cleanedData.vin = String(cleanedData.vin);
+            await App.supa.saveVehicleState({
+                currentMileage: cleanedData.currentMileage,
+                currentMotohours: cleanedData.currentMotohours,
+                avgDailyMileage: cleanedData.avgDailyMileage,
+                avgDailyMotohours: cleanedData.avgDailyMotohours,
+                carBrand: cleanedData.carBrand,
+                carModel: cleanedData.carModel,
+                carYear: cleanedData.carYear,
+                plateNumber: cleanedData.plateNumber,
+                vin: cleanedData.vin,
+                baseMileage: cleanedData.baseMileage,
+                baseMotohours: cleanedData.baseMotohours,
+                purchaseDate: cleanedData.purchaseDate,
+                purchaseCost: cleanedData.purchaseCost
+            });
+            await App.supa.saveUserSettings({
+                telegramToken: cleanedData.telegramToken,
+                telegramChatId: cleanedData.telegramChatId,
+                notificationMethod: cleanedData.notificationMethod,
+                reminderDays: cleanedData.reminderDays
+            });
+            Object.assign(App.store.settings, cleanedData);
+            return { success: true };
+        case 'car_settings':
+            await App.supa.saveUserSettings({
+                telegramToken: data.telegramToken,
+                telegramChatId: data.telegramChatId,
+                notificationMethod: data.notificationMethod,
+                reminderDays: data.reminderDays
+            });
+            await App.supa.saveVehicleState({
+                currentMileage: data.currentMileage,
+                currentMotohours: data.currentMotohours,
+                avgDailyMileage: data.avgDailyMileage,
+                avgDailyMotohours: data.avgDailyMotohours,
+                carBrand: data.carBrand,
+                carModel: data.carModel,
+                carYear: data.carYear,
+                plateNumber: data.plateNumber,
+                vin: data.vin
+            });
+            Object.assign(App.store.settings, data);
+            return { success: true };
         case 'car':
             if (type === 'save') {
                 const { data: carData, error: carError } = await App.supabase
@@ -97,10 +153,8 @@ App.db.sync._executeAction = async function(action) {
                 if (idx !== -1) App.store.cars.splice(idx, 1);
             }
             return { success: true };
-            
         case 'delete':
             return await App.db.sync._executeDelete(action);
-            
         default:
             throw new Error(`Unknown entityType: ${entityType}`);
     }
@@ -163,11 +217,9 @@ App.db.sync._updateLocalId = async function(entityType, oldId, serverRecord) {
     if (idx !== -1) {
         storeArray.splice(idx, 1);
         await App.db.delete(storeName, oldId);
-        console.log(`[Sync] Удалена старая запись ${entityType} с id ${oldId}`);
     }
     storeArray.push(serverRecord);
     await App.db.put(storeName, serverRecord);
-    console.log(`[Sync] Добавлена новая запись ${entityType} с id ${serverRecord.id}`);
 };
 
 App.db.sync._resolveConflict = async function(action) {
@@ -268,8 +320,10 @@ App.db.sync.processSyncQueue = async function() {
                 const idx = App.store.pendingActions.findIndex(a => a.id === action.id);
                 if (idx !== -1) App.store.pendingActions.splice(idx, 1);
                 
+                // Принудительно перезагружаем store из IndexedDB
                 await App.store.loadFromIndexedDB();
                 
+                // Полная перерисовка UI
                 if (typeof App.renderAll === 'function') App.renderAll();
                 if (typeof App.ui.pages.renderTOTable === 'function') App.ui.pages.renderTOTable();
                 if (typeof App.ui.pages.renderFuelTab === 'function') App.ui.pages.renderFuelTab();
