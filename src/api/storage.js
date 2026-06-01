@@ -10,13 +10,20 @@ function checkResponse({ data, error }, actionName) {
 }
 
 async function queueAction(action) {
-    console.log('[Storage] Добавление действия в очередь:', action);
     await App.store.addPendingAction(action);
+    // Обновляем UI, чтобы показать иконку ожидания
+    if (action.entityType === 'fuel') refreshUIToFuel();
+    else if (action.entityType === 'operation') refreshUIToTables();
+    else if (action.entityType === 'part') refreshUIToParts();
+    else if (action.entityType === 'tire') refreshUIToTires();
+    else if (action.entityType === 'history') refreshUIToHistory();
+    else if (action.entityType === 'mileage') refreshUIToMileage();
+    else if (action.entityType === 'car_settings') refreshUIToSettings();
+    
     if ('serviceWorker' in navigator && 'SyncManager' in window) {
         try {
             const registration = await navigator.serviceWorker.ready;
             await registration.sync.register('vesta-sync');
-            console.log('[Storage] Background Sync зарегистрирован');
         } catch (err) {
             console.warn('[Storage] Background Sync registration failed:', err);
         }
