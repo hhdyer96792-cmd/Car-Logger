@@ -339,22 +339,22 @@ App.ui.pages.openTireModal = function(record) {
         };
 
         if (App.config.USE_SUPABASE) {
-            App.storage.saveTireRecord(d.id, rowData)
-                .then(function(res) {
-                    if (res && res.data && res.data.length > 0) rowData.id = res.data[0].id;
-                    if (isEdit) {
-                        var idx = App.store.tireLog.findIndex(function(t) { return t.id == d.id; });
-                        if (idx !== -1) App.store.tireLog[idx] = rowData;
-                    } else {
-                        App.store.tireLog.push(rowData);
-                    }
-                    App.store.saveToLocalStorage();
-                    App.ui.pages.renderTiresTab();
-                    App.toast(isEdit ? 'Запись о шинах обновлена' : 'Резина добавлена', 'success');
-                }).catch(function(err) {
-                    console.error(err);
-                    App.toast('Ошибка сохранения в Supabase', 'error');
-                });
+    App.storage.saveTireRecord(d.id, rowData)
+        .then(function(res) {
+            if (res && res.data && res.data.length > 0) rowData.id = res.data[0].id;
+            if (isEdit) {
+                var idx = App.store.tireLog.findIndex(function(t) { return t.id == d.id; });
+                if (idx !== -1) App.store.tireLog[idx] = rowData;
+            } else {
+                App.store.tireLog.push(rowData);
+            }
+            App.store.saveToLocalStorage();
+            // Убираем дублирующий вызов — refreshUIToTires уже есть в storage.js
+            App.toast(isEdit ? 'Запись о шинах обновлена' : 'Резина добавлена', 'success');
+        }).catch(function(err) {
+            console.error(err);
+            App.toast('Ошибка сохранения в Supabase', 'error');
+        });
         } else {
             if (isEdit) {
                 var idx = App.store.tireLog.findIndex(function(t) { return t.id == d.id; });
