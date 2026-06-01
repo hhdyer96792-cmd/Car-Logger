@@ -195,23 +195,32 @@ App.store = {
 
             // ========== ВАЖНО: перезагружаем pendingActions из БД ==========
             const pending = await App.db.getAll('pending_actions');
-            this.pendingActions = pending.sort((a, b) => a.timestamp - b.timestamp);
+// Удаляем дубликаты по id
+const uniquePending = [];
+const seenIds = new Set();
+for (const p of pending.sort((a, b) => a.timestamp - b.timestamp)) {
+    if (!seenIds.has(p.id)) {
+        seenIds.add(p.id);
+        uniquePending.push(p);
+    }
+}
+this.pendingActions = uniquePending;
 
-            // ========== ФИЛЬТРУЕМ ЗАПИСИ, ПОМЕЧЕННЫЕ НА УДАЛЕНИЕ ==========
-            const pendingDeleteIds = this.pendingActions
-                .filter(a => a.type === 'delete')
-                .map(a => a.entityId);
-            
-            if (pendingDeleteIds.length) {
-                this.operations = this.operations.filter(op => !pendingDeleteIds.includes(op.id));
-                this.fuelLog = this.fuelLog.filter(f => !pendingDeleteIds.includes(f.id));
-                this.tireLog = this.tireLog.filter(t => !pendingDeleteIds.includes(t.id));
-                this.parts = this.parts.filter(p => !pendingDeleteIds.includes(p.id));
-                this.serviceRecords = this.serviceRecords.filter(h => !pendingDeleteIds.includes(h.id));
-                this.mileageHistory = this.mileageHistory.filter(m => !pendingDeleteIds.includes(m.id));
-                this.cars = this.cars.filter(c => !pendingDeleteIds.includes(c.id));
-                console.log('[Store] Отфильтровано записей, ожидающих удаления:', pendingDeleteIds.length);
-            }
+// Затем после этого блока фильтруем записи, ожидающие удаления:
+const pendingDeleteIds = this.pendingActions
+    .filter(a => a.type === 'delete')
+    .map(a => a.entityId);
+
+if (pendingDeleteIds.length) {
+    this.operations = this.operations.filter(op => !pendingDeleteIds.includes(op.id));
+    this.fuelLog = this.fuelLog.filter(f => !pendingDeleteIds.includes(f.id));
+    this.tireLog = this.tireLog.filter(t => !pendingDeleteIds.includes(t.id));
+    this.parts = this.parts.filter(p => !pendingDeleteIds.includes(p.id));
+    this.serviceRecords = this.serviceRecords.filter(h => !pendingDeleteIds.includes(h.id));
+    this.mileageHistory = this.mileageHistory.filter(m => !pendingDeleteIds.includes(m.id));
+    this.cars = this.cars.filter(c => !pendingDeleteIds.includes(c.id));
+    console.log('[Store] Отфильтровано записей, ожидающих удаления:', pendingDeleteIds.length);
+}
 
             // ========== ЗАГРУЗКА НАСТРОЕК ==========
             if (this.activeCarId) {
