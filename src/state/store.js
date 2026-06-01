@@ -303,28 +303,43 @@ App.store = {
         await App.db.put('cars', car);
     },
 
-    // ========== ОЧЕРЕДЬ СИНХРОНИЗАЦИИ ==========
-    addPendingAction: async function(action) {
-        const newAction = {
-            id: crypto.randomUUID(),
-            type: action.type,
-            entityType: action.entityType,
-            entityId: action.entityId,
-            data: action.data,
-            timestamp: Date.now(),
-            retryCount: 0
-        };
-        this.pendingActions.push(newAction);
-        await App.db.put('pending_actions', newAction);
-    },
-    clearPendingActions: async function() {
-        await App.db.clear('pending_actions');
-        this.pendingActions = [];
-    },
-    removePendingAction: async function(actionId) {
-        await App.db.delete('pending_actions', actionId);
-        this.pendingActions = this.pendingActions.filter(a => a.id !== actionId);
-    },
+   // ========== ОЧЕРЕДЬ СИНХРОНИЗАЦИИ ==========
+addPendingAction: async function(action) {
+    const newAction = {
+        id: crypto.randomUUID(),
+        type: action.type,
+        entityType: action.entityType,
+        entityId: action.entityId,
+        data: action.data,
+        timestamp: Date.now(),
+        retryCount: 0
+    };
+    this.pendingActions.push(newAction);
+    await App.db.put('pending_actions', newAction);
+},
+clearPendingActions: async function() {
+    await App.db.clear('pending_actions');
+    this.pendingActions = [];
+},
+removePendingAction: async function(actionId) {
+    await App.db.delete('pending_actions', actionId);
+    this.pendingActions = this.pendingActions.filter(a => a.id !== actionId);
+},
+
+forceReloadPendingActions: async function() {
+    const pending = await App.db.getAll('pending_actions');
+    this.pendingActions = pending.sort((a, b) => a.timestamp - b.timestamp);
+    return this.pendingActions;
+},
+
+isRecordPending: function(recordId) {
+    if (!recordId) return false;
+    if (this.pendingActions.length === 0) return false;
+    return this.pendingActions.some(action => 
+        action.entityId == recordId && 
+        (action.type === 'save' || action.type === 'update')
+    );
+},
 
     // ========== ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ ==========
     saveToLocalStorage: function() {
