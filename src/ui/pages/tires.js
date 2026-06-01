@@ -228,7 +228,7 @@ App.ui.pages.renderTireCalculator = function() {
     });
 };
 
-// ---------- МОДАЛЬНОЕ ОКНО (с добавленными дисками, исправлено дублирование) ----------
+// ---------- МОДАЛЬНОЕ ОКНО (с исправлением дублирования) ----------
 App.ui.pages.openTireModal = function(record) {
     var isEdit = !!(record && record.id);
     var defaultDate = record ? App.utils.isoToDDMMYYYY(record.date) : App.utils.isoToDDMMYYYY(new Date().toISOString().split('T')[0]);
@@ -339,18 +339,11 @@ App.ui.pages.openTireModal = function(record) {
         };
 
         if (App.config.USE_SUPABASE) {
-            // Сохраняем через storage.js, который сам обновит UI
+            // Сохраняем через storage.js, который сам обновит UI и store
             App.storage.saveTireRecord(d.id, rowData)
                 .then(function(res) {
-                    if (res && res.data && res.data.length > 0) rowData.id = res.data[0].id;
-                    if (isEdit) {
-                        var idx = App.store.tireLog.findIndex(function(t) { return t.id == d.id; });
-                        if (idx !== -1) App.store.tireLog[idx] = rowData;
-                    } else {
-                        App.store.tireLog.push(rowData);
-                    }
-                    App.store.saveToLocalStorage();
-                    // UI обновляется через storage.js (refreshUIToTires)
+                    // storage.js уже добавил запись в store и обновил UI
+                    // Ничего не делаем, только показываем тост
                     App.toast(isEdit ? 'Запись о шинах обновлена' : 'Резина добавлена', 'success');
                 }).catch(function(err) {
                     console.error(err);
