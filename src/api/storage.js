@@ -11,7 +11,7 @@ function checkResponse({ data, error }, actionName) {
 
 async function queueAction(action) {
     await App.store.addPendingAction(action);
-    // Обновляем UI, чтобы показать иконку ожидания
+    // Обновляем UI, чтобы показать иконку ожидания (один раз)
     if (action.entityType === 'fuel') refreshUIToFuel();
     else if (action.entityType === 'operation') refreshUIToTables();
     else if (action.entityType === 'part') refreshUIToParts();
@@ -270,7 +270,6 @@ App.storage.saveOperation = async function(op) {
         if (idx !== -1) App.store.operations[idx] = opWithCarId;
         else App.store.operations.push(opWithCarId);
         App.toast('Операция сохранена локально', 'warning');
-        refreshUIToTables();
         return;
     }
     
@@ -395,7 +394,6 @@ App.storage.savePart = async function(part) {
         if (idx !== -1) App.store.parts[idx] = partWithCarId;
         else App.store.parts.push(partWithCarId);
         App.toast('Запчасть сохранена локально', 'warning');
-        refreshUIToParts();
         return;
     }
     const res = await App.supa.savePart(part);
@@ -452,7 +450,6 @@ App.storage.saveFuelRecord = async function(id, record) {
         if (idx !== -1) App.store.fuelLog[idx] = recordWithCarId;
         else App.store.fuelLog.push(recordWithCarId);
         App.toast('Заправка сохранена локально', 'warning');
-        refreshUIToFuel();
         return;
     }
     const res = await App.supa.saveFuelRecord(record);
@@ -509,7 +506,7 @@ App.storage.saveTireRecord = async function(id, record) {
         if (idx !== -1) App.store.tireLog[idx] = recordWithCarId;
         else App.store.tireLog.push(recordWithCarId);
         App.toast('Шины сохранены локально', 'warning');
-        refreshUIToTires();
+        // UI обновляется внутри queueAction, не вызываем повторно
         return;
     }
     const res = await App.supa.saveTireRecord(record);
