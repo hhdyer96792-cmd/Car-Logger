@@ -221,7 +221,6 @@ App.store = {
                 console.log('[Store] Отфильтровано записей, ожидающих удаления:', pendingDeleteIds.length);
             }
 
-            // ========== ЗАГРУЗКА НАСТРОЕК ==========
             if (this.activeCarId) {
                 const carSettings = await App.db.getById('car_settings', this.activeCarId);
                 if (carSettings) {
