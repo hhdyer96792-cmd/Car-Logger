@@ -190,7 +190,8 @@ App.db.sync._executeDelete = async function(action) {
             if (carId && tableName !== 'cars') {
                 query = query.eq('car_id', carId);
             }
-            const { error } = await query;
+            // Добавляем .select() чтобы получить количество удалённых записей
+            const { error, count } = await query.select('id', { count: 'exact', head: true });
             if (error) {
                 if (error.status === 404) {
                     console.log(`[Sync] Запись ${entityId} не найдена на сервере, считаем удалённой`);
@@ -199,8 +200,13 @@ App.db.sync._executeDelete = async function(action) {
                 }
                 throw error;
             }
+            if (count === 0) {
+                console.warn(`[Sync] Запись ${entityId} не найдена на сервере (count=0), считаем удалённой`);
+                deleted = true;
+                break;
+            }
             deleted = true;
-            console.log(`[Sync] Удаление на сервере успешно для ${entityId}`);
+            console.log(`[Sync] Удаление на сервере успешно для ${entityId}, удалено ${count} записей`);
             break;
         } catch (err) {
             lastError = err;
