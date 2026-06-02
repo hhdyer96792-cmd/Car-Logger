@@ -69,7 +69,6 @@ App.store = {
             const allMileage = await App.db.getAll('mileage_log');
 
             if (carId) {
-                // Используем Map для устранения дублей по id
                 const opsMap = new Map();
                 allOps.filter(op => op.car_id == carId).forEach(op => {
                     if (!opsMap.has(op.id)) opsMap.set(op.id, op);
@@ -193,34 +192,35 @@ App.store = {
                 localStorage.setItem('vesta_active_car_id', this.activeCarId);
             }
 
-            // ========== ВАЖНО: перезагружаем pendingActions из БД ==========
             const pending = await App.db.getAll('pending_actions');
-// Удаляем дубликаты по id
-const uniquePending = [];
-const seenIds = new Set();
-for (const p of pending.sort((a, b) => a.timestamp - b.timestamp)) {
-    if (!seenIds.has(p.id)) {
-        seenIds.add(p.id);
-        uniquePending.push(p);
-    }
-}
-this.pendingActions = uniquePending;
+            const uniquePending = [];
+            const seenIds = new Set();
+            for (const p of pending.sort((a, b) => a.timestamp - b.timestamp)) {
+                if (!seenIds.has(p.id)) {
+                    seenIds.add(p.id);
+                    uniquePending.push(p);
+                }
+            }
+            this.pendingActions = uniquePending;
 
-// Затем после этого блока фильтруем записи, ожидающие удаления:
-const pendingDeleteIds = this.pendingActions
-    .filter(a => a.type === 'delete')
-    .map(a => a.entityId);
+            const pendingDeleteIds = this.pendingActions
+                .filter(a => a.type === 'delete')
+                .map(a => a.entityId);
 
-if (pendingDeleteIds.length) {
-    this.operations = this.operations.filter(op => !pendingDeleteIds.includes(op.id));
-    this.fuelLog = this.fuelLog.filter(f => !pendingDeleteIds.includes(f.id));
-    this.tireLog = this.tireLog.filter(t => !pendingDeleteIds.includes(t.id));
-    this.parts = this.parts.filter(p => !pendingDeleteIds.includes(p.id));
-    this.serviceRecords = this.serviceRecords.filter(h => !pendingDeleteIds.includes(h.id));
-    this.mileageHistory = this.mileageHistory.filter(m => !pendingDeleteIds.includes(m.id));
-    this.cars = this.cars.filter(c => !pendingDeleteIds.includes(c.id));
-    console.log('[Store] Отфильтровано записей, ожидающих удаления:', pendingDeleteIds.length);
-}
+            if (pendingDeleteIds.length) {
+                this.operations = this.operations.filter(op => !pendingDeleteIds.includes(op.id));
+                this.fuelLog = this.fuelLog.filter(f => !pendingDeleteIds.includes(f.id));
+                this.tireLog = this.tireLog.filter(t => !pendingDeleteIds.includes(t.id));
+                this.parts = this.parts.filter(p => !pendingDeleteIds.includes(p.id));
+                this.serviceRecords = this.serviceRecords.filter(h => !pendingDeleteIds.includes(h.id));
+                this.mileageHistory = this.mileageHistory.filter(m => !pendingDeleteIds.includes(m.id));
+                this.cars = this.cars.filter(c => !pendingDeleteIds.includes(c.id));
+                // Если на удаление помечен активный автомобиль, удаляем и его настройки
+                if (pendingDeleteIds.includes(this.activeCarId)) {
+                    await App.db.delete('car_settings', this.activeCarId);
+                }
+                console.log('[Store] Отфильтровано записей, ожидающих удаления:', pendingDeleteIds.length);
+            }
 
             // ========== ЗАГРУЗКА НАСТРОЕК ==========
             if (this.activeCarId) {
@@ -231,12 +231,9 @@ if (pendingDeleteIds.length) {
                     if (masterKey && carSettings.telegramToken && typeof carSettings.telegramToken === 'object') {
                         decrypted = await App.db.encryption.decryptSettings(carSettings, masterKey);
                     }
-                    if (decrypted.plateNumber && typeof decrypted.plateNumber !== 'string') {
-                        decrypted.plateNumber = String(decrypted.plateNumber);
-                    }
-                    if (decrypted.vin && typeof decrypted.vin !== 'string') {
-                        decrypted.vin = String(decrypted.vin);
-                    }
+                    // Приведение к строке (но не "null")
+                    decrypted.plateNumber = (decrypted.plateNumber && typeof decrypted.plateNumber !== 'object') ? String(decrypted.plateNumber) : '';
+                    decrypted.vin = (decrypted.vin && typeof decrypted.vin !== 'object') ? String(decrypted.vin) : '';
                     Object.assign(this.settings, decrypted);
                 } else if (typeof App.storage.loadSettingsForCar === 'function') {
                     await App.storage.loadSettingsForCar(this.activeCarId);
