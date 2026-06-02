@@ -201,13 +201,14 @@ App.storage.addCarDocument = async function(doc) {
 };
 
 App.storage.deleteCarDocument = async function(docId) {
+    const carId = App.store.activeCarId;
     if (!navigator.onLine) {
         await App.db.delete('car_documents', docId);
         await queueAction({
             type: 'delete',
             entityType: 'car_document',
             entityId: docId,
-            data: { id: docId, car_id: App.store.activeCarId }
+            data: { id: docId, car_id: carId }
         });
         App.toast('Удаление документа сохранено локально', 'warning');
         return true;
@@ -310,7 +311,7 @@ App.storage.deleteOperation = async function(operationId) {
         refreshUIToTables();
         return;
     }
-    const res = await App.supabase.from('operations').delete().eq('id', operationId).select();
+    const res = await App.supabase.from('operations').delete().eq('id', operationId).eq('car_id', carId).select();
     checkResponse(res, 'delete');
     await App.db.delete('operations', operationId);
     App.store.operations = App.store.operations.filter(o => o.id != operationId);
@@ -372,7 +373,7 @@ App.storage.deleteHistoryRecord = async function(rowIndex) {
         refreshUIToHistory();
         return;
     }
-    const res = await App.supabase.from('history').delete().eq('id', record.id).select();
+    const res = await App.supabase.from('history').delete().eq('id', record.id).eq('car_id', carId).select();
     checkResponse(res, 'delete');
     await App.db.delete('service_records', record.id);
     App.store.serviceRecords = App.store.serviceRecords.filter(r => r.id != record.id);
@@ -429,7 +430,7 @@ App.storage.deletePart = async function(partId) {
         refreshUIToParts();
         return;
     }
-    const res = await App.supabase.from('parts').delete().eq('id', partId).select();
+    const res = await App.supabase.from('parts').delete().eq('id', partId).eq('car_id', carId).select();
     checkResponse(res, 'delete');
     await App.db.delete('parts', partId);
     App.store.parts = App.store.parts.filter(p => p.id != partId);
@@ -486,7 +487,7 @@ App.storage.deleteFuelRecord = async function(id) {
         refreshUIToFuel();
         return;
     }
-    const res = await App.supabase.from('fuel_log').delete().eq('id', id).select();
+    const res = await App.supabase.from('fuel_log').delete().eq('id', id).eq('car_id', carId).select();
     checkResponse(res, 'delete');
     await App.db.delete('fuel_log', id);
     App.store.fuelLog = App.store.fuelLog.filter(f => f.id != id);
@@ -543,7 +544,7 @@ App.storage.deleteTireRecord = async function(id) {
         refreshUIToTires();
         return;
     }
-    const res = await App.supabase.from('tires').delete().eq('id', id).select();
+    const res = await App.supabase.from('tires').delete().eq('id', id).eq('car_id', carId).select();
     checkResponse(res, 'delete');
     await App.db.delete('tires', id);
     App.store.tireLog = App.store.tireLog.filter(t => t.id != id);
@@ -589,7 +590,6 @@ App.storage.saveSettings = async function(settings) {
         App.toast('Нет активного автомобиля', 'error');
         return;
     }
-    // Приводим поля к строке, но не превращаем null в "null"
     const cleanedSettings = { ...settings };
     if (cleanedSettings.plateNumber !== undefined && cleanedSettings.plateNumber !== null) {
         cleanedSettings.plateNumber = (typeof cleanedSettings.plateNumber === 'object') ? '' : String(cleanedSettings.plateNumber);
@@ -656,7 +656,6 @@ App.storage.loadSettingsForCar = async function(carId) {
             if (masterKey && cached.telegramToken && typeof cached.telegramToken === 'object') {
                 decrypted = await App.db.encryption.decryptSettings(cached, masterKey);
             }
-            // Приводим к строке, но не превращаем объект в "null"
             decrypted.plateNumber = (decrypted.plateNumber && typeof decrypted.plateNumber !== 'object') ? String(decrypted.plateNumber) : '';
             decrypted.vin = (decrypted.vin && typeof decrypted.vin !== 'object') ? String(decrypted.vin) : '';
             Object.assign(App.store.settings, decrypted);
