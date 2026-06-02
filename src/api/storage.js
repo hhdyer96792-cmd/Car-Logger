@@ -203,13 +203,18 @@ App.storage.addCarDocument = async function(doc) {
 App.storage.deleteCarDocument = async function(docId) {
     const carId = App.store.activeCarId;
     if (!navigator.onLine) {
-        await queueAction({
-            type: 'delete',
-            entityType: 'car_document',
-            entityId: docId,
-            data: { id: docId, car_id: carId }
-        });
+        // Локальное удаление ПЕРЕД добавлением в очередь (устойчивость)
         await App.db.delete('car_documents', docId);
+        try {
+            await queueAction({
+                type: 'delete',
+                entityType: 'car_document',
+                entityId: docId,
+                data: { id: docId, car_id: carId }
+            });
+        } catch (e) {
+            console.warn('[Storage] Ошибка добавления удаления документа в очередь, но локально уже удалён', e);
+        }
         App.toast('Удаление документа сохранено локально', 'warning');
         return true;
     }
@@ -299,17 +304,21 @@ App.storage.saveOperation = async function(op) {
 App.storage.deleteOperation = async function(operationId) {
     const carId = App.store.activeCarId;
     if (!navigator.onLine) {
-        // Сначала добавляем в очередь, потом удаляем локально
-        await queueAction({
-            type: 'delete',
-            entityType: 'operation',
-            entityId: operationId,
-            data: { id: operationId, car_id: carId }
-        });
+        // Сначала локальное удаление, потом очередь
         await App.db.delete('operations', operationId);
         App.store.operations = App.store.operations.filter(o => o.id != operationId);
-        App.toast('Удаление сохранено локально', 'warning');
         refreshUIToTables();
+        try {
+            await queueAction({
+                type: 'delete',
+                entityType: 'operation',
+                entityId: operationId,
+                data: { id: operationId, car_id: carId }
+            });
+        } catch (e) {
+            console.warn('[Storage] Ошибка добавления удаления операции в очередь, но локально уже удалена', e);
+        }
+        App.toast('Удаление сохранено локально', 'warning');
         return;
     }
     const res = await App.supabase.from('operations').delete().eq('id', operationId).eq('car_id', carId).select();
@@ -362,16 +371,21 @@ App.storage.deleteHistoryRecord = async function(rowIndex) {
     if (!record) return;
     const carId = App.store.activeCarId;
     if (!navigator.onLine) {
-        await queueAction({
-            type: 'delete',
-            entityType: 'history',
-            entityId: record.id,
-            data: { id: record.id, car_id: carId }
-        });
+        // Сначала локальное удаление
         await App.db.delete('service_records', record.id);
         App.store.serviceRecords = App.store.serviceRecords.filter(r => r.id != record.id);
-        App.toast('Удаление сохранено локально', 'warning');
         refreshUIToHistory();
+        try {
+            await queueAction({
+                type: 'delete',
+                entityType: 'history',
+                entityId: record.id,
+                data: { id: record.id, car_id: carId }
+            });
+        } catch (e) {
+            console.warn('[Storage] Ошибка добавления удаления истории в очередь, но локально уже удалена', e);
+        }
+        App.toast('Удаление сохранено локально', 'warning');
         return;
     }
     const res = await App.supabase.from('history').delete().eq('id', record.id).eq('car_id', carId).select();
@@ -419,16 +433,21 @@ App.storage.savePart = async function(part) {
 App.storage.deletePart = async function(partId) {
     const carId = App.store.activeCarId;
     if (!navigator.onLine) {
-        await queueAction({
-            type: 'delete',
-            entityType: 'part',
-            entityId: partId,
-            data: { id: partId, car_id: carId }
-        });
+        // Сначала локальное удаление, потом очередь
         await App.db.delete('parts', partId);
         App.store.parts = App.store.parts.filter(p => p.id != partId);
-        App.toast('Удаление сохранено локально', 'warning');
         refreshUIToParts();
+        try {
+            await queueAction({
+                type: 'delete',
+                entityType: 'part',
+                entityId: partId,
+                data: { id: partId, car_id: carId }
+            });
+        } catch (e) {
+            console.warn('[Storage] Ошибка добавления удаления запчасти в очередь, но локально уже удалена', e);
+        }
+        App.toast('Удаление сохранено локально', 'warning');
         return;
     }
     const res = await App.supabase.from('parts').delete().eq('id', partId).eq('car_id', carId).select();
@@ -476,16 +495,21 @@ App.storage.saveFuelRecord = async function(id, record) {
 App.storage.deleteFuelRecord = async function(id) {
     const carId = App.store.activeCarId;
     if (!navigator.onLine) {
-        await queueAction({
-            type: 'delete',
-            entityType: 'fuel',
-            entityId: id,
-            data: { id: id, car_id: carId }
-        });
+        // Сначала локальное удаление, потом очередь
         await App.db.delete('fuel_log', id);
         App.store.fuelLog = App.store.fuelLog.filter(f => f.id != id);
-        App.toast('Удаление сохранено локально', 'warning');
         refreshUIToFuel();
+        try {
+            await queueAction({
+                type: 'delete',
+                entityType: 'fuel',
+                entityId: id,
+                data: { id: id, car_id: carId }
+            });
+        } catch (e) {
+            console.warn('[Storage] Ошибка добавления удаления топлива в очередь, но локально уже удалено', e);
+        }
+        App.toast('Удаление сохранено локально', 'warning');
         return;
     }
     const res = await App.supabase.from('fuel_log').delete().eq('id', id).eq('car_id', carId).select();
@@ -533,17 +557,21 @@ App.storage.saveTireRecord = async function(id, record) {
 App.storage.deleteTireRecord = async function(id) {
     const carId = App.store.activeCarId;
     if (!navigator.onLine) {
-        // Сначала добавляем в очередь, потом удаляем локально
-        await queueAction({
-            type: 'delete',
-            entityType: 'tire',
-            entityId: id,
-            data: { id: id, car_id: carId }
-        });
+        // Сначала локальное удаление, потом очередь
         await App.db.delete('tires', id);
         App.store.tireLog = App.store.tireLog.filter(t => t.id != id);
-        App.toast('Удаление сохранено локально', 'warning');
         refreshUIToTires();
+        try {
+            await queueAction({
+                type: 'delete',
+                entityType: 'tire',
+                entityId: id,
+                data: { id: id, car_id: carId }
+            });
+        } catch (e) {
+            console.warn('[Storage] Ошибка добавления удаления шины в очередь, но локально уже удалено', e);
+        }
+        App.toast('Удаление сохранено локально', 'warning');
         return;
     }
     const res = await App.supabase.from('tires').delete().eq('id', id).eq('car_id', carId).select();
