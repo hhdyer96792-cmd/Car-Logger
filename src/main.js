@@ -797,31 +797,31 @@
             });
         }
 
-        window.addEventListener('online', function() {
+        window.addEventListener('online', async function() {
     if (typeof App.toast === 'function') App.toast('Сеть восстановлена', 'success');
-    
-    // 1. Синхронизация очереди pending_actions
+
+    // 1. Принудительная синхронизация очереди (сначала завершаем удаления/сохранения)
     if (App.db.sync && typeof App.db.sync.processSyncQueue === 'function') {
-        App.db.sync.processSyncQueue().catch(console.error);
+        try {
+            await App.db.sync.processSyncQueue();
+        } catch (e) {
+            console.error('Ошибка синхронизации при восстановлении сети:', e);
+        }
     }
-    
-    // 2. Принудительная перезагрузка данных текущего автомобиля с сервера
+
+    // 2. Только после завершения синхронизации загружаем свежие данные с сервера
     if (App.store.activeCarId && typeof App.storage.loadAllData === 'function') {
-        App.storage.loadAllData().catch(console.error);
+        try {
+            await App.storage.loadAllData();
+        } catch (e) {
+            console.error('Ошибка загрузки данных после синхронизации:', e);
+        }
     }
-    
-    // 3. Обновление UI всех вкладок, если остались несинхронизированные записи
-    if (App.store.pendingActions && App.store.pendingActions.length > 0) {
-        if (typeof App.ui.pages.renderFuelTab === 'function') App.ui.pages.renderFuelTab();
-        if (typeof App.ui.pages.renderPartsTab === 'function') App.ui.pages.renderPartsTab();
-        if (typeof App.ui.pages.renderTOTable === 'function') App.ui.pages.renderTOTable();
-        if (typeof App.ui.pages.renderDashboard === 'function') App.ui.pages.renderDashboard();
-        if (typeof App.ui.pages.renderTiresTab === 'function') App.ui.pages.renderTiresTab();
-        if (typeof App.ui.pages.renderHistoryCards === 'function') App.ui.pages.renderHistoryCards();
-        if (typeof App.ui.pages.renderCarTab === 'function') App.ui.pages.renderCarTab();
-        if (typeof App.ui.pages.renderCarSelector === 'function') App.ui.pages.renderCarSelector();
-    }
-    
+
+    // 3. Обновляем UI на случай, если что-то ещё осталось
+    if (typeof App.renderAll === 'function') App.renderAll();
+
+    // 4. Восстанавливаем обработку сессии (может быть дублирующим, но не помешает)
     handleOnlineSession();
 });
 
