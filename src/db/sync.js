@@ -67,7 +67,6 @@ App.db.sync._executeAction = async function(action) {
             if (!supabaseMethodCall) throw new Error(`No method for ${entityType}`);
             const result = await supabaseMethodCall();
             if (result.error) throw result.error;
-            // Если сервер вернул новый ID, обновляем локально
             if (result.data && result.data[0] && result.data[0].id !== entityId) {
                 await App.db.sync._updateLocalId(entityType, entityId, result.data[0]);
             }
@@ -88,8 +87,16 @@ App.db.sync._executeAction = async function(action) {
         case 'car_state_settings':
         case 'car_settings': {
             const cleanedData = { ...data };
-            if (cleanedData.plateNumber && typeof cleanedData.plateNumber !== 'string') cleanedData.plateNumber = String(cleanedData.plateNumber);
-            if (cleanedData.vin && typeof cleanedData.vin !== 'string') cleanedData.vin = String(cleanedData.vin);
+            if (cleanedData.plateNumber !== undefined && cleanedData.plateNumber !== null) {
+                cleanedData.plateNumber = (typeof cleanedData.plateNumber === 'object') ? '' : String(cleanedData.plateNumber);
+            } else {
+                cleanedData.plateNumber = '';
+            }
+            if (cleanedData.vin !== undefined && cleanedData.vin !== null) {
+                cleanedData.vin = (typeof cleanedData.vin === 'object') ? '' : String(cleanedData.vin);
+            } else {
+                cleanedData.vin = '';
+            }
             await App.supa.saveVehicleState({
                 currentMileage: cleanedData.currentMileage,
                 currentMotohours: cleanedData.currentMotohours,
@@ -111,6 +118,19 @@ App.db.sync._executeAction = async function(action) {
                 notificationMethod: cleanedData.notificationMethod,
                 reminderDays: cleanedData.reminderDays
             });
+            // Обновляем локальные настройки
+            Object.assign(App.store.settings, cleanedData);
+            await App.db.put('car_settings', { ...App.store.settings, car_id: App.store.activeCarId });
+            // Принудительно обновляем UI вкладки автомобиля
+            if (typeof App.ui.pages.loadCarDetails === 'function') {
+                App.ui.pages.loadCarDetails(App.store.activeCarId);
+            }
+            if (typeof App.ui.pages.renderBasicParams === 'function') {
+                App.ui.pages.renderBasicParams();
+            }
+            if (typeof App.ui.pages.renderCarTab === 'function') {
+                App.ui.pages.renderCarTab();
+            }
             return { success: true };
         }
         case 'car': {
@@ -124,7 +144,6 @@ App.db.sync._executeAction = async function(action) {
                 if (carData.id !== entityId) {
                     await App.db.sync._updateLocalId(entityType, entityId, carData);
                 } else {
-                    // Обновляем существующую запись в store
                     const idx = App.store.cars.findIndex(c => c.id == carData.id);
                     if (idx !== -1) App.store.cars[idx] = carData;
                     else App.store.cars.push(carData);
@@ -134,6 +153,7 @@ App.db.sync._executeAction = async function(action) {
                 const { error } = await App.supabase.from('cars').delete().eq('id', entityId);
                 if (error && error.status !== 404) throw error;
                 await App.db.delete('cars', entityId);
+                await App.db.delete('car_settings', entityId);
                 const idx = App.store.cars.findIndex(c => c.id == entityId);
                 if (idx !== -1) App.store.cars.splice(idx, 1);
             }
@@ -147,7 +167,7 @@ App.db.sync._executeAction = async function(action) {
 };
 
 App.db.sync._executeDelete = async function(action) {
-    const { entityType, entityId } = action;
+    const { entityType, entityId, data } = action;
     let tableName;
     switch (entityType) {
         case 'operation': tableName = 'operations'; break;
@@ -158,7 +178,8 @@ App.db.sync._executeDelete = async function(action) {
         default: throw new Error(`Unknown entityType for delete: ${entityType}`);
     }
     
-    const carId = App.store.activeCarId;
+    // Используем car_id из действия, если есть, иначе текущий активный автомобиль
+    const carId = data.car_id || App.store.activeCarId;
     console.log(`[Sync] Удаление на сервере: ${tableName} id=${entityId}, car_id=${carId}`);
     
     let lastError = null;
@@ -166,7 +187,6 @@ App.db.sync._executeDelete = async function(action) {
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
         try {
             let query = App.supabase.from(tableName).delete().eq('id', entityId);
-            // Добавляем условие по car_id (кроме таблицы cars, где car_id нет)
             if (carId && tableName !== 'cars') {
                 query = query.eq('car_id', carId);
             }
@@ -186,15 +206,12 @@ App.db.sync._executeDelete = async function(action) {
             lastError = err;
             console.error(`[Sync] Попытка ${attempt} удаления на сервере не удалась:`, err);
             if (attempt === MAX_RETRIES) {
-                // После всех попыток выбрасываем ошибку, чтобы действие не было удалено из очереди
                 throw new Error(`Не удалось удалить запись ${entityId} на сервере после ${MAX_RETRIES} попыток: ${err.message}`);
             }
             await new Promise(r => setTimeout(r, 1000 * attempt));
         }
     }
     
-    // Если удаление на сервере не произошло, но мы не выбросили ошибку (например, 404)
-    // всё равно удаляем локально
     if (!deleted) {
         console.warn(`[Sync] Запись ${entityId} не найдена на сервере, удаляем только локально`);
     }
@@ -225,13 +242,11 @@ App.db.sync._updateLocalId = async function(entityType, oldId, serverRecord) {
         case 'car': storeArray = App.store.cars; storeName = 'cars'; break;
         default: return;
     }
-    // Удаляем старую запись
     const idx = storeArray.findIndex(i => i.id == oldId);
     if (idx !== -1) {
         storeArray.splice(idx, 1);
         await App.db.delete(storeName, oldId);
     }
-    // Добавляем новую
     storeArray.push(serverRecord);
     await App.db.put(storeName, serverRecord);
 };
@@ -262,13 +277,10 @@ App.db.sync.processSyncQueue = async function() {
             try {
                 await App.db.sync._executeAction(action);
                 await App.db.delete('pending_actions', action.id);
-                // Принудительно перезагружаем все данные из IndexedDB
                 await App.store.loadFromIndexedDB();
-                // Принудительная перерисовка текущей вкладки после каждого успешного действия
                 if (typeof App.events !== 'undefined' && App.events.currentActiveTab) {
                     App.events.switchToTab(App.events.currentActiveTab);
                 }
-                // Полная перерисовка UI
                 if (typeof App.renderAll === 'function') App.renderAll();
                 console.log(`[Sync] Действие ${action.id} выполнено, UI обновлён`);
             } catch (err) {
@@ -281,7 +293,6 @@ App.db.sync.processSyncQueue = async function() {
                 }
             }
         }
-        // Финальное обновление UI после всей очереди
         if (typeof App.renderAll === 'function') App.renderAll();
         App.toast('Данные синхронизированы', 'success');
     } finally {
