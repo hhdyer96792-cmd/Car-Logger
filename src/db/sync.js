@@ -181,7 +181,6 @@ App.db.sync._executeDelete = async function(action) {
     let lastError = null;
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
         try {
-            // ВЫПОЛНЯЕМ DELETE И ВОЗВРАЩАЕМ ID УДАЛЁННЫХ ЗАПИСЕЙ
             const { data: deleted, error } = await App.supabase
                 .from(tableName)
                 .delete()
@@ -198,7 +197,6 @@ App.db.sync._executeDelete = async function(action) {
             }
             
             if (!deleted || deleted.length === 0) {
-                console.warn(`[Sync] Запись ${entityId} не была удалена (вероятно, RLS запрещает)`);
                 throw new Error(`Нет прав на удаление записи ${entityId} в таблице ${tableName}`);
             }
             
@@ -214,7 +212,6 @@ App.db.sync._executeDelete = async function(action) {
         }
     }
     
-    // Удаляем локально в любом случае (если дошли сюда, удаление на сервере прошло успешно или запись отсутствовала)
     await App.db.delete(tableName, entityId);
     const storeKey = {
         'operations': 'operations',
