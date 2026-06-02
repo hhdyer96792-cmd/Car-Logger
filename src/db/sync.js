@@ -36,7 +36,6 @@ App.db.sync._executeAction = async function(action) {
     const { type, entityType, entityId, data } = action;
     console.log(`[Sync] Выполнение действия ${action.id}, тип=${type}, сущность=${entityType}, данные:`, data);
     
-    // Проверяем сессию
     let session = null;
     for (let i = 0; i < 20; i++) {
         const { data: { session: s } } = await App.supabase.auth.getSession();
@@ -118,10 +117,8 @@ App.db.sync._executeAction = async function(action) {
                 notificationMethod: cleanedData.notificationMethod,
                 reminderDays: cleanedData.reminderDays
             });
-            // Обновляем локальные настройки
             Object.assign(App.store.settings, cleanedData);
             await App.db.put('car_settings', { ...App.store.settings, car_id: App.store.activeCarId });
-            // Принудительно обновляем UI вкладки автомобиля
             if (typeof App.ui.pages.loadCarDetails === 'function') {
                 App.ui.pages.loadCarDetails(App.store.activeCarId);
             }
@@ -178,35 +175,34 @@ App.db.sync._executeDelete = async function(action) {
         default: throw new Error(`Unknown entityType for delete: ${entityType}`);
     }
     
-    // Используем car_id из действия, если есть, иначе текущий активный автомобиль
     const carId = data.car_id || App.store.activeCarId;
     console.log(`[Sync] Удаление на сервере: ${tableName} id=${entityId}, car_id=${carId}`);
     
     let lastError = null;
-    let deleted = false;
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
         try {
-            let query = App.supabase.from(tableName).delete().eq('id', entityId);
-            if (carId && tableName !== 'cars') {
-                query = query.eq('car_id', carId);
-            }
-            // Добавляем .select() чтобы получить количество удалённых записей
-            const { error, count } = await query.select('id', { count: 'exact', head: true });
+            // ВЫПОЛНЯЕМ DELETE И ВОЗВРАЩАЕМ ID УДАЛЁННЫХ ЗАПИСЕЙ
+            const { data: deleted, error } = await App.supabase
+                .from(tableName)
+                .delete()
+                .eq('id', entityId)
+                .eq('car_id', carId)
+                .select('id');
+            
             if (error) {
                 if (error.status === 404) {
                     console.log(`[Sync] Запись ${entityId} не найдена на сервере, считаем удалённой`);
-                    deleted = true;
                     break;
                 }
                 throw error;
             }
-            if (count === 0) {
-                console.warn(`[Sync] Запись ${entityId} не найдена на сервере (count=0), считаем удалённой`);
-                deleted = true;
-                break;
+            
+            if (!deleted || deleted.length === 0) {
+                console.warn(`[Sync] Запись ${entityId} не была удалена (вероятно, RLS запрещает)`);
+                throw new Error(`Нет прав на удаление записи ${entityId} в таблице ${tableName}`);
             }
-            deleted = true;
-            console.log(`[Sync] Удаление на сервере успешно для ${entityId}, удалено ${count} записей`);
+            
+            console.log(`[Sync] Удаление на сервере успешно для ${entityId}, удалено записей: ${deleted.length}`);
             break;
         } catch (err) {
             lastError = err;
@@ -218,10 +214,7 @@ App.db.sync._executeDelete = async function(action) {
         }
     }
     
-    if (!deleted) {
-        console.warn(`[Sync] Запись ${entityId} не найдена на сервере, удаляем только локально`);
-    }
-    
+    // Удаляем локально в любом случае (если дошли сюда, удаление на сервере прошло успешно или запись отсутствовала)
     await App.db.delete(tableName, entityId);
     const storeKey = {
         'operations': 'operations',
