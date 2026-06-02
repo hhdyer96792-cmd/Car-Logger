@@ -47,6 +47,11 @@ App.db.sync._executeAction = async function(action) {
     }
     if (!session) throw new Error('Нет активной сессии после ожидания');
     
+    // 🔥 Главное исправление: все delete-действия (кроме cars) направляем в специализированный обработчик удаления
+    if (type === 'delete' && entityType !== 'car') {
+        return await App.db.sync._executeDelete(action);
+    }
+    
     switch (entityType) {
         case 'operation':
         case 'fuel':
@@ -156,8 +161,6 @@ App.db.sync._executeAction = async function(action) {
             }
             return { success: true };
         }
-        case 'delete':
-            return await App.db.sync._executeDelete(action);
         default:
             throw new Error(`Unknown entityType: ${entityType}`);
     }
