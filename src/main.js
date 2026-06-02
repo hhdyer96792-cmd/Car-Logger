@@ -356,64 +356,52 @@
     }
 
     async function forceLoadDataFromSupabase() {
-    console.log('[DEBUG] forceLoadDataFromSupabase: загрузка данных напрямую из Supabase');
-    const carId = App.store.activeCarId;
-    if (!carId) {
-        console.warn('[DEBUG] Нет активного автомобиля, пропускаем загрузку');
-        return;
+        console.log('[DEBUG] forceLoadDataFromSupabase: загрузка данных напрямую из Supabase');
+        const carId = App.store.activeCarId;
+        if (!carId) {
+            console.warn('[DEBUG] Нет активного автомобиля, пропускаем загрузку');
+            return;
+        }
+        try {
+            const [operations, fuelLog, tireLog, parts, history, mileageHistory, settings] = await Promise.all([
+                App.supa.loadOperations(),
+                App.supa.loadFuelLog(),
+                App.supa.loadTires(),
+                App.supa.loadParts(),
+                App.supa.loadHistory(),
+                App.supa.loadMileageHistory(),
+                App.supa.loadSettings()
+            ]);
+
+            console.log(`[DEBUG] Загружено: operations=${operations.length}, fuel=${fuelLog.length}, parts=${parts.length}, history=${history.length}`);
+
+            // Обновляем store
+            App.store.operations = operations;
+            App.store.fuelLog = fuelLog;
+            App.store.tireLog = tireLog;
+            App.store.parts = parts;
+            App.store.serviceRecords = history;
+            App.store.mileageHistory = mileageHistory;
+            if (settings) Object.assign(App.store.settings, settings);
+
+            // Сохраняем в IndexedDB с проставлением car_id
+            for (const op of operations) await App.store.saveOperationToDB({ ...op, car_id: carId });
+            for (const f of fuelLog) await App.store.saveFuelRecordToDB({ ...f, car_id: carId });
+            for (const t of tireLog) await App.store.saveTireRecordToDB({ ...t, car_id: carId });
+            for (const p of parts) await App.store.savePartToDB({ ...p, car_id: carId });
+            for (const h of history) await App.store.saveHistoryRecordToDB({ ...h, car_id: carId });
+            for (const m of mileageHistory) await App.store.saveMileageRecordToDB({ ...m, car_id: carId });
+            if (settings) {
+                await App.db.put('car_settings', { ...settings, car_id: carId });
+            }
+
+            if (typeof App.renderAll === 'function') App.renderAll();
+            App.toast('Данные загружены', 'info');
+        } catch (err) {
+            console.error('[DEBUG] Ошибка принудительной загрузки:', err);
+            App.toast('Не удалось загрузить данные', 'error');
+        }
     }
-    try {
-        const [operations, fuelLog, tireLog, parts, history, mileageHistory, settings] = await Promise.all([
-            App.supa.loadOperations(),
-            App.supa.loadFuelLog(),
-            App.supa.loadTires(),
-            App.supa.loadParts(),
-            App.supa.loadHistory(),
-            App.supa.loadMileageHistory(),
-            App.supa.loadSettings()
-        ]);
-
-        console.log(`[DEBUG] Загружено: operations=${operations.length}, fuel=${fuelLog.length}, parts=${parts.length}, history=${history.length}`);
-
-        // Обновляем store
-        App.store.operations = operations;
-        App.store.fuelLog = fuelLog;
-        App.store.tireLog = tireLog;
-        App.store.parts = parts;
-        App.store.serviceRecords = history;
-        App.store.mileageHistory = mileageHistory;
-        if (settings) Object.assign(App.store.settings, settings);
-
-        // Сохраняем в IndexedDB с проставлением car_id
-        for (const op of operations) {
-            await App.store.saveOperationToDB({ ...op, car_id: carId });
-        }
-        for (const f of fuelLog) {
-            await App.store.saveFuelRecordToDB({ ...f, car_id: carId });
-        }
-        for (const t of tireLog) {
-            await App.store.saveTireRecordToDB({ ...t, car_id: carId });
-        }
-        for (const p of parts) {
-            await App.store.savePartToDB({ ...p, car_id: carId });
-        }
-        for (const h of history) {
-            await App.store.saveHistoryRecordToDB({ ...h, car_id: carId });
-        }
-        for (const m of mileageHistory) {
-            await App.store.saveMileageRecordToDB({ ...m, car_id: carId });
-        }
-        if (settings) {
-            await App.db.put('car_settings', { ...settings, car_id: carId });
-        }
-
-        if (typeof App.renderAll === 'function') App.renderAll();
-        App.toast('Данные загружены', 'info');
-    } catch (err) {
-        console.error('[DEBUG] Ошибка принудительной загрузки:', err);
-        App.toast('Не удалось загрузить данные', 'error');
-    }
-}
 
     function setupAuthSubscription() {
         if (authSubscribed) return;
@@ -797,33 +785,33 @@
             });
         }
 
+        // ИСПРАВЛЕННЫЙ обработчик online (без дублирования)
         window.addEventListener('online', async function() {
-    if (typeof App.toast === 'function') App.toast('Сеть восстановлена', 'success');
+            if (typeof App.toast === 'function') App.toast('Сеть восстановлена', 'success');
 
-    // 1. Принудительная синхронизация очереди (сначала завершаем удаления/сохранения)
-    if (App.db.sync && typeof App.db.sync.processSyncQueue === 'function') {
-        try {
-            await App.db.sync.processSyncQueue();
-        } catch (e) {
-            console.error('Ошибка синхронизации при восстановлении сети:', e);
-        }
-    }
+            // 1. Принудительная синхронизация очереди
+            if (App.db.sync && typeof App.db.sync.processSyncQueue === 'function') {
+                try {
+                    await App.db.sync.processSyncQueue();
+                } catch (e) {
+                    console.error('Ошибка синхронизации при восстановлении сети:', e);
+                }
+            }
 
-    // 2. Только после завершения синхронизации загружаем свежие данные с сервера
-    if (App.store.activeCarId && typeof App.storage.loadAllData === 'function') {
-        try {
-            await App.storage.loadAllData();
-        } catch (e) {
-            console.error('Ошибка загрузки данных после синхронизации:', e);
-        }
-    }
+            // 2. Только после синхронизации загружаем свежие данные с сервера
+            if (App.store.activeCarId && typeof App.storage.loadAllData === 'function') {
+                try {
+                    await App.storage.loadAllData();
+                } catch (e) {
+                    console.error('Ошибка загрузки данных после синхронизации:', e);
+                }
+            }
 
-    // 3. Обновляем UI на случай, если что-то ещё осталось
-    if (typeof App.renderAll === 'function') App.renderAll();
+            // 3. Обновляем UI (на всякий случай)
+            if (typeof App.renderAll === 'function') App.renderAll();
 
-    // 4. Восстанавливаем обработку сессии (может быть дублирующим, но не помешает)
-    handleOnlineSession();
-});
+            // handleOnlineSession() – НЕ вызываем, чтобы избежать задвоения синхронизации
+        });
 
         window.addEventListener('offline', () => {
             if (typeof App.toast === 'function') App.toast('Вы офлайн', 'warning');
@@ -834,7 +822,7 @@
 
         window.addEventListener('load', () => setTimeout(() => { if (typeof App.initIcons === 'function') App.initIcons(); }, 200));
 
-        // FAB-меню
+        // FAB-меню (без изменений)
         (function() {
             const fab = document.createElement('div');
             fab.id = 'fab-menu';
