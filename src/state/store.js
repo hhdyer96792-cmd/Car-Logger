@@ -236,7 +236,6 @@ App.store = {
                 } else if (typeof App.storage.loadSettingsForCar === 'function') {
                     await App.storage.loadSettingsForCar(this.activeCarId);
                 }
-                // Если настроек нет, используем дефолтные, но не перезаписываем существующие
                 if (!carSettings && !this.settings.carBrand && !this.settings.carModel) {
                     this.settings = { ...this.settings, carBrand: '', carModel: '', carYear: null, plateNumber: '', vin: '' };
                 }
@@ -253,6 +252,165 @@ App.store = {
         }
     },
 
-    // ========== ОСТАЛЬНОЙ КОД БЕЗ ИЗМЕНЕНИЙ (initFromLocalStorage, save* и т.д.) ==========
-    // ... (остальной код из предыдущей версии, без изменений)
+    // ========== FALLBACK ==========
+    initFromLocalStorage: function() {
+        var cached = localStorage.getItem(App.config.CACHE_KEY);
+        if (cached) {
+            var d = JSON.parse(cached);
+            this.operations = d.operations || [];
+            this.settings = d.settings || App.defaults.settings;
+            this.parts = d.parts || [];
+            this.fuelLog = d.fuelLog || [];
+            this.tireLog = d.tireLog || [];
+            this.workCosts = d.workCosts || [];
+            this.baseMileage = d.baseMileage || 0;
+            this.baseMotohours = d.baseMotohours || 0;
+            this.purchaseDate = d.purchaseDate || '';
+        }
+        var pendingRaw = localStorage.getItem(App.config.PENDING_KEY);
+        this.pendingActions = pendingRaw ? JSON.parse(pendingRaw) : [];
+        try {
+            var calRaw = localStorage.getItem(App.config.CALENDAR_CACHE_KEY);
+            if (calRaw) {
+                var entries = JSON.parse(calRaw);
+                this.calendarEventCache = new Map(entries);
+            }
+        } catch (e) {}
+        var notifMethod = localStorage.getItem(App.config.NOTIFICATION_METHOD_KEY);
+        if (notifMethod) this.settings.notificationMethod = notifMethod;
+        this.loadPriceHistory();
+        this.activeCarId = localStorage.getItem('vesta_active_car_id') || null;
+        this.calculateOwnershipDays();
+        console.warn('[Store] Используется устаревший initFromLocalStorage');
+    },
+
+    // ========== СОХРАНЕНИЕ В INDEXEDDB ==========
+    saveOperationToDB: async function(op) {
+        if (!op.id) op.id = crypto.randomUUID();
+        await App.db.put('operations', op);
+    },
+    saveFuelRecordToDB: async function(record) {
+        if (!record.id) record.id = crypto.randomUUID();
+        await App.db.put('fuel_log', record);
+    },
+    saveTireRecordToDB: async function(record) {
+        if (!record.id) record.id = crypto.randomUUID();
+        await App.db.put('tires', record);
+    },
+    savePartToDB: async function(part) {
+        if (!part.id) part.id = crypto.randomUUID();
+        await App.db.put('parts', part);
+    },
+    saveHistoryRecordToDB: async function(record) {
+        if (!record.id) record.id = crypto.randomUUID();
+        await App.db.put('service_records', record);
+    },
+    saveMileageRecordToDB: async function(record) {
+        if (!record.id) record.id = crypto.randomUUID();
+        await App.db.put('mileage_log', record);
+    },
+    saveSettingsToDB: async function() {
+        const carId = this.activeCarId;
+        if (!carId) return;
+        const settingsToSave = { car_id: carId, ...this.settings };
+        if (!settingsToSave.id) settingsToSave.id = carId;
+        const masterKey = App.db.encryption.getMasterKey();
+        if (masterKey) {
+            const encrypted = await App.db.encryption.encryptSettings(settingsToSave, masterKey);
+            await App.db.put('car_settings', encrypted);
+        } else {
+            await App.db.put('car_settings', settingsToSave);
+        }
+    },
+    saveCarToDB: async function(car) {
+        await App.db.put('cars', car);
+    },
+
+    // ========== ОЧЕРЕДЬ СИНХРОНИЗАЦИИ ==========
+    addPendingAction: async function(action) {
+        const newAction = {
+            id: crypto.randomUUID(),
+            type: action.type,
+            entityType: action.entityType,
+            entityId: action.entityId,
+            data: action.data,
+            timestamp: Date.now(),
+            retryCount: 0
+        };
+        this.pendingActions.push(newAction);
+        await App.db.put('pending_actions', newAction);
+        console.log('[Store] Добавлено действие в очередь:', newAction.id, newAction.type, newAction.entityType);
+    },
+    clearPendingActions: async function() {
+        await App.db.clear('pending_actions');
+        this.pendingActions = [];
+    },
+    removePendingAction: async function(actionId) {
+        await App.db.delete('pending_actions', actionId);
+        this.pendingActions = this.pendingActions.filter(a => a.id !== actionId);
+    },
+    forceReloadPendingActions: async function() {
+        const pending = await App.db.getAll('pending_actions');
+        this.pendingActions = pending.sort((a, b) => a.timestamp - b.timestamp);
+        return this.pendingActions;
+    },
+
+    // ========== ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ ==========
+    saveToLocalStorage: function() {
+        console.warn('[Store] saveToLocalStorage игнорируется, данные в IndexedDB');
+    },
+    loadPriceHistory: function() {},
+    savePriceHistory: function() {},
+    saveServerTimestamps: function() {},
+    hasConflict: function() { return false; },
+    updateServerTimestamp: function() {},
+
+    calculateOwnershipDays: function() {
+        if (!this.purchaseDate) {
+            this.ownershipDays = 0;
+            return;
+        }
+        const now = new Date();
+        const purchase = new Date(this.purchaseDate);
+        if (isNaN(purchase.getTime())) {
+            this.ownershipDays = 0;
+            return;
+        }
+        this.ownershipDays = Math.floor(Math.abs(now - purchase) / 86400000);
+    },
+    saveCalendarCache: function() {},
+
+    setActiveCar: function(carId) {
+        if (this.activeCarId === carId) return;
+        this.activeCarId = carId;
+        localStorage.setItem('vesta_active_car_id', carId);
+        
+        this.loadFromIndexedDB().catch(console.error);
+        
+        if (typeof App.storage.loadSettingsForCar === 'function') {
+            App.storage.loadSettingsForCar(carId).then(() => {
+                if (typeof App.renderAll === 'function') App.renderAll();
+            }).catch(console.error);
+        }
+        
+        if (navigator.onLine && typeof App.storage.loadAllData === 'function') {
+            App.storage.loadAllData().catch(console.error);
+        }
+    },
+    
+    loadCars: function() {
+        const self = this;
+        return App.supa.loadCars().then(cars => {
+            self.cars = cars;
+            if (cars.length) {
+                const exists = self.activeCarId && cars.some(c => c.id == self.activeCarId);
+                if (!exists) self.setActiveCar(cars[0].id);
+                else localStorage.setItem('vesta_active_car_id', self.activeCarId);
+            } else if (!self.activeCarId) {
+                self.activeCarId = null;
+                localStorage.removeItem('vesta_active_car_id');
+            }
+            return cars;
+        });
+    }
 };
