@@ -269,8 +269,9 @@ App.db.sync.processSyncQueue = async function() {
         setTimeout(() => App.db.sync.processSyncQueue(), 1000);
         return;
     }
-    if (!navigator.onLine) {
-        console.log('[Sync] Нет сети, синхронизация отложена');
+    const online = await App.network.isReallyOnline();
+    if (!online) {
+        console.log('[Sync] Нет реального подключения к интернету, синхронизация отложена');
         return;
     }
     if (App.db.sync._isRunning) {
@@ -309,13 +310,13 @@ App.db.sync.processSyncQueue = async function() {
         App.db.sync._isRunning = false;
         // Планируем повторную попытку через минуту для застрявших действий
         clearTimeout(App.db.sync._retryTimeout);
-        App.db.sync._retryTimeout = setTimeout(() => {
-            if (navigator.onLine) App.db.sync.processSyncQueue();
+        App.db.sync._retryTimeout = setTimeout(async () => {
+            if (await App.network.isReallyOnline()) App.db.sync.processSyncQueue();
         }, 60000);
     }
 };
 
-App.db.sync.forceSync = function() {
-    if (navigator.onLine) App.db.sync.processSyncQueue();
+App.db.sync.forceSync = async function() {
+    if (await App.network.isReallyOnline()) App.db.sync.processSyncQueue();
     else App.toast('Нет сети. Синхронизация отложена.', 'warning');
 };
