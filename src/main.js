@@ -613,46 +613,58 @@
     }
 
     async function initDatabase() {
-        try {
-            await App.db.init();
-            const migrated = localStorage.getItem('vesta_migrated_to_indexeddb');
-            const { data: { session } } = await App.supabase.auth.getSession();
-            if (!migrated && session) {
-                const confirmMigration = await App.ui.confirmModalAsync('Перенести существующие данные в новую базу? (рекомендуется)');
-                if (confirmMigration) {
-                    await App.db.migrateFromLocalStorage();
-                    localStorage.setItem('vesta_migrated_to_indexeddb', 'true');
-                }
+    try {
+        await App.db.init();
+        const migrated = localStorage.getItem('vesta_migrated_to_indexeddb');
+        const { data: { session } } = await App.supabase.auth.getSession();
+        if (!migrated && session) {
+            const confirmMigration = await App.ui.confirmModalAsync('Перенести существующие данные в новую базу? (рекомендуется)');
+            if (confirmMigration) {
+                await App.db.migrateFromLocalStorage();
+                localStorage.setItem('vesta_migrated_to_indexeddb', 'true');
             }
-            await App.store.loadFromIndexedDB();
-            if (session) {
-                const isKilled = await App.db.killSwitch.check();
-                if (isKilled) {
-                    await App.db.killSwitch.destroyLocalDB();
-                    return;
-                }
-                if (typeof App.db.killSwitch.startPeriodicCheck === 'function') App.db.killSwitch.startPeriodicCheck();
-            }
-            if (navigator.onLine && App.db.sync && typeof App.db.sync.processSyncQueue === 'function') {
-                await App.db.sync.processSyncQueue();
-            }
-            if (syncInterval) clearInterval(syncInterval);
-            syncInterval = setInterval(() => {
-                if (navigator.onLine && App.db.sync && !App.db.sync._isRunning) {
-                    App.db.sync.processSyncQueue().catch(console.error);
-                }
-            }, 60000);
-            dbInitialized = true;
-        } catch (err) {
-            console.error('[DEBUG] Ошибка инициализации IndexedDB:', err);
-            if (typeof App.toast === 'function') {
-                App.toast('Не удалось открыть базу данных.', 'error');
-            }
-            App.store.initFromLocalStorage();
-            dbInitialized = true;
         }
-    }
+        await App.store.loadFromIndexedDB();
 
+        if (session) {
+            const isKilled = await App.db.killSwitch.check();
+            if (isKilled) {
+                await App.db.killSwitch.destroyLocalDB();
+                return;
+            }
+            if (typeof App.db.killSwitch.startPeriodicCheck === 'function') App.db.killSwitch.startPeriodicCheck();
+        }
+
+        const online = await App.network.isReallyOnline();
+        if (online && App.db.sync && typeof App.db.sync.processSyncQueue === 'function') {
+            await App.db.sync.processSyncQueue();
+        }
+
+        // Рекурсивный setTimeout вместо setInterval для избежания накопления
+        async function scheduleNextSync() {
+            syncInterval = setTimeout(async () => {
+                if (await App.network.isReallyOnline() && App.db.sync && !App.db.sync._isRunning) {
+                    try {
+                        await App.db.sync.processSyncQueue();
+                    } catch (e) {
+                        console.error('[Sync] Ошибка фоновой синхронизации:', e);
+                    }
+                }
+                scheduleNextSync(); // планируем следующий запуск
+            }, 60000);
+        }
+        scheduleNextSync();
+
+        dbInitialized = true;
+    } catch (err) {
+        console.error('[DEBUG] Ошибка инициализации IndexedDB:', err);
+        if (typeof App.toast === 'function') {
+            App.toast('Не удалось открыть базу данных.', 'error');
+        }
+        App.store.initFromLocalStorage();
+        dbInitialized = true;
+    }
+}
     async function handleOnlineSession() {
         if (!navigator.onLine) {
             isLoggedIn = true;
@@ -696,15 +708,18 @@
             'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFiamxjY2RxYXVkeXZlZHB5c2lsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzczNjQ5MDEsImV4cCI6MjA5Mjk0MDkwMX0.dpdlcOQLtc6adA-l2z_ksJ3b6b6pLTQviLrKtxuF-kU',
             {
                 auth: {
-                    lockAcquireTimeout: 10000,
-                    persistSession: true,
-                    storageKey: 'sb-auth-token',
-                    autoRefreshToken: true,
-                    detectSessionInUrl: true,
-                    flowType: 'pkce'
-                }
-            }
-        );
+            lockAcquireTimeout: 10000,
+            persistSession: true,
+            storageKey: 'sb-auth-token',
+            autoRefreshToken: true,
+            detectSessionInUrl: true,
+            flowType: 'pkce'
+        },
+        realtime: {
+            enabled: false   // отключаем авто-WebSocket
+        }
+    }
+);
 
         if (navigator.storage && navigator.storage.persist) {
             navigator.storage.persist().then(isPersisted => console.log('Persistent storage:', isPersisted ? 'granted' : 'denied'));
@@ -787,31 +802,32 @@
 
         // ИСПРАВЛЕННЫЙ обработчик online (без дублирования)
         window.addEventListener('online', async function() {
-            if (typeof App.toast === 'function') App.toast('Сеть восстановлена', 'success');
+    console.log('[Main] Получено событие online, проверяем реальное подключение...');
+    let reallyOnline = false;
+    for (let i = 0; i < 5; i++) {
+        reallyOnline = await App.network.isReallyOnline();
+        if (reallyOnline) break;
+        await new Promise(r => setTimeout(r, 1500)); // ждём 1.5 сек перед повтором
+    }
 
-            // 1. Принудительная синхронизация очереди
-            if (App.db.sync && typeof App.db.sync.processSyncQueue === 'function') {
-                try {
-                    await App.db.sync.processSyncQueue();
-                } catch (e) {
-                    console.error('Ошибка синхронизации при восстановлении сети:', e);
-                }
-            }
+    if (!reallyOnline) {
+        console.log('[Main] Реальная сеть недоступна, остаёмся в офлайне');
+        return;
+    }
 
-            // 2. Только после синхронизации загружаем свежие данные с сервера
-            if (App.store.activeCarId && typeof App.storage.loadAllData === 'function') {
-                try {
-                    await App.storage.loadAllData();
-                } catch (e) {
-                    console.error('Ошибка загрузки данных после синхронизации:', e);
-                }
-            }
+    if (typeof App.toast === 'function') App.toast('Сеть восстановлена', 'success');
 
-            // 3. Обновляем UI (на всякий случай)
-            if (typeof App.renderAll === 'function') App.renderAll();
-
-            // handleOnlineSession() – НЕ вызываем, чтобы избежать задвоения синхронизации
-        });
+    if (App.db.sync && typeof App.db.sync.processSyncQueue === 'function') {
+        try { await App.db.sync.processSyncQueue(); } catch (e) { console.error(e); }
+    }
+    if (App.store.activeCarId && typeof App.storage.loadAllData === 'function') {
+        try { await App.storage.loadAllData(); } catch (e) { console.error(e); }
+    }
+    if (App.realtime && typeof App.realtime.resubscribe === 'function') {
+        App.realtime.resubscribe();
+    }
+    if (typeof App.renderAll === 'function') App.renderAll();
+});
 
         window.addEventListener('offline', () => {
             if (typeof App.toast === 'function') App.toast('Вы офлайн', 'warning');
