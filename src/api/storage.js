@@ -109,14 +109,14 @@ App.storage.saveCar = async function(car) {
 
 App.storage.deleteCar = async function(carId) {
     if (!navigator.onLine) {
-        await App.db.delete('cars', carId);
-        App.store.cars = App.store.cars.filter(c => c.id != carId);
         await queueAction({
             type: 'delete',
             entityType: 'car',
             entityId: carId,
             data: { id: carId, car_id: carId }
         });
+        await App.db.delete('cars', carId);
+        App.store.cars = App.store.cars.filter(c => c.id != carId);
         App.toast('Удаление сохранено локально', 'warning');
         return true;
     }
@@ -203,13 +203,13 @@ App.storage.addCarDocument = async function(doc) {
 App.storage.deleteCarDocument = async function(docId) {
     const carId = App.store.activeCarId;
     if (!navigator.onLine) {
-        await App.db.delete('car_documents', docId);
         await queueAction({
             type: 'delete',
             entityType: 'car_document',
             entityId: docId,
             data: { id: docId, car_id: carId }
         });
+        await App.db.delete('car_documents', docId);
         App.toast('Удаление документа сохранено локально', 'warning');
         return true;
     }
@@ -299,14 +299,15 @@ App.storage.saveOperation = async function(op) {
 App.storage.deleteOperation = async function(operationId) {
     const carId = App.store.activeCarId;
     if (!navigator.onLine) {
-        await App.db.delete('operations', operationId);
-        App.store.operations = App.store.operations.filter(o => o.id != operationId);
+        // Сначала добавляем в очередь, потом удаляем локально
         await queueAction({
             type: 'delete',
             entityType: 'operation',
             entityId: operationId,
             data: { id: operationId, car_id: carId }
         });
+        await App.db.delete('operations', operationId);
+        App.store.operations = App.store.operations.filter(o => o.id != operationId);
         App.toast('Удаление сохранено локально', 'warning');
         refreshUIToTables();
         return;
@@ -361,14 +362,14 @@ App.storage.deleteHistoryRecord = async function(rowIndex) {
     if (!record) return;
     const carId = App.store.activeCarId;
     if (!navigator.onLine) {
-        await App.db.delete('service_records', record.id);
-        App.store.serviceRecords = App.store.serviceRecords.filter(r => r.id != record.id);
         await queueAction({
             type: 'delete',
             entityType: 'history',
             entityId: record.id,
             data: { id: record.id, car_id: carId }
         });
+        await App.db.delete('service_records', record.id);
+        App.store.serviceRecords = App.store.serviceRecords.filter(r => r.id != record.id);
         App.toast('Удаление сохранено локально', 'warning');
         refreshUIToHistory();
         return;
@@ -418,14 +419,14 @@ App.storage.savePart = async function(part) {
 App.storage.deletePart = async function(partId) {
     const carId = App.store.activeCarId;
     if (!navigator.onLine) {
-        await App.db.delete('parts', partId);
-        App.store.parts = App.store.parts.filter(p => p.id != partId);
         await queueAction({
             type: 'delete',
             entityType: 'part',
             entityId: partId,
             data: { id: partId, car_id: carId }
         });
+        await App.db.delete('parts', partId);
+        App.store.parts = App.store.parts.filter(p => p.id != partId);
         App.toast('Удаление сохранено локально', 'warning');
         refreshUIToParts();
         return;
@@ -475,14 +476,14 @@ App.storage.saveFuelRecord = async function(id, record) {
 App.storage.deleteFuelRecord = async function(id) {
     const carId = App.store.activeCarId;
     if (!navigator.onLine) {
-        await App.db.delete('fuel_log', id);
-        App.store.fuelLog = App.store.fuelLog.filter(f => f.id != id);
         await queueAction({
             type: 'delete',
             entityType: 'fuel',
             entityId: id,
             data: { id: id, car_id: carId }
         });
+        await App.db.delete('fuel_log', id);
+        App.store.fuelLog = App.store.fuelLog.filter(f => f.id != id);
         App.toast('Удаление сохранено локально', 'warning');
         refreshUIToFuel();
         return;
@@ -532,14 +533,15 @@ App.storage.saveTireRecord = async function(id, record) {
 App.storage.deleteTireRecord = async function(id) {
     const carId = App.store.activeCarId;
     if (!navigator.onLine) {
-        await App.db.delete('tires', id);
-        App.store.tireLog = App.store.tireLog.filter(t => t.id != id);
+        // Сначала добавляем в очередь, потом удаляем локально
         await queueAction({
             type: 'delete',
             entityType: 'tire',
             entityId: id,
             data: { id: id, car_id: carId }
         });
+        await App.db.delete('tires', id);
+        App.store.tireLog = App.store.tireLog.filter(t => t.id != id);
         App.toast('Удаление сохранено локально', 'warning');
         refreshUIToTires();
         return;
