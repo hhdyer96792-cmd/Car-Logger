@@ -12,20 +12,6 @@ App.events.init = function() {
     App.events.initHistoryFilters();
     App.events.initStatsListeners();
     
-    window.addEventListener('online', function() {
-        if (typeof App.toast === 'function') {
-            App.toast('Сеть восстановлена. Запускаем синхронизацию...', 'success');
-        }
-        if (typeof App.db.sync.forceSync === 'function') {
-            App.db.sync.forceSync();
-        }
-    });
-
-    window.addEventListener('offline', function() {
-        if (typeof App.toast === 'function') {
-            App.toast('Вы офлайн. Изменения будут сохранены локально и синхронизируются позже.', 'warning');
-        }
-    });
 };
 
 App.events.setupDelegation = function() {
