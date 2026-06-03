@@ -32,8 +32,7 @@ async function queueAction(action) {
             console.warn('[Storage] Background Sync registration failed:', err);
         }
     }
-    const online = await App.network.isReallyOnline();
-    if (online && typeof App.db.sync.processSyncQueue === 'function') {
+    if (navigator.onLine && typeof App.db.sync.processSyncQueue === 'function') {
         setTimeout(() => App.db.sync.processSyncQueue(), 50);
     }
 }
@@ -70,8 +69,7 @@ function refreshUIToHistory() {
 App.storage.saveCar = async function(car) {
     const carWithId = { ...car };
     if (!carWithId.id) carWithId.id = crypto.randomUUID();
-    const online = await App.network.isReallyOnline();
-    if (!online) {
+    if (!navigator.onLine) {
         await App.db.put('cars', carWithId);
         const idx = App.store.cars.findIndex(c => c.id == carWithId.id);
         if (idx !== -1) App.store.cars[idx] = carWithId;
@@ -110,8 +108,7 @@ App.storage.saveCar = async function(car) {
 };
 
 App.storage.deleteCar = async function(carId) {
-    const online = await App.network.isReallyOnline();
-    if (!online) {
+    if (!navigator.onLine) {
         await queueAction({
             type: 'delete',
             entityType: 'car',
@@ -137,8 +134,7 @@ App.storage.deleteCar = async function(carId) {
 };
 
 App.storage.renameCar = async function(carId, newName) {
-    const online = await App.network.isReallyOnline();
-    if (!online) {
+    if (!navigator.onLine) {
         const car = App.store.cars.find(c => c.id == carId);
         if (car) {
             const updatedCar = { ...car, name: newName };
@@ -182,8 +178,7 @@ App.storage.addCarDocument = async function(doc) {
     }
     const docWithCarId = { ...doc, car_id: carId };
     if (!docWithCarId.id) docWithCarId.id = crypto.randomUUID();
-    const online = await App.network.isReallyOnline();
-    if (!online) {
+    if (!navigator.onLine) {
         await App.db.put('car_documents', docWithCarId);
         await queueAction({
             type: 'save',
@@ -207,8 +202,7 @@ App.storage.addCarDocument = async function(doc) {
 
 App.storage.deleteCarDocument = async function(docId) {
     const carId = App.store.activeCarId;
-    const online = await App.network.isReallyOnline();
-    if (!online) {
+    if (!navigator.onLine) {
         // Локальное удаление ПЕРЕД добавлением в очередь (устойчивость)
         await App.db.delete('car_documents', docId);
         try {
@@ -245,8 +239,7 @@ App.storage.saveVehicleStateAndSettings = async function(state, settings) {
     if (cleanState.plateNumber && typeof cleanState.plateNumber !== 'string') cleanState.plateNumber = String(cleanState.plateNumber);
     if (cleanState.vin && typeof cleanState.vin !== 'string') cleanState.vin = String(cleanState.vin);
     const data = { car_id: carId, ...cleanState, ...settings };
-    const online = await App.network.isReallyOnline();
-    if (!online) {
+    if (!navigator.onLine) {
         Object.assign(App.store.settings, cleanState, settings);
         await App.db.put('car_settings', { ...App.store.settings, car_id: carId });
         await queueAction({ type: 'save', entityType: 'car_settings', entityId: carId, data });
@@ -276,8 +269,7 @@ App.storage.saveOperation = async function(op) {
     if (!opWithCarId.id) opWithCarId.id = crypto.randomUUID();
     console.log('[Storage] saveOperation, carId=' + carId + ', id=' + opWithCarId.id + ', online=' + navigator.onLine);
     
-    const online = await App.network.isReallyOnline();
-    if (!online) {
+    if (!navigator.onLine) {
         await App.store.saveOperationToDB(opWithCarId);
         const idx = App.store.operations.findIndex(o => o.id == opWithCarId.id);
         if (idx !== -1) App.store.operations[idx] = opWithCarId;
@@ -311,8 +303,7 @@ App.storage.saveOperation = async function(op) {
 
 App.storage.deleteOperation = async function(operationId) {
     const carId = App.store.activeCarId;
-    const online = await App.network.isReallyOnline();
-    if (!online) {
+    if (!navigator.onLine) {
         // Сначала локальное удаление, потом очередь
         await App.db.delete('operations', operationId);
         App.store.operations = App.store.operations.filter(o => o.id != operationId);
@@ -347,8 +338,7 @@ App.storage.addHistoryRecord = async function(rec) {
     }
     const recWithCarId = { ...rec, car_id: carId };
     if (!recWithCarId.id) recWithCarId.id = crypto.randomUUID();
-    const online = await App.network.isReallyOnline();
-    if (!online) {
+    if (!navigator.onLine) {
         await App.store.saveHistoryRecordToDB(recWithCarId);
         App.store.serviceRecords.push(recWithCarId);
         await queueAction({
@@ -380,8 +370,7 @@ App.storage.deleteHistoryRecord = async function(rowIndex) {
     const record = App.store.serviceRecords.find(r => r.rowIndex == rowIndex);
     if (!record) return;
     const carId = App.store.activeCarId;
-    const online = await App.network.isReallyOnline();
-    if (!online) {
+    if (!navigator.onLine) {
         // Сначала локальное удаление
         await App.db.delete('service_records', record.id);
         App.store.serviceRecords = App.store.serviceRecords.filter(r => r.id != record.id);
@@ -416,8 +405,7 @@ App.storage.savePart = async function(part) {
     }
     const partWithCarId = { ...part, car_id: carId };
     if (!partWithCarId.id) partWithCarId.id = crypto.randomUUID();
-    const online = await App.network.isReallyOnline();
-    if (!online) {
+    if (!navigator.onLine) {
         await App.store.savePartToDB(partWithCarId);
         const idx = App.store.parts.findIndex(p => p.id == partWithCarId.id);
         if (idx !== -1) App.store.parts[idx] = partWithCarId;
@@ -444,8 +432,7 @@ App.storage.savePart = async function(part) {
 
 App.storage.deletePart = async function(partId) {
     const carId = App.store.activeCarId;
-    const online = await App.network.isReallyOnline();
-    if (!online) {
+    if (!navigator.onLine) {
         // Сначала локальное удаление, потом очередь
         await App.db.delete('parts', partId);
         App.store.parts = App.store.parts.filter(p => p.id != partId);
@@ -480,8 +467,7 @@ App.storage.saveFuelRecord = async function(id, record) {
     }
     const recordWithCarId = { ...record, car_id: carId };
     if (!recordWithCarId.id) recordWithCarId.id = crypto.randomUUID();
-    const online = await App.network.isReallyOnline();
-    if (!online) {
+    if (!navigator.onLine) {
         await App.store.saveFuelRecordToDB(recordWithCarId);
         const idx = App.store.fuelLog.findIndex(f => f.id == recordWithCarId.id);
         if (idx !== -1) App.store.fuelLog[idx] = recordWithCarId;
@@ -508,8 +494,7 @@ App.storage.saveFuelRecord = async function(id, record) {
 
 App.storage.deleteFuelRecord = async function(id) {
     const carId = App.store.activeCarId;
-    const online = await App.network.isReallyOnline();
-    if (!online) {
+    if (!navigator.onLine) {
         // Сначала локальное удаление, потом очередь
         await App.db.delete('fuel_log', id);
         App.store.fuelLog = App.store.fuelLog.filter(f => f.id != id);
@@ -544,8 +529,7 @@ App.storage.saveTireRecord = async function(id, record) {
     }
     const recordWithCarId = { ...record, car_id: carId };
     if (!recordWithCarId.id) recordWithCarId.id = crypto.randomUUID();
-    const online = await App.network.isReallyOnline();
-    if (!online) {
+    if (!navigator.onLine) {
         await App.store.saveTireRecordToDB(recordWithCarId);
         const idx = App.store.tireLog.findIndex(t => t.id == recordWithCarId.id);
         if (idx !== -1) App.store.tireLog[idx] = recordWithCarId;
@@ -572,8 +556,7 @@ App.storage.saveTireRecord = async function(id, record) {
 
 App.storage.deleteTireRecord = async function(id) {
     const carId = App.store.activeCarId;
-    const online = await App.network.isReallyOnline();
-    if (!online) {
+    if (!navigator.onLine) {
         // Сначала локальное удаление, потом очередь
         await App.db.delete('tires', id);
         App.store.tireLog = App.store.tireLog.filter(t => t.id != id);
@@ -609,8 +592,7 @@ App.storage.addMileageRecord = async function(date, mileage, motohours) {
     }
     const record = { date, mileage, motohours, user_id: userId, car_id: carId };
     if (!record.id) record.id = crypto.randomUUID();
-    const online = await App.network.isReallyOnline();
-    if (!online) {
+    if (!navigator.onLine) {
         await App.store.saveMileageRecordToDB(record);
         App.store.mileageHistory.push(record);
         await queueAction({
@@ -652,8 +634,7 @@ App.storage.saveSettings = async function(settings) {
     
     const settingsWithCar = { ...cleanedSettings, car_id: carId };
     
-    const online = await App.network.isReallyOnline();
-    if (!online) {
+    if (!navigator.onLine) {
         Object.assign(App.store.settings, cleanedSettings);
         await App.db.put('car_settings', settingsWithCar);
         await queueAction({
@@ -710,8 +691,7 @@ App.storage.loadSettingsForCar = async function(carId) {
             Object.assign(App.store.settings, decrypted);
             return decrypted;
         }
-        const online = await App.network.isReallyOnline();
-        if (online) {
+        if (navigator.onLine) {
             const settings = await App.supa.loadSettings();
             if (settings) {
                 const settingsWithCar = { ...settings, car_id: carId };
@@ -744,8 +724,7 @@ App.storage.loadSettingsForCar = async function(carId) {
 
 // ========== ЗАГРУЗКА ВСЕХ ДАННЫХ ==========
 App.storage.loadAllData = async function() {
-    const online = await App.network.isReallyOnline();
-    if (!online) {
+    if (!navigator.onLine) {
         App.toast('Нет подключения к интернету. Показываю кэшированные данные.', 'warning');
         await App.store.loadFromIndexedDB();
         document.getElementById('data-panel').style.display = 'block';
