@@ -804,16 +804,18 @@
         window.addEventListener('online', async function() {
     console.log('[Main] Получено событие online, проверяем реальное подключение...');
     let reallyOnline = false;
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 6; i++) {
         reallyOnline = await App.network.isReallyOnline();
         if (reallyOnline) break;
-        await new Promise(r => setTimeout(r, 1500)); // ждём 1.5 сек перед повтором
+        await new Promise(r => setTimeout(r, 2000)); // пауза 2 секунды
     }
 
     if (!reallyOnline) {
-        console.log('[Main] Реальная сеть недоступна, остаёмся в офлайне');
+        console.warn('[Main] Реальная сеть так и не появилась, синхронизация отложена');
+        if (typeof App.toast === 'function') App.toast('Сеть недоступна, синхронизация отложена', 'warning');
         return;
     }
+
 
     if (typeof App.toast === 'function') App.toast('Сеть восстановлена', 'success');
 
