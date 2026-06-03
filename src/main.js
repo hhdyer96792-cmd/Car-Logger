@@ -803,11 +803,17 @@
         // ИСПРАВЛЕННЫЙ обработчик online (без дублирования)
         window.addEventListener('online', async function() {
     console.log('[Main] Получено событие online, проверяем реальное подключение...');
+
+    // Сбрасываем кеш, чтобы не получить устаревший false
+    if (App.network && App.network.resetCache) {
+        App.network.resetCache();
+    }
+
     let reallyOnline = false;
     for (let i = 0; i < 6; i++) {
         reallyOnline = await App.network.isReallyOnline();
         if (reallyOnline) break;
-        await new Promise(r => setTimeout(r, 2000)); // пауза 2 секунды
+        await new Promise(r => setTimeout(r, 2000));
     }
 
     if (!reallyOnline) {
@@ -815,7 +821,6 @@
         if (typeof App.toast === 'function') App.toast('Сеть недоступна, синхронизация отложена', 'warning');
         return;
     }
-
 
     if (typeof App.toast === 'function') App.toast('Сеть восстановлена', 'success');
 
