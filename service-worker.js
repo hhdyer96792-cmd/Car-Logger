@@ -24,7 +24,6 @@ const CACHE_NAME = `car-logger-static-v${APP_VERSION}`;
 const basePath = self.location.pathname.replace(/\/service-worker\.js$/, '');
 
 
-// Все локальные файлы приложения (без начального basePath, он добавится при проверке)
 const localFiles = [
     '/index.html',
     '/style.css',
@@ -57,27 +56,27 @@ const localFiles = [
     '/src/utils/realtime.js',
     '/src/events.js',
     '/src/main.js',
-    '/src/vendor/supabase.min.js'
-];
-
-// Важные CDN-ресурсы
-const cdnFiles = [
-    'https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js',
-    'https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js',
-    'https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js',
-    'https://cdn.jsdelivr.net/npm/lucide@latest/dist/umd/lucide.min.js',
-    'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js',
-    'https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js',
-    'https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js',
-    'https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js',
-    'https://www.gstatic.com/firebasejs/9.22.0/firebase-messaging-compat.js'
+    '/src/vendor/supabase.min.js',
+    // Локальные копии библиотек
+    '/lib/chart.umd.min.js',
+    '/lib/hammer.min.js',
+    '/lib/chartjs-plugin-zoom.min.js',
+    '/lib/lucide.min.js',
+    '/lib/html2pdf.bundle.min.js',
+    '/lib/xlsx.full.min.js',
+    '/lib/purify.min.js',
+    '/lib/firebase-app-compat.js',
+    '/lib/firebase-messaging-compat.js'
 ];
 
 self.addEventListener('install', event => {
     event.waitUntil(
         caches.open(CACHE_NAME).then(cache => {
-            const addAllWithCatch = urls => Promise.all(urls.map(url => cache.add(url).catch(err => console.warn('Cache add failed:', url, err))));
-            return Promise.all([addAllWithCatch(localFiles.map(f => basePath + f)), addAllWithCatch(cdnFiles)]);
+            const addAllWithCatch = urls =>
+                Promise.all(urls.map(url =>
+                    cache.add(url).catch(err => console.warn('Cache add failed:', url, err))
+                ));
+            return addAllWithCatch(localFiles.map(f => basePath + f));
         }).then(() => self.skipWaiting())
     );
 });
