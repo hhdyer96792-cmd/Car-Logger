@@ -23,7 +23,6 @@ async function withRetry(fn, maxRetries = 3, delay = 500, context = 'unknown') {
     throw lastError;
 }
 
-// Универсальный таймаут для любого промиса
 function withTimeout(promise, timeoutMs, context) {
     let timer;
     const timeout = new Promise((_, reject) => {
@@ -148,8 +147,7 @@ App.supa.loadFuelLog = function() {
                     notes: f.notes || ''
                 }));
             }),
-            1
-25000, 'loadFuelLog'
+            25000, 'loadFuelLog'
         ),
     3, 500, 'loadFuelLog');
 };
@@ -492,7 +490,7 @@ App.supa.loadCarDocuments = function() {
                     notes: doc.notes || ''
                 }));
             }),
-            15000, 'loadCarDocuments'
+            25000, 'loadCarDocuments'
         ),
     3, 500, 'loadCarDocuments');
 };
@@ -512,7 +510,7 @@ App.supa.addCarDocument = async function(doc) {
     };
     const { data, error } = await withTimeout(
         App.supabase.from('car_documents').insert(record).select().single(),
-        15000, 'addCarDocument'
+        25000, 'addCarDocument'
     );
     if (error) throw error;
     return { id: data.id, ...doc };
@@ -526,7 +524,7 @@ App.supa.updateCarDocument = async function(docId, updates) {
             amount: updates.amount,
             notes: updates.notes
         }).eq('id', docId),
-        15000, 'updateCarDocument'
+        25000, 'updateCarDocument'
     );
     if (error) throw error;
     return true;
@@ -535,7 +533,7 @@ App.supa.updateCarDocument = async function(docId, updates) {
 App.supa.deleteCarDocument = async function(docId) {
     const { error } = await withTimeout(
         App.supabase.from('car_documents').delete().eq('id', docId),
-        15000, 'deleteCarDocument'
+        25000, 'deleteCarDocument'
     );
     if (error) throw error;
     return true;
@@ -549,7 +547,7 @@ App.supa.loadCars = function() {
             if (error) throw error;
             return data || [];
         }),
-        15000, 'loadCars'
+        25000, 'loadCars'
     );
 };
 
@@ -560,7 +558,7 @@ App.supa.createCar = function(name) {
         const record = { id: crypto.randomUUID(), user_id: userId, name };
         return withTimeout(
             App.supabase.from('cars').insert(record).select().single(),
-            15000, 'createCar'
+            25000, 'createCar'
         );
     });
 };
@@ -569,7 +567,7 @@ App.supa.deleteCar = function(carId) {
     ensureSupabase();
     return withTimeout(
         App.supabase.from('cars').delete().eq('id', carId).select(),
-        15000, 'deleteCar'
+        25000, 'deleteCar'
     );
 };
 
@@ -577,7 +575,7 @@ App.supa.renameCar = function(carId, newName) {
     ensureSupabase();
     return withTimeout(
         App.supabase.from('cars').update({ name: newName }).eq('id', carId).select().single(),
-        15000, 'renameCar'
+        25000, 'renameCar'
     );
 };
 
@@ -585,7 +583,7 @@ App.supa.inviteUserToCar = function(carId, email) {
     ensureSupabase();
     return withTimeout(
         App.supabase.from('car_shares').insert({ id: crypto.randomUUID(), car_id: carId, invited_email: email }).select().single(),
-        15000, 'inviteUserToCar'
+        25000, 'inviteUserToCar'
     );
 };
 
@@ -597,7 +595,7 @@ App.supa.getPendingInvites = function() {
                 .select('*, cars(name)')
                 .eq('invited_user_id', userId)
                 .eq('accepted', false),
-            15000, 'getPendingInvites'
+            25000, 'getPendingInvites'
         );
     });
 };
@@ -611,7 +609,7 @@ App.supa.acceptInvite = async function(inviteId) {
             .update({ accepted: true, invited_user_id: userId })
             .eq('id', inviteId)
             .select(),
-        15000, 'acceptInvite'
+        25000, 'acceptInvite'
     );
 };
 
@@ -619,7 +617,7 @@ App.supa.declineInvite = function(inviteId) {
     ensureSupabase();
     return withTimeout(
         App.supabase.from('car_shares').delete().eq('id', inviteId).select(),
-        15000, 'declineInvite'
+        25000, 'declineInvite'
     );
 };
 
@@ -630,7 +628,7 @@ App.supa.getInviteByCode = function(code) {
             .select('*, cars(name)')
             .eq('invite_code', code)
             .maybeSingle(),
-        15000, 'getInviteByCode'
+        25000, 'getInviteByCode'
     );
 };
 
@@ -638,7 +636,7 @@ App.supa.getCarShares = function(carId) {
     ensureSupabase();
     return withTimeout(
         App.supabase.from('car_shares').select('*').eq('car_id', carId),
-        15000, 'getCarShares'
+        25000, 'getCarShares'
     );
 };
 
@@ -646,7 +644,7 @@ App.supa.deleteCarShare = function(shareId) {
     ensureSupabase();
     return withTimeout(
         App.supabase.from('car_shares').delete().eq('id', shareId).select(),
-        15000, 'deleteCarShare'
+        25000, 'deleteCarShare'
     );
 };
 
@@ -672,7 +670,7 @@ App.supa.updateVehicleState = async function(carId, updates) {
     };
     const { error } = await withTimeout(
         App.supabase.from('vehicle_state').upsert(record, { onConflict: 'car_id' }),
-        15000, 'updateVehicleState'
+        25000, 'updateVehicleState'
     );
     if (error) throw error;
     return true;
@@ -713,7 +711,6 @@ App.supa.createInviteLink = async function(carId) {
     return window.location.origin + '/Car-K3eper/?invite=' + inviteCode;
 };
 
-// Страховка
 if (!App.supa.getVehicleState) {
     App.supa.getVehicleState = async function(carId) { return null; };
 }
