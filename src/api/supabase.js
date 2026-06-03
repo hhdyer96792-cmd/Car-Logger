@@ -127,7 +127,7 @@ App.supa.loadOperations = function() {
                     updatedAt: op.updated_at
                 }));
             }),
-            15000, 'loadOperations'
+            25000, 'loadOperations'
         ),
     3, 500, 'loadOperations');
 };
@@ -148,7 +148,8 @@ App.supa.loadFuelLog = function() {
                     notes: f.notes || ''
                 }));
             }),
-            15000, 'loadFuelLog'
+            1
+25000, 'loadFuelLog'
         ),
     3, 500, 'loadFuelLog');
 };
@@ -172,7 +173,7 @@ App.supa.loadTires = function() {
                     isDIY: t.is_diy || false
                 }));
             }),
-            15000, 'loadTires'
+            25000, 'loadTires'
         ),
     3, 500, 'loadTires');
 };
@@ -197,7 +198,7 @@ App.supa.loadParts = function() {
                     dateAdded: p.purchase_date || ''
                 }));
             }),
-            15000, 'loadParts'
+            25000, 'loadParts'
         ),
     3, 500, 'loadParts');
 };
@@ -222,7 +223,7 @@ App.supa.loadHistory = function() {
                     rowIndex: h.id
                 }));
             }),
-            15000, 'loadHistory'
+            25000, 'loadHistory'
         ),
     3, 500, 'loadHistory');
 };
@@ -267,7 +268,7 @@ App.supa.loadMileageHistory = function() {
                     motohours: parseFloat(m.motohours) || 0
                 })).sort((a, b) => new Date(a.date) - new Date(b.date));
             }),
-            15000, 'loadMileageHistory'
+            25000, 'loadMileageHistory'
         ),
     3, 500, 'loadMileageHistory');
 };
@@ -291,7 +292,7 @@ App.supa.saveOperation = async function(op) {
     };
     const { data, error } = await withTimeout(
         App.supabase.from('operations').upsert(record, { onConflict: 'id' }).select().single(),
-        15000, 'saveOperation'
+        25000, 'saveOperation'
     );
     if (error) throw error;
     return { data: [data], error: null };
@@ -314,7 +315,7 @@ App.supa.saveFuelRecord = async function(record) {
     };
     const { data: result, error } = await withTimeout(
         App.supabase.from('fuel_log').upsert(data, { onConflict: 'id' }).select().single(),
-        15000, 'saveFuelRecord'
+        25000, 'saveFuelRecord'
     );
     if (error) throw error;
     return { data: [result], error: null };
@@ -340,7 +341,7 @@ App.supa.saveTireRecord = async function(record) {
     };
     const { data: result, error } = await withTimeout(
         App.supabase.from('tires').upsert(data, { onConflict: 'id' }).select().single(),
-        15000, 'saveTireRecord'
+        25000, 'saveTireRecord'
     );
     if (error) throw error;
     return { data: [result], error: null };
@@ -366,7 +367,7 @@ App.supa.savePart = async function(part) {
     };
     const { data: result, error } = await withTimeout(
         App.supabase.from('parts').upsert(data, { onConflict: 'id' }).select().single(),
-        15000, 'savePart'
+        25000, 'savePart'
     );
     if (error) throw error;
     return { data: [result], error: null };
@@ -391,7 +392,7 @@ App.supa.saveHistoryRecord = async function(record) {
     };
     const { data: result, error } = await withTimeout(
         App.supabase.from('history').upsert(data, { onConflict: 'id' }).select().single(),
-        15000, 'saveHistoryRecord'
+        25000, 'saveHistoryRecord'
     );
     if (error) throw error;
     return { data: [result], error: null };
@@ -410,7 +411,7 @@ App.supa.addMileageRecord = async function(date, mileage, motohours, carId) {
     };
     const { data: result, error } = await withTimeout(
         App.supabase.from('mileage_log').upsert(record, { onConflict: 'id' }).select().single(),
-        15000, 'addMileageRecord'
+        25000, 'addMileageRecord'
     );
     if (error) throw error;
     return { data: [result], error: null };
