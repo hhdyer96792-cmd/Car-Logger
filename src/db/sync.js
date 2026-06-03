@@ -3,10 +3,10 @@ window.App = window.App || {};
 App.db = App.db || {};
 App.db.sync = App.db.sync || {};
 
-const MAX_RETRIES = 3;
+const MAX_RETRIES = 5;
 const BASE_DELAY = 1000;
 const MAX_DELAY = 30000;
-const ACTION_TIMEOUT = 25000; // 25 секунд на одно действие
+const ACTION_TIMEOUT = 10000; // 10 секунд на одно действие
 
 App.db.sync._getDelay = function(retryCount) {
     const delay = Math.min(BASE_DELAY * Math.pow(2, retryCount), MAX_DELAY);
@@ -19,7 +19,6 @@ App.db.sync._updatePendingAction = async function(action, retryCount, errorMessa
     action.lastError = errorMessage;
     action.lastAttempt = Date.now();
 
-    // Логируем ошибку, но НЕ удаляем действие из очереди, даже после MAX_RETRIES
     if (retryCount >= MAX_RETRIES) {
         console.error(`[Sync] Действие ${action.id} временно провалилось (${retryCount} попыток), оставлено в очереди:`, errorMessage);
         await App.db.put('error_log', {
@@ -34,15 +33,32 @@ App.db.sync._updatePendingAction = async function(action, retryCount, errorMessa
         }
     }
 
-    // Всегда сохраняем обновлённую запись в pending_actions (не удаляем)
     await App.db.put('pending_actions', action);
+};
+
+// Быстрая проверка доступности сети перед синхронизацией
+App.db.sync._quickNetworkCheck = async function() {
+    if (!navigator.onLine) return false;
+    try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 3000);
+        await fetch('https://qbjlccdqaudyvedpysil.supabase.co/rest/v1/', {
+            method: 'HEAD',
+            signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+        return true;
+    } catch (e) {
+        console.warn('[Sync] Быстрая проверка сети не удалась:', e.message);
+        return false;
+    }
 };
 
 App.db.sync._executeAction = async function(action) {
     const { type, entityType, entityId, data } = action;
     console.log(`[Sync] Выполнение действия ${action.id}, тип=${type}, сущность=${entityType}, данные:`, data);
 
-    // Принудительно обновляем сессию перед любым запросом к Supabase
+    // Принудительно обновляем сессию
     try {
         const { data: sessionData, error: refreshError } = await App.supabase.auth.refreshSession();
         if (refreshError) {
@@ -55,12 +71,10 @@ App.db.sync._executeAction = async function(action) {
         throw sessionErr;
     }
 
-    // Все delete-действия (кроме cars) направляем в специализированный обработчик
     if (type === 'delete' && entityType !== 'car') {
         return await App.db.sync._executeDelete(action);
     }
 
-    // Выполняем основное действие с таймаутом
     const actionPromise = (async () => {
         switch (entityType) {
             case 'operation':
@@ -176,7 +190,6 @@ App.db.sync._executeAction = async function(action) {
         }
     })();
 
-    // Таймаут на всё действие
     const timeoutPromise = new Promise((_, reject) =>
         setTimeout(() => reject(new Error('Action timed out')), ACTION_TIMEOUT)
     );
@@ -211,19 +224,17 @@ App.db.sync._executeDelete = async function(action) {
             if (error) {
                 if (error.status === 404) {
                     console.log(`[Sync] Запись ${entityId} не найдена на сервере, считаем удалённой`);
-                    break; // успех
+                    break;
                 }
                 throw error;
             }
 
-            // Пустой ответ ([]) тоже считаем успехом – запись уже не существует или не видна
             console.log(`[Sync] Удаление на сервере успешно для ${entityId}, удалено записей: ${deleted?.length || 0}`);
             break;
         } catch (err) {
             lastError = err;
             console.error(`[Sync] Попытка ${attempt} удаления на сервере не удалась:`, err);
             if (attempt === MAX_RETRIES) {
-                // НЕ удаляем действие из очереди, оставляем для будущих попыток
                 console.error(`[Sync] Удаление ${entityId} не удалось после ${MAX_RETRIES} попыток, оставляем в очереди:`, err.message);
                 action.retryCount = MAX_RETRIES;
                 action.lastError = err.message;
@@ -235,7 +246,6 @@ App.db.sync._executeDelete = async function(action) {
         }
     }
 
-    // Локально запись уже удалена пользователем в офлайне, просто убираем из IndexedDB если осталась
     await App.db.delete(tableName, entityId);
     const storeKey = {
         'operations': 'operations',
@@ -281,6 +291,14 @@ App.db.sync.processSyncQueue = async function() {
         return;
     }
     if (App.db.sync._isRunning) return;
+
+    // Быстрая проверка реальной сети перед попыткой
+    const networkAvailable = await App.db.sync._quickNetworkCheck();
+    if (!networkAvailable) {
+        console.log('[Sync] Сеть недоступна, синхронизация отложена');
+        return;
+    }
+
     App.db.sync._isRunning = true;
     try {
         const pending = await App.db.getAll('pending_actions');
@@ -292,17 +310,16 @@ App.db.sync.processSyncQueue = async function() {
         for (const action of pending) {
             try {
                 await App.db.sync._executeAction(action);
-                // Действие полностью выполнено — можно удалить из очереди
                 await App.db.delete('pending_actions', action.id);
                 console.log(`[Sync] Действие ${action.id} выполнено и удалено из очереди`);
             } catch (err) {
                 console.error(`[Sync] Ошибка действия ${action.id}:`, err);
                 const newRetryCount = (action.retryCount || 0) + 1;
                 await App.db.sync._updatePendingAction(action, newRetryCount, err.message);
-                // Даже при ошибке продолжаем обрабатывать остальные действия
             }
+            // Небольшая пауза между действиями
+            await new Promise(r => setTimeout(r, 500));
         }
-        // После обработки всех действий обновляем UI
         await App.store.loadFromIndexedDB();
         if (typeof App.events !== 'undefined' && App.events.currentActiveTab) {
             App.events.switchToTab(App.events.currentActiveTab);
