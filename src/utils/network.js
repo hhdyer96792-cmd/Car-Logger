@@ -1,4 +1,4 @@
-// Используется ТОЛЬКО в realtime.js
+// src/utils/network.js
 window.App = window.App || {};
 App.network = App.network || {};
 
