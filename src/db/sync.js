@@ -40,7 +40,7 @@ App.db.sync._executeAction = async function(action) {
     const { type, entityType, entityId, data } = action;
     console.log(`[Sync] Выполнение действия ${action.id}, тип=${type}, сущность=${entityType}, данные:`, data);
 
-    // Принудительно обновляем сессию перед любым запросом к Supabase
+    // Принудительно обновляем сессию
     try {
         const { data: sessionData, error: refreshError } = await App.supabase.auth.refreshSession();
         if (refreshError) {
@@ -53,7 +53,6 @@ App.db.sync._executeAction = async function(action) {
         throw sessionErr;
     }
 
-    // Все delete-действия (кроме cars) направляем в специализированный обработчик
     if (type === 'delete' && entityType !== 'car') {
         return await App.db.sync._executeDelete(action);
     }
@@ -269,6 +268,7 @@ App.db.sync.processSyncQueue = async function() {
         setTimeout(() => App.db.sync.processSyncQueue(), 1000);
         return;
     }
+    // Только базовая проверка флага браузера
     if (!navigator.onLine) {
         console.log('[Sync] Нет сети, синхронизация отложена');
         return;
@@ -293,7 +293,6 @@ App.db.sync.processSyncQueue = async function() {
                 const newRetryCount = (action.retryCount || 0) + 1;
                 await App.db.sync._updatePendingAction(action, newRetryCount, err.message);
             }
-            // Небольшая пауза между действиями
             await new Promise(r => setTimeout(r, 500));
         }
         await App.store.loadFromIndexedDB();
