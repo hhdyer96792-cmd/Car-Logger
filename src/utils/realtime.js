@@ -7,12 +7,14 @@ App.realtime._currentCarId = null;
 
 App.realtime._subscribeWithRetry = async function(carId) {
     if (!carId) return;
-    const online = await App.network.isReallyOnline();   // ← только здесь проверка
+    // Если модуль network.js не загружен, просто используем navigator.onLine
+    const online = (App.network && typeof App.network.isReallyOnline === 'function')
+        ? await App.network.isReallyOnline()
+        : navigator.onLine;
     if (!online) {
         console.log('[Realtime] Нет реальной сети, подписка отложена');
         return;
     }
-
 
     App.realtime.unsubscribeAll();
 
@@ -55,23 +57,21 @@ App.realtime.unsubscribeAll = function() {
     App.realtime.channels = [];
 };
 
+// handleChange – без изменений (вставьте текущую реализацию)
 App.realtime.handleChange = function(table, payload) {
     var eventType = payload.eventType;
     var newData = payload.new;
     var oldData = payload.old;
     
     if (table === 'settings') {
- if (eventType === 'INSERT' || eventType === 'UPDATE') {
- // Обновляем объект настроек
- App.store.settings = { ...App.store.settings, ...newData };
- // Перерисовка UI
- if (typeof App.ui.pages.renderDashboard === 'function') {
- App.ui.pages.renderDashboard();
- }
- }
- return; // Выходим, так как settings не массив
- }
-
+        if (eventType === 'INSERT' || eventType === 'UPDATE') {
+            App.store.settings = { ...App.store.settings, ...newData };
+            if (typeof App.ui.pages.renderDashboard === 'function') {
+                App.ui.pages.renderDashboard();
+            }
+        }
+        return;
+    }
 
     var storeKey = table;
     if (table === 'fuel_log') storeKey = 'fuelLog';
@@ -96,7 +96,6 @@ App.realtime.handleChange = function(table, payload) {
         App.store[storeKey] = App.store[storeKey].filter(function(item) { return item.id !== oldData.id; });
     }
 
-    // Перерисовываем соответствующие UI-компоненты
     switch (table) {
         case 'operations':
             if (typeof App.ui.pages.renderTOTable === 'function') App.ui.pages.renderTOTable();
