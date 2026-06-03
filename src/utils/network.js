@@ -1,4 +1,4 @@
-//src/utils/network.js
+// src/utils/network.js
 window.App = window.App || {};
 App.network = App.network || {};
 
@@ -13,15 +13,17 @@ App.network.isReallyOnline = async function() {
     try {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 2000);
-        // HEAD-запрос к корню домена Supabase (самый легкий)
-        const response = await fetch('https://qbjlccdqaudyvedpysil.supabase.co/', {
+
+        // HEAD к /auth/v1/user – всегда возвращает CORS‑заголовки, даже с 401
+        const response = await fetch('https://qbjlccdqaudyvedpysil.supabase.co/auth/v1/user', {
             method: 'HEAD',
             signal: controller.signal
         });
+
         clearTimeout(timeoutId);
         _lastResult = true;
-    } catch (e) {
-        console.warn('[Network] Проверка реальной сети:', e.message);
+    } catch (err) {
+        console.warn('[Network] Проверка реальной сети:', err.message);
         _lastResult = false;
     }
     _lastCheck = Date.now();
