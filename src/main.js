@@ -796,25 +796,25 @@
 
         // Обработчик online: запускаем синхронизацию сразу по navigator.onLine
         window.addEventListener('online', async function() {
-            if (typeof App.toast === 'function') App.toast('Сеть восстановлена', 'success');
+    if (typeof App.toast === 'function') App.toast('Сеть восстановлена', 'success');
 
-            // 1. Синхронизация очереди
-            if (App.db.sync && typeof App.db.sync.processSyncQueue === 'function') {
-                try { await App.db.sync.processSyncQueue(); } catch (e) { console.error(e); }
-            }
+    // 1. Синхронизация очереди – сразу, не дожидаясь проверок
+    if (App.db.sync && typeof App.db.sync.processSyncQueue === 'function') {
+        try { await App.db.sync.processSyncQueue(); } catch (e) { console.error(e); }
+    }
 
-            // 2. Загрузка свежих данных
-            if (App.store.activeCarId && typeof App.storage.loadAllData === 'function') {
-                try { await App.storage.loadAllData(); } catch (e) { console.error(e); }
-            }
+    // 2. Загрузка свежих данных с сервера
+    if (App.store.activeCarId && typeof App.storage.loadAllData === 'function') {
+        try { await App.storage.loadAllData(); } catch (e) { console.error(e); }
+    }
 
-            // 3. Realtime – пробуем подключить, когда сеть точно есть (внутри проверка isReallyOnline)
-            if (App.realtime && typeof App.realtime.resubscribe === 'function') {
-                App.realtime.resubscribe();
-            }
+    // 3. Realtime – пробуем, но не блокируем UI
+    if (App.realtime && typeof App.realtime.resubscribe === 'function') {
+        App.realtime.resubscribe();
+    }
 
-            if (typeof App.renderAll === 'function') App.renderAll();
-        });
+    if (typeof App.renderAll === 'function') App.renderAll();
+});
 
         window.addEventListener('offline', () => {
             if (typeof App.toast === 'function') App.toast('Вы офлайн', 'warning');
