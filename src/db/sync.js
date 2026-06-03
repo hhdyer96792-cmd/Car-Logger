@@ -286,7 +286,16 @@ App.db.sync.processSyncQueue = async function() {
     }
 };
 
-App.db.sync.forceSync = function() {
-    if (navigator.onLine) App.db.sync.processSyncQueue();
-    else App.toast('Нет сети. Синхронизация отложена.', 'warning');
+App.db.sync.forceSync = async function() {
+    if (navigator.onLine) {
+        try {
+            await App.db.sync.processSyncQueue();
+        } catch (e) {
+            console.error('[Sync] forceSync error:', e);
+        }
+    } else {
+        if (typeof App.toast === 'function') {
+            App.toast('Нет сети. Синхронизация отложена.', 'warning');
+        }
+    }
 };
