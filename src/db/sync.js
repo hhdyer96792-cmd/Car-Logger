@@ -3,10 +3,9 @@ window.App = window.App || {};
 App.db = App.db || {};
 App.db.sync = App.db.sync || {};
 
-const MAX_RETRIES = 5;
+const MAX_RETRIES = 3;
 const BASE_DELAY = 1000;
 const MAX_DELAY = 30000;
-const ACTION_TIMEOUT = 10000; // 10 секунд на одно действие
 
 App.db.sync._getDelay = function(retryCount) {
     const delay = Math.min(BASE_DELAY * Math.pow(2, retryCount), MAX_DELAY);
@@ -19,6 +18,7 @@ App.db.sync._updatePendingAction = async function(action, retryCount, errorMessa
     action.lastError = errorMessage;
     action.lastAttempt = Date.now();
 
+    // Логируем ошибку, но НЕ удаляем действие из очереди, даже после MAX_RETRIES
     if (retryCount >= MAX_RETRIES) {
         console.error(`[Sync] Действие ${action.id} временно провалилось (${retryCount} попыток), оставлено в очереди:`, errorMessage);
         await App.db.put('error_log', {
@@ -33,32 +33,15 @@ App.db.sync._updatePendingAction = async function(action, retryCount, errorMessa
         }
     }
 
+    // Всегда сохраняем обновлённую запись в pending_actions (не удаляем)
     await App.db.put('pending_actions', action);
-};
-
-// Быстрая проверка доступности сети перед синхронизацией
-App.db.sync._quickNetworkCheck = async function() {
-    if (!navigator.onLine) return false;
-    try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 3000);
-        await fetch('https://qbjlccdqaudyvedpysil.supabase.co/rest/v1/', {
-            method: 'HEAD',
-            signal: controller.signal
-        });
-        clearTimeout(timeoutId);
-        return true;
-    } catch (e) {
-        console.warn('[Sync] Быстрая проверка сети не удалась:', e.message);
-        return false;
-    }
 };
 
 App.db.sync._executeAction = async function(action) {
     const { type, entityType, entityId, data } = action;
     console.log(`[Sync] Выполнение действия ${action.id}, тип=${type}, сущность=${entityType}, данные:`, data);
 
-    // Принудительно обновляем сессию
+    // Принудительно обновляем сессию перед любым запросом к Supabase
     try {
         const { data: sessionData, error: refreshError } = await App.supabase.auth.refreshSession();
         if (refreshError) {
@@ -71,129 +54,123 @@ App.db.sync._executeAction = async function(action) {
         throw sessionErr;
     }
 
+    // Все delete-действия (кроме cars) направляем в специализированный обработчик
     if (type === 'delete' && entityType !== 'car') {
         return await App.db.sync._executeDelete(action);
     }
 
-    const actionPromise = (async () => {
-        switch (entityType) {
-            case 'operation':
-            case 'fuel':
-            case 'tire':
-            case 'part':
-            case 'history':
-            case 'mileage': {
-                const map = {
-                    'operation': () => App.supa.saveOperation(data),
-                    'fuel': () => App.supa.saveFuelRecord(data),
-                    'tire': () => App.supa.saveTireRecord(data),
-                    'part': () => App.supa.savePart(data),
-                    'history': () => App.supa.saveHistoryRecord(data),
-                    'mileage': () => App.supa.addMileageRecord(data.date, data.mileage, data.motohours, data.car_id)
-                };
-                const supabaseMethodCall = map[entityType];
-                if (!supabaseMethodCall) throw new Error(`No method for ${entityType}`);
-                const result = await supabaseMethodCall();
-                if (result.error) throw result.error;
-                if (result.data && result.data[0] && result.data[0].id !== entityId) {
-                    await App.db.sync._updateLocalId(entityType, entityId, result.data[0]);
-                }
-                return { success: true };
+    switch (entityType) {
+        case 'operation':
+        case 'fuel':
+        case 'tire':
+        case 'part':
+        case 'history':
+        case 'mileage': {
+            const map = {
+                'operation': () => App.supa.saveOperation(data),
+                'fuel': () => App.supa.saveFuelRecord(data),
+                'tire': () => App.supa.saveTireRecord(data),
+                'part': () => App.supa.savePart(data),
+                'history': () => App.supa.saveHistoryRecord(data),
+                'mileage': () => App.supa.addMileageRecord(data.date, data.mileage, data.motohours, data.car_id)
+            };
+            const supabaseMethodCall = map[entityType];
+            if (!supabaseMethodCall) throw new Error(`No method for ${entityType}`);
+            const result = await supabaseMethodCall();
+            if (result.error) throw result.error;
+            if (result.data && result.data[0] && result.data[0].id !== entityId) {
+                await App.db.sync._updateLocalId(entityType, entityId, result.data[0]);
             }
-            case 'car_document': {
-                const { data: docData, error: docError } = await App.supabase
-                    .from('car_documents')
+            return { success: true };
+        }
+        case 'car_document': {
+            const { data: docData, error: docError } = await App.supabase
+                .from('car_documents')
+                .upsert(data, { onConflict: 'id' })
+                .select()
+                .single();
+            if (docError) throw docError;
+            if (docData.id !== entityId) {
+                await App.db.sync._updateLocalId(entityType, entityId, docData);
+            }
+            return { success: true };
+        }
+        case 'car_state_settings':
+        case 'car_settings': {
+            const cleanedData = { ...data };
+            if (cleanedData.plateNumber !== undefined && cleanedData.plateNumber !== null) {
+                cleanedData.plateNumber = (typeof cleanedData.plateNumber === 'object') ? '' : String(cleanedData.plateNumber);
+            } else {
+                cleanedData.plateNumber = '';
+            }
+            if (cleanedData.vin !== undefined && cleanedData.vin !== null) {
+                cleanedData.vin = (typeof cleanedData.vin === 'object') ? '' : String(cleanedData.vin);
+            } else {
+                cleanedData.vin = '';
+            }
+            await App.supa.saveVehicleState({
+                currentMileage: cleanedData.currentMileage,
+                currentMotohours: cleanedData.currentMotohours,
+                avgDailyMileage: cleanedData.avgDailyMileage,
+                avgDailyMotohours: cleanedData.avgDailyMotohours,
+                carBrand: cleanedData.carBrand,
+                carModel: cleanedData.carModel,
+                carYear: cleanedData.carYear,
+                plateNumber: cleanedData.plateNumber,
+                vin: cleanedData.vin,
+                baseMileage: cleanedData.baseMileage,
+                baseMotohours: cleanedData.baseMotohours,
+                purchaseDate: cleanedData.purchaseDate,
+                purchaseCost: cleanedData.purchaseCost
+            });
+            await App.supa.saveUserSettings({
+                telegramToken: cleanedData.telegramToken,
+                telegramChatId: cleanedData.telegramChatId,
+                notificationMethod: cleanedData.notificationMethod,
+                reminderDays: cleanedData.reminderDays
+            });
+            Object.assign(App.store.settings, cleanedData);
+            await App.db.put('car_settings', { ...App.store.settings, car_id: App.store.activeCarId });
+            if (typeof App.ui.pages.loadCarDetails === 'function') {
+                App.ui.pages.loadCarDetails(App.store.activeCarId);
+            }
+            if (typeof App.ui.pages.renderBasicParams === 'function') {
+                App.ui.pages.renderBasicParams();
+            }
+            if (typeof App.ui.pages.renderCarTab === 'function') {
+                App.ui.pages.renderCarTab();
+            }
+            return { success: true };
+        }
+        case 'car': {
+            if (type === 'save') {
+                const { data: carData, error: carError } = await App.supabase
+                    .from('cars')
                     .upsert(data, { onConflict: 'id' })
                     .select()
                     .single();
-                if (docError) throw docError;
-                if (docData.id !== entityId) {
-                    await App.db.sync._updateLocalId(entityType, entityId, docData);
-                }
-                return { success: true };
-            }
-            case 'car_state_settings':
-            case 'car_settings': {
-                const cleanedData = { ...data };
-                if (cleanedData.plateNumber !== undefined && cleanedData.plateNumber !== null) {
-                    cleanedData.plateNumber = (typeof cleanedData.plateNumber === 'object') ? '' : String(cleanedData.plateNumber);
+                if (carError) throw carError;
+                if (carData.id !== entityId) {
+                    await App.db.sync._updateLocalId(entityType, entityId, carData);
                 } else {
-                    cleanedData.plateNumber = '';
+                    const idx = App.store.cars.findIndex(c => c.id == carData.id);
+                    if (idx !== -1) App.store.cars[idx] = carData;
+                    else App.store.cars.push(carData);
+                    await App.db.put('cars', carData);
                 }
-                if (cleanedData.vin !== undefined && cleanedData.vin !== null) {
-                    cleanedData.vin = (typeof cleanedData.vin === 'object') ? '' : String(cleanedData.vin);
-                } else {
-                    cleanedData.vin = '';
-                }
-                await App.supa.saveVehicleState({
-                    currentMileage: cleanedData.currentMileage,
-                    currentMotohours: cleanedData.currentMotohours,
-                    avgDailyMileage: cleanedData.avgDailyMileage,
-                    avgDailyMotohours: cleanedData.avgDailyMotohours,
-                    carBrand: cleanedData.carBrand,
-                    carModel: cleanedData.carModel,
-                    carYear: cleanedData.carYear,
-                    plateNumber: cleanedData.plateNumber,
-                    vin: cleanedData.vin,
-                    baseMileage: cleanedData.baseMileage,
-                    baseMotohours: cleanedData.baseMotohours,
-                    purchaseDate: cleanedData.purchaseDate,
-                    purchaseCost: cleanedData.purchaseCost
-                });
-                await App.supa.saveUserSettings({
-                    telegramToken: cleanedData.telegramToken,
-                    telegramChatId: cleanedData.telegramChatId,
-                    notificationMethod: cleanedData.notificationMethod,
-                    reminderDays: cleanedData.reminderDays
-                });
-                Object.assign(App.store.settings, cleanedData);
-                await App.db.put('car_settings', { ...App.store.settings, car_id: App.store.activeCarId });
-                if (typeof App.ui.pages.loadCarDetails === 'function') {
-                    App.ui.pages.loadCarDetails(App.store.activeCarId);
-                }
-                if (typeof App.ui.pages.renderBasicParams === 'function') {
-                    App.ui.pages.renderBasicParams();
-                }
-                if (typeof App.ui.pages.renderCarTab === 'function') {
-                    App.ui.pages.renderCarTab();
-                }
-                return { success: true };
+            } else if (type === 'delete') {
+                const { error } = await App.supabase.from('cars').delete().eq('id', entityId);
+                if (error && error.status !== 404) throw error;
+                await App.db.delete('cars', entityId);
+                await App.db.delete('car_settings', entityId);
+                const idx = App.store.cars.findIndex(c => c.id == entityId);
+                if (idx !== -1) App.store.cars.splice(idx, 1);
             }
-            case 'car': {
-                if (type === 'save') {
-                    const { data: carData, error: carError } = await App.supabase
-                        .from('cars')
-                        .upsert(data, { onConflict: 'id' })
-                        .select()
-                        .single();
-                    if (carError) throw carError;
-                    if (carData.id !== entityId) {
-                        await App.db.sync._updateLocalId(entityType, entityId, carData);
-                    } else {
-                        const idx = App.store.cars.findIndex(c => c.id == carData.id);
-                        if (idx !== -1) App.store.cars[idx] = carData;
-                        else App.store.cars.push(carData);
-                        await App.db.put('cars', carData);
-                    }
-                } else if (type === 'delete') {
-                    const { error } = await App.supabase.from('cars').delete().eq('id', entityId);
-                    if (error && error.status !== 404) throw error;
-                    await App.db.delete('cars', entityId);
-                    await App.db.delete('car_settings', entityId);
-                    const idx = App.store.cars.findIndex(c => c.id == entityId);
-                    if (idx !== -1) App.store.cars.splice(idx, 1);
-                }
-                return { success: true };
-            }
-            default:
-                throw new Error(`Unknown entityType: ${entityType}`);
+            return { success: true };
         }
-    })();
-
-    const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Action timed out')), ACTION_TIMEOUT)
-    );
-    return Promise.race([actionPromise, timeoutPromise]);
+        default:
+            throw new Error(`Unknown entityType: ${entityType}`);
+    }
 };
 
 App.db.sync._executeDelete = async function(action) {
@@ -224,17 +201,19 @@ App.db.sync._executeDelete = async function(action) {
             if (error) {
                 if (error.status === 404) {
                     console.log(`[Sync] Запись ${entityId} не найдена на сервере, считаем удалённой`);
-                    break;
+                    break; // успех
                 }
                 throw error;
             }
 
+            // Пустой ответ ([]) тоже считаем успехом – запись уже не существует или не видна
             console.log(`[Sync] Удаление на сервере успешно для ${entityId}, удалено записей: ${deleted?.length || 0}`);
             break;
         } catch (err) {
             lastError = err;
             console.error(`[Sync] Попытка ${attempt} удаления на сервере не удалась:`, err);
             if (attempt === MAX_RETRIES) {
+                // НЕ удаляем действие из очереди, оставляем для будущих попыток
                 console.error(`[Sync] Удаление ${entityId} не удалось после ${MAX_RETRIES} попыток, оставляем в очереди:`, err.message);
                 action.retryCount = MAX_RETRIES;
                 action.lastError = err.message;
@@ -246,6 +225,7 @@ App.db.sync._executeDelete = async function(action) {
         }
     }
 
+    // Локально запись уже удалена пользователем в офлайне, просто убираем из IndexedDB если осталась
     await App.db.delete(tableName, entityId);
     const storeKey = {
         'operations': 'operations',
@@ -283,23 +263,31 @@ App.db.sync._updateLocalId = async function(entityType, oldId, serverRecord) {
 
 App.db.sync.processSyncQueue = async function() {
     if (!App.db._db) {
+        console.log('[Sync] База не инициализирована, повтор через 1с');
         setTimeout(() => App.db.sync.processSyncQueue(), 1000);
         return;
     }
-    if (!navigator.onLine) {
-        console.log('[Sync] Нет сети, синхронизация отложена');
-        return;
-    }
-    if (App.db.sync._isRunning) return;
 
-    // Быстрая проверка реальной сети перед попыткой
-    const networkAvailable = await App.db.sync._quickNetworkCheck();
-    if (!networkAvailable) {
-        console.log('[Sync] Сеть недоступна, синхронизация отложена');
+    // Если синхронизация уже выполняется, но прошло >30 секунд, принудительно сбрасываем блокировку
+    if (App.db.sync._isRunning) {
+        if (Date.now() - (App.db.sync._startTime || 0) > 30000) {
+            console.warn('[Sync] Синхронизация зависла, принудительно снимаем блокировку');
+            App.db.sync._isRunning = false;
+        } else {
+            console.log('[Sync] Синхронизация уже выполняется');
+            return;
+        }
+    }
+
+    const online = await App.network.isReallyOnline();
+    if (!online) {
+        console.log('[Sync] Нет реального подключения, синхронизация отложена');
         return;
     }
 
     App.db.sync._isRunning = true;
+    App.db.sync._startTime = Date.now();
+
     try {
         const pending = await App.db.getAll('pending_actions');
         if (!pending.length) {
@@ -310,34 +298,40 @@ App.db.sync.processSyncQueue = async function() {
         for (const action of pending) {
             try {
                 await App.db.sync._executeAction(action);
+                // Действие полностью выполнено — можно удалить из очереди
                 await App.db.delete('pending_actions', action.id);
                 console.log(`[Sync] Действие ${action.id} выполнено и удалено из очереди`);
             } catch (err) {
                 console.error(`[Sync] Ошибка действия ${action.id}:`, err);
                 const newRetryCount = (action.retryCount || 0) + 1;
                 await App.db.sync._updatePendingAction(action, newRetryCount, err.message);
+                // Даже при ошибке продолжаем обрабатывать остальные действия
             }
-            // Небольшая пауза между действиями
-            await new Promise(r => setTimeout(r, 500));
         }
+        // После обработки всех действий обновляем UI
         await App.store.loadFromIndexedDB();
         if (typeof App.events !== 'undefined' && App.events.currentActiveTab) {
             App.events.switchToTab(App.events.currentActiveTab);
         }
         if (typeof App.renderAll === 'function') App.renderAll();
         App.toast('Данные синхронизированы', 'success');
+    } catch (outerError) {
+        console.error('[Sync] Критическая ошибка синхронизации:', outerError);
     } finally {
         App.db.sync._isRunning = false;
+        App.db.sync._startTime = 0;
         clearTimeout(App.db.sync._retryTimeout);
-        App.db.sync._retryTimeout = setTimeout(() => {
-            if (navigator.onLine) App.db.sync.processSyncQueue();
+        App.db.sync._retryTimeout = setTimeout(async () => {
+            if (await App.network.isReallyOnline()) {
+                App.db.sync.processSyncQueue();
+            }
         }, 60000);
     }
 };
 
 App.db.sync.forceSync = async function() {
-    if (navigator.onLine) {
-        try { await App.db.sync.processSyncQueue(); } catch (e) { console.error(e); }
+    if (await App.network.isReallyOnline()) {
+        App.db.sync.processSyncQueue();
     } else {
         App.toast('Нет сети. Синхронизация отложена.', 'warning');
     }
