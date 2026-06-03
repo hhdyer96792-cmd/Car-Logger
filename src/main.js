@@ -802,37 +802,23 @@
 
         // ИСПРАВЛЕННЫЙ обработчик online (без дублирования)
         window.addEventListener('online', async function() {
-    console.log('[Main] Получено событие online, проверяем реальное подключение...');
-
-    // Сбрасываем кеш, чтобы не получить устаревший false
-    if (App.network && App.network.resetCache) {
-        App.network.resetCache();
-    }
-
-    let reallyOnline = false;
-    for (let i = 0; i < 6; i++) {
-        reallyOnline = await App.network.isReallyOnline();
-        if (reallyOnline) break;
-        await new Promise(r => setTimeout(r, 2000));
-    }
-
-    if (!reallyOnline) {
-        console.warn('[Main] Реальная сеть так и не появилась, синхронизация отложена');
-        if (typeof App.toast === 'function') App.toast('Сеть недоступна, синхронизация отложена', 'warning');
-        return;
-    }
-
     if (typeof App.toast === 'function') App.toast('Сеть восстановлена', 'success');
 
+    // 1. Синхронизация очереди (по navigator.onLine она уже должна пройти)
     if (App.db.sync && typeof App.db.sync.processSyncQueue === 'function') {
         try { await App.db.sync.processSyncQueue(); } catch (e) { console.error(e); }
     }
+
+    // 2. Загрузка свежих данных
     if (App.store.activeCarId && typeof App.storage.loadAllData === 'function') {
         try { await App.storage.loadAllData(); } catch (e) { console.error(e); }
     }
+
+    // 3. Realtime – пробуем подключить, только когда есть реальная сеть
     if (App.realtime && typeof App.realtime.resubscribe === 'function') {
-        App.realtime.resubscribe();
+        App.realtime.resubscribe();   // внутри проверит isReallyOnline
     }
+
     if (typeof App.renderAll === 'function') App.renderAll();
 });
 
