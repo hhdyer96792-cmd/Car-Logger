@@ -635,10 +635,9 @@
             if (typeof App.db.killSwitch.startPeriodicCheck === 'function') App.db.killSwitch.startPeriodicCheck();
         }
 
-        const online = await App.network.isReallyOnline();
-        if (online && App.db.sync && typeof App.db.sync.processSyncQueue === 'function') {
-            await App.db.sync.processSyncQueue();
-        }
+        if (navigator.onLine && App.db.sync && typeof App.db.sync.processSyncQueue === 'function') {
+    await App.db.sync.processSyncQueue();
+}
 
         // Рекурсивный setTimeout вместо setInterval для избежания накопления
         async function scheduleNextSync() {
