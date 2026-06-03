@@ -7,11 +7,12 @@ App.realtime._currentCarId = null;
 
 App.realtime._subscribeWithRetry = async function(carId) {
     if (!carId) return;
-    const online = await App.network.isReallyOnline();
+    const online = await App.network.isReallyOnline();   // ← только здесь проверка
     if (!online) {
         console.log('[Realtime] Нет реальной сети, подписка отложена');
         return;
     }
+
 
     App.realtime.unsubscribeAll();
 
