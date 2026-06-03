@@ -7,39 +7,38 @@ let _lastResult = false;
 const CHECK_CACHE_MS = 1000;
 
 App.network.isReallyOnline = async function() {
-    // Быстрый путь: если браузер сообщает офлайн, сразу false
     if (!navigator.onLine) return false;
-    // Используем кешированный результат на 1 секунду
     if (Date.now() - _lastCheck < CHECK_CACHE_MS) return _lastResult;
 
-    try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 2000);
+    // Пробуем дважды на случай кратковременного сбоя
+    for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 3000); // 3 секунды
 
-        // Используем анонимный ключ из App.supabase (он доступен глобально)
-        const anonKey = App.supabase ? App.supabase.supabaseKey : null;
-        const headers = anonKey ? {
-            'apikey': anonKey,
-            'Accept': 'application/json'
-        } : {};
+            // HEAD-запрос к публичному REST-эндпоинту Supabase
+            const response = await fetch(
+                'https://qbjlccdqaudyvedpysil.supabase.co/rest/v1/',
+                {
+                    method: 'HEAD',
+                    signal: controller.signal,
+                    // Не отправляем заголовки авторизации, чтобы не зависеть от сессии
+                    headers: { 'Accept': 'application/json' }
+                }
+            );
 
-        // GET-запрос к публичному REST-эндпоинту (даже без авторизации он отвечает 200 или пустым массивом)
-        const response = await fetch(
-            'https://qbjlccdqaudyvedpysil.supabase.co/rest/v1/cars?limit=1',
-            {
-                method: 'GET',
-                headers,
-                signal: controller.signal
+            clearTimeout(timeoutId);
+            // Любой ответ (даже 401/404) означает, что сервер доступен
+            _lastResult = true;
+            _lastCheck = Date.now();
+            return true;
+        } catch (err) {
+            console.warn(`[Network] Попытка ${attempt + 1} не удалась:`, err.message);
+            if (attempt === 1) {
+                _lastResult = false;
+                _lastCheck = Date.now();
             }
-        );
-
-        clearTimeout(timeoutId);
-        // Любой ответ (включая 200, 401, 404) означает, что сервер доступен
-        _lastResult = true;
-    } catch (err) {
-        console.warn('[Network] Проверка реальной сети не удалась:', err.message);
-        _lastResult = false;
+        }
     }
-    _lastCheck = Date.now();
-    return _lastResult;
+    return false;
 };
