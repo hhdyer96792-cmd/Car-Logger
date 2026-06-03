@@ -1,4 +1,5 @@
-// ===== Firebase Cloud Messaging =====
+// service-worker.js
+// ===== Firebase Cloud Messaging (оставлен для push-уведомлений) =====
 importScripts('https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/9.22.0/firebase-messaging-compat.js');
 
@@ -12,18 +13,16 @@ firebase.initializeApp({
 });
 
 const messaging = firebase.messaging();
-
 messaging.onBackgroundMessage(function(payload) {
     console.log('[SW] Получено фоновое сообщение:', payload);
 });
 // =====================================================================
 
-const APP_VERSION = '2.1.0'; // должна совпадать с App.config.APP_VERSION
+const APP_VERSION = '2.1.0'; // должно совпадать с App.config.APP_VERSION
 const CACHE_NAME = `car-logger-static-v${APP_VERSION}`;
-
 const basePath = self.location.pathname.replace(/\/service-worker\.js$/, '');
 
-
+// Все локальные файлы приложения (включая библиотеки из lib)
 const localFiles = [
     '/index.html',
     '/style.css',
@@ -35,14 +34,21 @@ const localFiles = [
     '/src/utils/dom.js',
     '/src/utils/dates.js',
     '/src/utils/validate.js',
+    '/src/utils/network.js',
     '/src/api/supabase.js',
     '/src/api/storage.js',
+    '/src/db/indexedDB.js',
+    '/src/db/sync.js',
+    '/src/db/encryption.js',
+    '/src/db/killSwitch.js',
     '/src/state/store.js',
     '/src/logic/planner.js',
     '/src/logic/statistics.js',
     '/src/logic/operations.js',
+    '/src/logic/timeline.js',
     '/src/ui/components/modal.js',
     '/src/ui/components/charts.js',
+    '/src/ui/components/timelineCharts.js',
     '/src/ui/pages/dashboard.js',
     '/src/ui/pages/maintenance.js',
     '/src/ui/pages/stats.js',
@@ -56,8 +62,11 @@ const localFiles = [
     '/src/utils/realtime.js',
     '/src/events.js',
     '/src/main.js',
-    '/src/vendor/supabase.min.js',
-    // Локальные копии библиотек
+    '/src/modules/moduleLoader.js',
+    '/src/modules/premium.js',
+    '/src/modules/localAuth.js',
+    '/src/modules/auth.js',
+    // Все библиотеки из папки lib
     '/lib/chart.umd.min.js',
     '/lib/hammer.min.js',
     '/lib/chartjs-plugin-zoom.min.js',
@@ -66,57 +75,66 @@ const localFiles = [
     '/lib/xlsx.full.min.js',
     '/lib/purify.min.js',
     '/lib/firebase-app-compat.js',
-    '/lib/firebase-messaging-compat.js'
+    '/lib/firebase-messaging-compat.js',
+    '/lib/supabase.min.js'   // если используете локальный supabase
 ];
+
+// CDN больше не кэшируем, всё локально
+const cdnFiles = [];   // оставлено пустым для совместимости
 
 self.addEventListener('install', event => {
     event.waitUntil(
         caches.open(CACHE_NAME).then(cache => {
-            const addAllWithCatch = urls =>
-                Promise.all(urls.map(url =>
-                    cache.add(url).catch(err => console.warn('Cache add failed:', url, err))
-                ));
-            return addAllWithCatch(localFiles.map(f => basePath + f));
+            const addAllWithCatch = urls => Promise.all(
+                urls.map(url => cache.add(url).catch(err => console.warn('Cache add failed:', url, err)))
+            );
+            return Promise.all([
+                addAllWithCatch(localFiles.map(f => basePath + f)),
+                addAllWithCatch(cdnFiles) // здесь ничего не будет
+            ]);
         }).then(() => self.skipWaiting())
     );
 });
 
 self.addEventListener('activate', event => {
     event.waitUntil(
-        caches.keys().then(keys => Promise.all(keys.filter(key => key !== CACHE_NAME).map(key => caches.delete(key))))
-            .then(() => self.clients.claim())
+        caches.keys().then(keys =>
+            Promise.all(keys.filter(key => key !== CACHE_NAME).map(key => caches.delete(key)))
+        ).then(() => self.clients.claim())
     );
 });
 
 self.addEventListener('fetch', event => {
     const url = new URL(event.request.url);
     const requestPath = url.pathname;
+
+    // Навигация – сначала сеть, при провале офлайн-страница
     if (event.request.mode === 'navigate') {
-        event.respondWith(fetch(event.request).catch(() => caches.match(basePath + '/index.html')));
+        event.respondWith(
+            fetch(event.request).catch(() => caches.match(basePath + '/index.html'))
+        );
         return;
     }
-    if (requestPath === basePath + '/' || requestPath === basePath + '/index.html') {
-        event.respondWith(fetch(event.request).catch(() => caches.match(basePath + '/index.html')));
-        return;
-    }
+
+    // Локальные ресурсы – кэш, при отсутствии сеть
     if (localFiles.some(file => requestPath === basePath + file)) {
-        event.respondWith(caches.match(event.request).then(cached => cached || fetch(event.request)));
+        event.respondWith(
+            caches.match(event.request).then(cached => cached || fetch(event.request))
+        );
         return;
     }
-    if (cdnFiles.includes(event.request.url)) {
-        event.respondWith(caches.match(event.request).then(cached => cached || fetch(event.request)));
-        return;
-    }
+
+    // Для всего остального – стандартное поведение (сеть)
+    event.respondWith(fetch(event.request));
 });
 
-// Обработка сообщений от клиента
 self.addEventListener('message', event => {
     if (event.data && event.data.type === 'CLEAR_CACHE') {
         caches.delete(CACHE_NAME).then(() => console.log('[SW] Кэш очищен'));
     }
 });
 
-// Background Sync (опционально)
+// Background Sync
 self.addEventListener('sync', function(event) {
     if (event.tag === 'vesta-sync') {
         event.waitUntil((async () => {
