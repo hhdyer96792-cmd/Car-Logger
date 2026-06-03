@@ -11,10 +11,8 @@ const CHECK_CACHE_MS = 1000;
 
 App.network.isReallyOnline = async function () {
     if (!navigator.onLine) return false;
-    // Используем кеш только для быстрых вызовов (UI)
     if (Date.now() - _lastCheck < CHECK_CACHE_MS) return _lastResult;
 
-    // Две попытки с таймаутом 3 секунды
     for (let attempt = 0; attempt < 2; attempt++) {
         try {
             const controller = new AbortController();
@@ -24,11 +22,10 @@ App.network.isReallyOnline = async function () {
                 signal: controller.signal,
                 headers: {
                     'Accept': 'application/json',
-                    'apikey': SUPABASE_ANON_KEY   // публичный ключ
+                    'apikey': SUPABASE_ANON_KEY
                 }
             });
             clearTimeout(timeoutId);
-            // любой ответ (даже 200 или 401) означает, что сервер доступен
             _lastResult = true;
             _lastCheck = Date.now();
             return true;
@@ -41,7 +38,6 @@ App.network.isReallyOnline = async function () {
     return false;
 };
 
-// Сброс кеша (вызывается при событии online)
 App.network.resetCache = function () {
     _lastCheck = 0;
 };
