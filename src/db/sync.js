@@ -227,7 +227,10 @@ App.db.sync._executeDelete = async function(action) {
         }
     }
 
-    await App.db.delete(tableName, entityId);
+    // Локальное удаление (если ещё не удалено)
+    try {
+        await App.db.delete(tableName, entityId);
+    } catch (e) { /* ignore */ }
     const storeKey = {
         'operations': 'operations',
         'fuel_log': 'fuelLog',
@@ -262,20 +265,22 @@ App.db.sync._updateLocalId = async function(entityType, oldId, serverRecord) {
     await App.db.put(storeName, serverRecord);
 };
 
-// ********************* ОСНОВНАЯ ФУНКЦИЯ *********************
 App.db.sync.processSyncQueue = async function() {
     if (!App.db._db) {
+        console.log('[Sync] IndexedDB не готова, повтор через 1с');
         setTimeout(() => App.db.sync.processSyncQueue(), 1000);
         return;
     }
-    // Только базовая проверка браузера – никаких isReallyOnline
     if (!navigator.onLine) {
         console.log('[Sync] Нет сети, синхронизация отложена');
         return;
     }
-    if (App.db.sync._isRunning) return;
-
+    if (App.db.sync._isRunning) {
+        console.log('[Sync] Синхронизация уже выполняется');
+        return;
+    }
     App.db.sync._isRunning = true;
+    console.log('[Sync] Старт синхронизации...');
     try {
         const pending = await App.db.getAll('pending_actions');
         if (!pending.length) {
@@ -283,7 +288,9 @@ App.db.sync.processSyncQueue = async function() {
             return;
         }
         console.log(`[Sync] Начинаем синхронизацию ${pending.length} действий`);
-        for (const action of pending) {
+        for (let i = 0; i < pending.length; i++) {
+            const action = pending[i];
+            console.log(`[Sync] Обработка ${i+1}/${pending.length}: ${action.id}`);
             try {
                 await App.db.sync._executeAction(action);
                 await App.db.delete('pending_actions', action.id);
@@ -292,28 +299,33 @@ App.db.sync.processSyncQueue = async function() {
                 console.error(`[Sync] Ошибка действия ${action.id}:`, err);
                 const newRetryCount = (action.retryCount || 0) + 1;
                 await App.db.sync._updatePendingAction(action, newRetryCount, err.message);
+                // Продолжаем со следующими действиями
             }
-            await new Promise(r => setTimeout(r, 500));
+            // Небольшая пауза между действиями для стабильности
+            await new Promise(r => setTimeout(r, 200));
         }
+        // После обработки всех действий обновляем UI
+        console.log('[Sync] Все действия обработаны, обновляем UI...');
         await App.store.loadFromIndexedDB();
         if (typeof App.events !== 'undefined' && App.events.currentActiveTab) {
             App.events.switchToTab(App.events.currentActiveTab);
         }
         if (typeof App.renderAll === 'function') App.renderAll();
         App.toast('Данные синхронизированы', 'success');
+    } catch (outerErr) {
+        console.error('[Sync] Критическая ошибка синхронизации:', outerErr);
+        App.toast('Ошибка синхронизации, попробуйте позже', 'error');
     } finally {
         App.db.sync._isRunning = false;
+        console.log('[Sync] Синхронизация завершена');
         clearTimeout(App.db.sync._retryTimeout);
         App.db.sync._retryTimeout = setTimeout(() => {
-            if (navigator.onLine) App.db.sync.processSyncQueue();
+            App.db.sync.processSyncQueue();
         }, 60000);
     }
 };
 
 App.db.sync.forceSync = async function() {
-    if (navigator.onLine) {
-        try { await App.db.sync.processSyncQueue(); } catch (e) { console.error(e); }
-    } else {
-        App.toast('Нет сети. Синхронизация отложена.', 'warning');
-    }
+    console.log('[Sync] forceSync вызван');
+    await App.db.sync.processSyncQueue();
 };
