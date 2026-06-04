@@ -32,7 +32,8 @@ async function queueAction(action) {
             console.warn('[Storage] Background Sync registration failed:', err);
         }
     }
-    if (navigator.onLine && typeof App.db.sync.processSyncQueue === 'function') {
+    // Всегда пытаемся сразу запустить синхронизацию – она проверит navigator.onLine внутри
+    if (typeof App.db.sync.processSyncQueue === 'function') {
         setTimeout(() => App.db.sync.processSyncQueue(), 50);
     }
 }
@@ -65,11 +66,10 @@ function refreshUIToHistory() {
     if (typeof App.ui.pages.renderDashboard === 'function') App.ui.pages.renderDashboard();
 }
 
-// ========== АВТОМОБИЛИ (офлайн-поддержка) ==========
+// ========== АВТОМОБИЛИ ==========
 App.storage.saveCar = async function(car) {
     const carWithId = { ...car };
     if (!carWithId.id) carWithId.id = crypto.randomUUID();
-    // Всегда сначала локально
     await App.db.put('cars', carWithId);
     const idx = App.store.cars.findIndex(c => c.id == carWithId.id);
     if (idx !== -1) App.store.cars[idx] = carWithId;
@@ -85,7 +85,6 @@ App.storage.saveCar = async function(car) {
 };
 
 App.storage.deleteCar = async function(carId) {
-    // Локальное удаление
     await App.db.delete('cars', carId);
     App.store.cars = App.store.cars.filter(c => c.id != carId);
     await queueAction({
@@ -168,8 +167,6 @@ App.storage.saveOperation = async function(op) {
     if (!carId) return;
     const opWithCarId = { ...op, car_id: carId };
     if (!opWithCarId.id) opWithCarId.id = crypto.randomUUID();
-    
-    // Всегда сначала локально
     await App.store.saveOperationToDB(opWithCarId);
     const idx = App.store.operations.findIndex(o => o.id == opWithCarId.id);
     if (idx !== -1) App.store.operations[idx] = opWithCarId;
