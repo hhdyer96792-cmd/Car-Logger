@@ -822,22 +822,28 @@
             });
         }
 
-        // Обработчик online: синхронизация сразу при navigator.onLine
-        window.addEventListener('online', async function() {
-            console.log('[Main] Получено событие online');
-            if (typeof App.toast === 'function') App.toast('Сеть восстановлена', 'success');
+        // Обработчик online: синхронизация при любом признаке сети
+window.addEventListener('online', async function() {
+    console.log('[Main] Получено событие online');
+    if (typeof App.toast === 'function') App.toast('Сеть восстановлена', 'success');
 
-            if (App.db.sync && typeof App.db.sync.processSyncQueue === 'function') {
-                try { await App.db.sync.processSyncQueue(); } catch (e) { console.error(e); }
-            }
-            if (App.store.activeCarId && typeof App.storage.loadAllData === 'function') {
-                try { await App.storage.loadAllData(); } catch (e) { console.error(e); }
-            }
-            if (App.realtime && typeof App.realtime.resubscribe === 'function') {
-                App.realtime.resubscribe();
-            }
-            if (typeof App.renderAll === 'function') App.renderAll();
-        });
+    // 1. Синхронизация очереди (navigator.onLine уже true)
+    if (App.db.sync && typeof App.db.sync.processSyncQueue === 'function') {
+        try { await App.db.sync.processSyncQueue(); } catch (e) { console.error(e); }
+    }
+
+    // 2. Загрузка свежих данных
+    if (App.store.activeCarId && typeof App.storage.loadAllData === 'function') {
+        try { await App.storage.loadAllData(); } catch (e) { console.error(e); }
+    }
+
+    // 3. Realtime – пробуем подключить (внутри проверит реальную сеть)
+    if (App.realtime && typeof App.realtime.resubscribe === 'function') {
+        App.realtime.resubscribe();
+    }
+
+    if (typeof App.renderAll === 'function') App.renderAll();
+});
 
         window.addEventListener('offline', () => {
             if (typeof App.toast === 'function') App.toast('Вы офлайн', 'warning');
