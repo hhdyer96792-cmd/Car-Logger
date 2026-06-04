@@ -268,19 +268,12 @@ App.db.sync.processSyncQueue = async function() {
         setTimeout(() => App.db.sync.processSyncQueue(), 1000);
         return;
     }
+    // Только базовая проверка браузера – никаких isReallyOnline
     if (!navigator.onLine) {
         console.log('[Sync] Нет сети, синхронизация отложена');
         return;
     }
     if (App.db.sync._isRunning) return;
-
-    // ===== БЫСТРАЯ ПРОВЕРКА СЕТИ =====
-    const networkAvailable = await App.network.isReallyOnline();
-    if (!networkAvailable) {
-        console.log('[Sync] Сервер недоступен (быстрая проверка), синхронизация отложена');
-        return;
-    }
-    // ===== КОНЕЦ БЫСТРОЙ ПРОВЕРКИ =====
 
     App.db.sync._isRunning = true;
     try {
@@ -312,7 +305,7 @@ App.db.sync.processSyncQueue = async function() {
         App.db.sync._isRunning = false;
         clearTimeout(App.db.sync._retryTimeout);
         App.db.sync._retryTimeout = setTimeout(() => {
-            App.db.sync.processSyncQueue();
+            if (navigator.onLine) App.db.sync.processSyncQueue();
         }, 60000);
     }
 };
