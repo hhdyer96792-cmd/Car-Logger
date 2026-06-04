@@ -3,10 +3,10 @@ window.App = window.App || {};
 App.db = App.db || {};
 App.db.sync = App.db.sync || {};
 
-const MAX_RETRIES = 5;
+const MAX_RETRIES = 10;          // больше попыток для плохой сети
 const BASE_DELAY = 1000;
 const MAX_DELAY = 30000;
-const ACTION_TIMEOUT = 15000; // 15 секунд на одно действие
+const ACTION_TIMEOUT = 15000;    // 15 секунд на одно действие
 
 App.db.sync._getDelay = function(retryCount) {
     const delay = Math.min(BASE_DELAY * Math.pow(2, retryCount), MAX_DELAY);
@@ -268,7 +268,7 @@ App.db.sync.processSyncQueue = async function() {
         setTimeout(() => App.db.sync.processSyncQueue(), 1000);
         return;
     }
-    // ТОЛЬКО базовая проверка браузера
+    // Только базовая проверка браузера – никаких isReallyOnline
     if (!navigator.onLine) {
         console.log('[Sync] Нет сети, синхронизация отложена');
         return;
