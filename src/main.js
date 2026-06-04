@@ -914,6 +914,7 @@
  }
 
 })();
+}
 
     // Глобальные функции восстановления
     window.recoverViaTelegram = async function() {
