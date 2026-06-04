@@ -827,8 +827,8 @@ window.addEventListener('online', async function() {
     console.log('[Main] Получено событие online');
     if (typeof App.toast === 'function') App.toast('Сеть восстановлена', 'success');
 
-    // 1. Синхронизация очереди (navigator.onLine уже true)
-    if (App.db.sync && typeof App.db.sync.processSyncQueue === 'function') {
+    // 1. Синхронизация очереди (если ещё не запущена)
+    if (App.db.sync && !App.db.sync._isRunning) {
         try { await App.db.sync.processSyncQueue(); } catch (e) { console.error(e); }
     }
 
