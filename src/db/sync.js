@@ -3,10 +3,10 @@ window.App = window.App || {};
 App.db = App.db || {};
 App.db.sync = App.db.sync || {};
 
-const MAX_RETRIES = 10;          // больше попыток для плохой сети
+const MAX_RETRIES = 10;
 const BASE_DELAY = 1000;
 const MAX_DELAY = 30000;
-const ACTION_TIMEOUT = 15000;    // 15 секунд на одно действие
+const ACTION_TIMEOUT = 15000;
 
 App.db.sync._getDelay = function(retryCount) {
     const delay = Math.min(BASE_DELAY * Math.pow(2, retryCount), MAX_DELAY);
@@ -40,7 +40,6 @@ App.db.sync._executeAction = async function(action) {
     const { type, entityType, entityId, data } = action;
     console.log(`[Sync] Выполнение действия ${action.id}, тип=${type}, сущность=${entityType}, данные:`, data);
 
-    // Принудительно обновляем сессию
     try {
         const { data: sessionData, error: refreshError } = await App.supabase.auth.refreshSession();
         if (refreshError) {
@@ -263,17 +262,25 @@ App.db.sync._updateLocalId = async function(entityType, oldId, serverRecord) {
     await App.db.put(storeName, serverRecord);
 };
 
+// ********************* ОСНОВНАЯ ФУНКЦИЯ *********************
 App.db.sync.processSyncQueue = async function() {
     if (!App.db._db) {
         setTimeout(() => App.db.sync.processSyncQueue(), 1000);
         return;
     }
-    // Только базовая проверка браузера – никаких isReallyOnline
     if (!navigator.onLine) {
         console.log('[Sync] Нет сети, синхронизация отложена');
         return;
     }
     if (App.db.sync._isRunning) return;
+
+    // ===== БЫСТРАЯ ПРОВЕРКА СЕТИ =====
+    const networkAvailable = await App.network.isReallyOnline();
+    if (!networkAvailable) {
+        console.log('[Sync] Сервер недоступен (быстрая проверка), синхронизация отложена');
+        return;
+    }
+    // ===== КОНЕЦ БЫСТРОЙ ПРОВЕРКИ =====
 
     App.db.sync._isRunning = true;
     try {
@@ -305,7 +312,7 @@ App.db.sync.processSyncQueue = async function() {
         App.db.sync._isRunning = false;
         clearTimeout(App.db.sync._retryTimeout);
         App.db.sync._retryTimeout = setTimeout(() => {
-            if (navigator.onLine) App.db.sync.processSyncQueue();
+            App.db.sync.processSyncQueue();
         }, 60000);
     }
 };
