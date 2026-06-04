@@ -69,557 +69,310 @@ function refreshUIToHistory() {
 App.storage.saveCar = async function(car) {
     const carWithId = { ...car };
     if (!carWithId.id) carWithId.id = crypto.randomUUID();
-    if (!navigator.onLine) {
-        await App.db.put('cars', carWithId);
-        const idx = App.store.cars.findIndex(c => c.id == carWithId.id);
-        if (idx !== -1) App.store.cars[idx] = carWithId;
-        else App.store.cars.push(carWithId);
-        await queueAction({
-            type: 'save',
-            entityType: 'car',
-            entityId: carWithId.id,
-            data: carWithId
-        });
-        App.toast('Автомобиль сохранён локально', 'warning');
-        return carWithId;
-    }
-    try {
-        const userId = await App.supa.getCurrentUserId();
-        if (!userId) throw new Error('User not authenticated');
-        const record = { ...carWithId, user_id: userId };
-        const { data, error } = await App.supabase
-            .from('cars')
-            .upsert(record, { onConflict: 'id' })
-            .select()
-            .single();
-        if (error) throw error;
-        const finalCar = { ...data };
-        await App.db.put('cars', finalCar);
-        const idx = App.store.cars.findIndex(c => c.id == finalCar.id);
-        if (idx !== -1) App.store.cars[idx] = finalCar;
-        else App.store.cars.push(finalCar);
-        App.toast('Автомобиль сохранён', 'success');
-        return finalCar;
-    } catch (err) {
-        console.error('[Storage] Ошибка сохранения автомобиля:', err);
-        App.toast('Ошибка сохранения автомобиля', 'error');
-        return null;
-    }
+    // Всегда сначала локально
+    await App.db.put('cars', carWithId);
+    const idx = App.store.cars.findIndex(c => c.id == carWithId.id);
+    if (idx !== -1) App.store.cars[idx] = carWithId;
+    else App.store.cars.push(carWithId);
+    await queueAction({
+        type: 'save',
+        entityType: 'car',
+        entityId: carWithId.id,
+        data: carWithId
+    });
+    App.toast('Автомобиль сохранён локально', 'warning');
+    return carWithId;
 };
 
 App.storage.deleteCar = async function(carId) {
-    if (!navigator.onLine) {
-        await queueAction({
-            type: 'delete',
-            entityType: 'car',
-            entityId: carId,
-            data: { id: carId, car_id: carId }
-        });
-        await App.db.delete('cars', carId);
-        App.store.cars = App.store.cars.filter(c => c.id != carId);
-        App.toast('Удаление сохранено локально', 'warning');
-        return true;
-    }
-    try {
-        const { error } = await App.supabase.from('cars').delete().eq('id', carId);
-        if (error) throw error;
-        await App.db.delete('cars', carId);
-        App.store.cars = App.store.cars.filter(c => c.id != carId);
-        await App.db.delete('car_settings', carId);
-        return true;
-    } catch (err) {
-        App.toast('Ошибка удаления автомобиля', 'error');
-        return false;
-    }
+    // Локальное удаление
+    await App.db.delete('cars', carId);
+    App.store.cars = App.store.cars.filter(c => c.id != carId);
+    await queueAction({
+        type: 'delete',
+        entityType: 'car',
+        entityId: carId,
+        data: { id: carId, car_id: carId }
+    });
+    App.toast('Удаление сохранено локально', 'warning');
+    return true;
 };
 
 App.storage.renameCar = async function(carId, newName) {
-    if (!navigator.onLine) {
-        const car = App.store.cars.find(c => c.id == carId);
-        if (car) {
-            const updatedCar = { ...car, name: newName };
-            await App.db.put('cars', updatedCar);
-            car.name = newName;
-            await queueAction({
-                type: 'save',
-                entityType: 'car',
-                entityId: carId,
-                data: updatedCar
-            });
-            App.toast('Переименование сохранено локально', 'warning');
-            return true;
-        }
-        return false;
-    }
-    try {
-        const { data, error } = await App.supabase
-            .from('cars')
-            .update({ name: newName })
-            .eq('id', carId)
-            .select()
-            .single();
-        if (error) throw error;
-        const car = App.store.cars.find(c => c.id == carId);
-        if (car) car.name = newName;
-        await App.db.put('cars', data);
-        return true;
-    } catch (err) {
-        App.toast('Ошибка переименования автомобиля', 'error');
-        return false;
-    }
+    const car = App.store.cars.find(c => c.id == carId);
+    if (!car) return false;
+    const updatedCar = { ...car, name: newName };
+    await App.db.put('cars', updatedCar);
+    car.name = newName;
+    await queueAction({
+        type: 'save',
+        entityType: 'car',
+        entityId: carId,
+        data: updatedCar
+    });
+    App.toast('Переименование сохранено локально', 'warning');
+    return true;
 };
 
 // ========== ДОКУМЕНТЫ АВТОМОБИЛЯ ==========
 App.storage.addCarDocument = async function(doc) {
     const carId = App.store.activeCarId;
-    if (!carId) {
-        App.toast('Ошибка: не выбран автомобиль', 'error');
-        return null;
-    }
+    if (!carId) return null;
     const docWithCarId = { ...doc, car_id: carId };
     if (!docWithCarId.id) docWithCarId.id = crypto.randomUUID();
-    if (!navigator.onLine) {
-        await App.db.put('car_documents', docWithCarId);
-        await queueAction({
-            type: 'save',
-            entityType: 'car_document',
-            entityId: docWithCarId.id,
-            data: docWithCarId
-        });
-        App.toast('Документ сохранён локально', 'warning');
-        return docWithCarId;
-    }
-    try {
-        const newDoc = await App.supa.addCarDocument(doc);
-        const finalDoc = { ...newDoc, car_id: carId };
-        await App.db.put('car_documents', finalDoc);
-        return finalDoc;
-    } catch (err) {
-        App.toast('Ошибка сохранения документа', 'error');
-        return null;
-    }
+    await App.db.put('car_documents', docWithCarId);
+    await queueAction({
+        type: 'save',
+        entityType: 'car_document',
+        entityId: docWithCarId.id,
+        data: docWithCarId
+    });
+    App.toast('Документ сохранён локально', 'warning');
+    return docWithCarId;
 };
 
 App.storage.deleteCarDocument = async function(docId) {
     const carId = App.store.activeCarId;
-    if (!navigator.onLine) {
-        // Локальное удаление ПЕРЕД добавлением в очередь (устойчивость)
-        await App.db.delete('car_documents', docId);
-        try {
-            await queueAction({
-                type: 'delete',
-                entityType: 'car_document',
-                entityId: docId,
-                data: { id: docId, car_id: carId }
-            });
-        } catch (e) {
-            console.warn('[Storage] Ошибка добавления удаления документа в очередь, но локально уже удалён', e);
-        }
-        App.toast('Удаление документа сохранено локально', 'warning');
-        return true;
-    }
+    await App.db.delete('car_documents', docId);
     try {
-        await App.supa.deleteCarDocument(docId);
-        await App.db.delete('car_documents', docId);
-        return true;
-    } catch (err) {
-        App.toast('Ошибка удаления документа', 'error');
-        return false;
+        await queueAction({
+            type: 'delete',
+            entityType: 'car_document',
+            entityId: docId,
+            data: { id: docId, car_id: carId }
+        });
+    } catch (e) {
+        console.warn('[Storage] Ошибка добавления удаления документа в очередь, но локально уже удалён', e);
     }
+    App.toast('Удаление документа сохранено локально', 'warning');
+    return true;
 };
 
 // ========== ОСНОВНЫЕ ПАРАМЕТРЫ АВТОМОБИЛЯ ==========
 App.storage.saveVehicleStateAndSettings = async function(state, settings) {
     const carId = App.store.activeCarId;
-    if (!carId) {
-        App.toast('Нет активного автомобиля', 'error');
-        return;
-    }
+    if (!carId) return;
     const cleanState = { ...state };
     if (cleanState.plateNumber && typeof cleanState.plateNumber !== 'string') cleanState.plateNumber = String(cleanState.plateNumber);
     if (cleanState.vin && typeof cleanState.vin !== 'string') cleanState.vin = String(cleanState.vin);
     const data = { car_id: carId, ...cleanState, ...settings };
-    if (!navigator.onLine) {
-        Object.assign(App.store.settings, cleanState, settings);
-        await App.db.put('car_settings', { ...App.store.settings, car_id: carId });
-        await queueAction({ type: 'save', entityType: 'car_settings', entityId: carId, data });
-        App.toast('Параметры сохранены локально', 'warning');
-        return;
-    }
-    try {
-        await App.supa.saveVehicleState(cleanState);
-        await App.supa.saveUserSettings(settings);
-        Object.assign(App.store.settings, cleanState, settings);
-        await App.db.put('car_settings', { ...App.store.settings, car_id: carId });
-        App.toast('Параметры сохранены', 'success');
-    } catch (err) {
-        App.toast('Ошибка сохранения параметров', 'error');
-    }
+    Object.assign(App.store.settings, cleanState, settings);
+    await App.db.put('car_settings', { ...App.store.settings, car_id: carId });
+    await queueAction({ type: 'save', entityType: 'car_settings', entityId: carId, data });
+    App.toast('Параметры сохранены локально', 'warning');
 };
 
 // ========== ОПЕРАЦИИ ==========
 App.storage.saveOperation = async function(op) {
     const carId = App.store.activeCarId;
-    if (!carId) {
-        console.error('[Storage] Нельзя сохранить операцию: нет активного автомобиля');
-        App.toast('Ошибка: не выбран автомобиль', 'error');
-        return;
-    }
+    if (!carId) return;
     const opWithCarId = { ...op, car_id: carId };
     if (!opWithCarId.id) opWithCarId.id = crypto.randomUUID();
-    console.log('[Storage] saveOperation, carId=' + carId + ', id=' + opWithCarId.id + ', online=' + navigator.onLine);
     
-    if (!navigator.onLine) {
-        await App.store.saveOperationToDB(opWithCarId);
-        const idx = App.store.operations.findIndex(o => o.id == opWithCarId.id);
-        if (idx !== -1) App.store.operations[idx] = opWithCarId;
-        else App.store.operations.push(opWithCarId);
-        await queueAction({
-            type: 'save',
-            entityType: 'operation',
-            entityId: opWithCarId.id,
-            data: opWithCarId
-        });
-        App.toast('Операция сохранена локально', 'warning');
-        return;
-    }
-    
-    try {
-        const res = await App.supa.saveOperation(op);
-        checkResponse(res, 'save');
-        if (res.data && res.data[0]) op.id = res.data[0].id;
-        const finalOp = { ...op, car_id: carId };
-        await App.store.saveOperationToDB(finalOp);
-        const idx = App.store.operations.findIndex(o => o.id == op.id);
-        if (idx !== -1) App.store.operations[idx] = op;
-        else App.store.operations.push(op);
-        refreshUIToTables();
-        App.toast('Операция сохранена', 'success');
-    } catch (err) {
-        console.error('[Storage] Ошибка сохранения операции онлайн:', err);
-        App.toast('Ошибка сохранения операции', 'error');
-    }
+    // Всегда сначала локально
+    await App.store.saveOperationToDB(opWithCarId);
+    const idx = App.store.operations.findIndex(o => o.id == opWithCarId.id);
+    if (idx !== -1) App.store.operations[idx] = opWithCarId;
+    else App.store.operations.push(opWithCarId);
+    await queueAction({
+        type: 'save',
+        entityType: 'operation',
+        entityId: opWithCarId.id,
+        data: opWithCarId
+    });
+    App.toast('Операция сохранена локально', 'warning');
 };
 
 App.storage.deleteOperation = async function(operationId) {
     const carId = App.store.activeCarId;
-    if (!navigator.onLine) {
-        // Сначала локальное удаление, потом очередь
-        await App.db.delete('operations', operationId);
-        App.store.operations = App.store.operations.filter(o => o.id != operationId);
-        refreshUIToTables();
-        try {
-            await queueAction({
-                type: 'delete',
-                entityType: 'operation',
-                entityId: operationId,
-                data: { id: operationId, car_id: carId }
-            });
-        } catch (e) {
-            console.warn('[Storage] Ошибка добавления удаления операции в очередь, но локально уже удалена', e);
-        }
-        App.toast('Удаление сохранено локально', 'warning');
-        return;
-    }
-    const res = await App.supabase.from('operations').delete().eq('id', operationId).eq('car_id', carId).select();
-    checkResponse(res, 'delete');
     await App.db.delete('operations', operationId);
     App.store.operations = App.store.operations.filter(o => o.id != operationId);
     refreshUIToTables();
+    try {
+        await queueAction({
+            type: 'delete',
+            entityType: 'operation',
+            entityId: operationId,
+            data: { id: operationId, car_id: carId }
+        });
+    } catch (e) {
+        console.warn('[Storage] Ошибка добавления удаления операции в очередь, но локально уже удалена', e);
+    }
+    App.toast('Удаление сохранено локально', 'warning');
 };
 
 // ========== ИСТОРИЯ ==========
 App.storage.addHistoryRecord = async function(rec) {
     const carId = App.store.activeCarId;
-    if (!carId) {
-        console.error('[Storage] Нельзя добавить запись истории: нет активного автомобиля');
-        App.toast('Ошибка: не выбран автомобиль', 'error');
-        return;
-    }
+    if (!carId) return;
     const recWithCarId = { ...rec, car_id: carId };
     if (!recWithCarId.id) recWithCarId.id = crypto.randomUUID();
-    if (!navigator.onLine) {
-        await App.store.saveHistoryRecordToDB(recWithCarId);
-        App.store.serviceRecords.push(recWithCarId);
-        await queueAction({
-            type: 'save',
-            entityType: 'history',
-            entityId: recWithCarId.id,
-            data: recWithCarId
-        });
-        App.toast('Запись сохранена локально', 'warning');
-        refreshUIToHistory();
-        return;
-    }
-    const res = await App.supa.saveHistoryRecord(rec);
-    checkResponse(res, 'save');
-    if (res.data && res.data[0]) rec.id = res.data[0].id;
-    const finalRec = { ...rec, car_id: carId };
-    await App.store.saveHistoryRecordToDB(finalRec);
-    const idx = App.store.serviceRecords.findIndex(r => r.id == rec.id);
-    if (idx !== -1) App.store.serviceRecords[idx] = rec;
-    else App.store.serviceRecords.push(rec);
+    await App.store.saveHistoryRecordToDB(recWithCarId);
+    App.store.serviceRecords.push(recWithCarId);
+    await queueAction({
+        type: 'save',
+        entityType: 'history',
+        entityId: recWithCarId.id,
+        data: recWithCarId
+    });
+    App.toast('Запись сохранена локально', 'warning');
     refreshUIToHistory();
-};
-
-App.storage.updateHistoryRecord = async function(rowIndex, record) {
-    return App.storage.addHistoryRecord(record);
 };
 
 App.storage.deleteHistoryRecord = async function(rowIndex) {
     const record = App.store.serviceRecords.find(r => r.rowIndex == rowIndex);
     if (!record) return;
     const carId = App.store.activeCarId;
-    if (!navigator.onLine) {
-        // Сначала локальное удаление
-        await App.db.delete('service_records', record.id);
-        App.store.serviceRecords = App.store.serviceRecords.filter(r => r.id != record.id);
-        refreshUIToHistory();
-        try {
-            await queueAction({
-                type: 'delete',
-                entityType: 'history',
-                entityId: record.id,
-                data: { id: record.id, car_id: carId }
-            });
-        } catch (e) {
-            console.warn('[Storage] Ошибка добавления удаления истории в очередь, но локально уже удалена', e);
-        }
-        App.toast('Удаление сохранено локально', 'warning');
-        return;
-    }
-    const res = await App.supabase.from('history').delete().eq('id', record.id).eq('car_id', carId).select();
-    checkResponse(res, 'delete');
     await App.db.delete('service_records', record.id);
     App.store.serviceRecords = App.store.serviceRecords.filter(r => r.id != record.id);
     refreshUIToHistory();
+    try {
+        await queueAction({
+            type: 'delete',
+            entityType: 'history',
+            entityId: record.id,
+            data: { id: record.id, car_id: carId }
+        });
+    } catch (e) {
+        console.warn('[Storage] Ошибка добавления удаления истории в очередь, но локально уже удалена', e);
+    }
+    App.toast('Удаление сохранено локально', 'warning');
 };
 
 // ========== ЗАПЧАСТИ ==========
 App.storage.savePart = async function(part) {
     const carId = App.store.activeCarId;
-    if (!carId) {
-        console.error('[Storage] Нельзя сохранить запчасть: нет активного автомобиля');
-        App.toast('Ошибка: не выбран автомобиль', 'error');
-        return;
-    }
+    if (!carId) return;
     const partWithCarId = { ...part, car_id: carId };
     if (!partWithCarId.id) partWithCarId.id = crypto.randomUUID();
-    if (!navigator.onLine) {
-        await App.store.savePartToDB(partWithCarId);
-        const idx = App.store.parts.findIndex(p => p.id == partWithCarId.id);
-        if (idx !== -1) App.store.parts[idx] = partWithCarId;
-        else App.store.parts.push(partWithCarId);
-        await queueAction({
-            type: 'save',
-            entityType: 'part',
-            entityId: partWithCarId.id,
-            data: partWithCarId
-        });
-        App.toast('Запчасть сохранена локально', 'warning');
-        return;
-    }
-    const res = await App.supa.savePart(part);
-    checkResponse(res, 'save');
-    if (res.data && res.data[0]) part.id = res.data[0].id;
-    const finalPart = { ...part, car_id: carId };
-    await App.store.savePartToDB(finalPart);
-    const idx = App.store.parts.findIndex(p => p.id == part.id);
-    if (idx !== -1) App.store.parts[idx] = part;
-    else App.store.parts.push(part);
-    refreshUIToParts();
+    await App.store.savePartToDB(partWithCarId);
+    const idx = App.store.parts.findIndex(p => p.id == partWithCarId.id);
+    if (idx !== -1) App.store.parts[idx] = partWithCarId;
+    else App.store.parts.push(partWithCarId);
+    await queueAction({
+        type: 'save',
+        entityType: 'part',
+        entityId: partWithCarId.id,
+        data: partWithCarId
+    });
+    App.toast('Запчасть сохранена локально', 'warning');
 };
 
 App.storage.deletePart = async function(partId) {
     const carId = App.store.activeCarId;
-    if (!navigator.onLine) {
-        // Сначала локальное удаление, потом очередь
-        await App.db.delete('parts', partId);
-        App.store.parts = App.store.parts.filter(p => p.id != partId);
-        refreshUIToParts();
-        try {
-            await queueAction({
-                type: 'delete',
-                entityType: 'part',
-                entityId: partId,
-                data: { id: partId, car_id: carId }
-            });
-        } catch (e) {
-            console.warn('[Storage] Ошибка добавления удаления запчасти в очередь, но локально уже удалена', e);
-        }
-        App.toast('Удаление сохранено локально', 'warning');
-        return;
-    }
-    const res = await App.supabase.from('parts').delete().eq('id', partId).eq('car_id', carId).select();
-    checkResponse(res, 'delete');
     await App.db.delete('parts', partId);
     App.store.parts = App.store.parts.filter(p => p.id != partId);
     refreshUIToParts();
+    try {
+        await queueAction({
+            type: 'delete',
+            entityType: 'part',
+            entityId: partId,
+            data: { id: partId, car_id: carId }
+        });
+    } catch (e) {
+        console.warn('[Storage] Ошибка добавления удаления запчасти в очередь, но локально уже удалена', e);
+    }
+    App.toast('Удаление сохранено локально', 'warning');
 };
 
 // ========== ТОПЛИВО ==========
 App.storage.saveFuelRecord = async function(id, record) {
     const carId = App.store.activeCarId;
-    if (!carId) {
-        console.error('[Storage] Нельзя сохранить заправку: нет активного автомобиля');
-        App.toast('Ошибка: не выбран автомобиль', 'error');
-        return;
-    }
+    if (!carId) return;
     const recordWithCarId = { ...record, car_id: carId };
     if (!recordWithCarId.id) recordWithCarId.id = crypto.randomUUID();
-    if (!navigator.onLine) {
-        await App.store.saveFuelRecordToDB(recordWithCarId);
-        const idx = App.store.fuelLog.findIndex(f => f.id == recordWithCarId.id);
-        if (idx !== -1) App.store.fuelLog[idx] = recordWithCarId;
-        else App.store.fuelLog.push(recordWithCarId);
-        await queueAction({
-            type: 'save',
-            entityType: 'fuel',
-            entityId: recordWithCarId.id,
-            data: recordWithCarId
-        });
-        App.toast('Заправка сохранена локально', 'warning');
-        return;
-    }
-    const res = await App.supa.saveFuelRecord(record);
-    checkResponse(res, 'save');
-    if (res.data && res.data[0]) record.id = res.data[0].id;
-    const finalRecord = { ...record, car_id: carId };
-    await App.store.saveFuelRecordToDB(finalRecord);
-    const idx = App.store.fuelLog.findIndex(f => f.id == record.id);
-    if (idx !== -1) App.store.fuelLog[idx] = record;
-    else App.store.fuelLog.push(record);
-    refreshUIToFuel();
+    await App.store.saveFuelRecordToDB(recordWithCarId);
+    const idx = App.store.fuelLog.findIndex(f => f.id == recordWithCarId.id);
+    if (idx !== -1) App.store.fuelLog[idx] = recordWithCarId;
+    else App.store.fuelLog.push(recordWithCarId);
+    await queueAction({
+        type: 'save',
+        entityType: 'fuel',
+        entityId: recordWithCarId.id,
+        data: recordWithCarId
+    });
+    App.toast('Заправка сохранена локально', 'warning');
 };
 
 App.storage.deleteFuelRecord = async function(id) {
     const carId = App.store.activeCarId;
-    if (!navigator.onLine) {
-        // Сначала локальное удаление, потом очередь
-        await App.db.delete('fuel_log', id);
-        App.store.fuelLog = App.store.fuelLog.filter(f => f.id != id);
-        refreshUIToFuel();
-        try {
-            await queueAction({
-                type: 'delete',
-                entityType: 'fuel',
-                entityId: id,
-                data: { id: id, car_id: carId }
-            });
-        } catch (e) {
-            console.warn('[Storage] Ошибка добавления удаления топлива в очередь, но локально уже удалено', e);
-        }
-        App.toast('Удаление сохранено локально', 'warning');
-        return;
-    }
-    const res = await App.supabase.from('fuel_log').delete().eq('id', id).eq('car_id', carId).select();
-    checkResponse(res, 'delete');
     await App.db.delete('fuel_log', id);
     App.store.fuelLog = App.store.fuelLog.filter(f => f.id != id);
     refreshUIToFuel();
+    try {
+        await queueAction({
+            type: 'delete',
+            entityType: 'fuel',
+            entityId: id,
+            data: { id: id, car_id: carId }
+        });
+    } catch (e) {
+        console.warn('[Storage] Ошибка добавления удаления топлива в очередь, но локально уже удалено', e);
+    }
+    App.toast('Удаление сохранено локально', 'warning');
 };
 
 // ========== ШИНЫ ==========
 App.storage.saveTireRecord = async function(id, record) {
     const carId = App.store.activeCarId;
-    if (!carId) {
-        console.error('[Storage] Нельзя сохранить шины: нет активного автомобиля');
-        App.toast('Ошибка: не выбран автомобиль', 'error');
-        return;
-    }
+    if (!carId) return;
     const recordWithCarId = { ...record, car_id: carId };
     if (!recordWithCarId.id) recordWithCarId.id = crypto.randomUUID();
-    if (!navigator.onLine) {
-        await App.store.saveTireRecordToDB(recordWithCarId);
-        const idx = App.store.tireLog.findIndex(t => t.id == recordWithCarId.id);
-        if (idx !== -1) App.store.tireLog[idx] = recordWithCarId;
-        else App.store.tireLog.push(recordWithCarId);
-        await queueAction({
-            type: 'save',
-            entityType: 'tire',
-            entityId: recordWithCarId.id,
-            data: recordWithCarId
-        });
-        App.toast('Шины сохранены локально', 'warning');
-        return;
-    }
-    const res = await App.supa.saveTireRecord(record);
-    checkResponse(res, 'save');
-    if (res.data && res.data[0]) record.id = res.data[0].id;
-    const finalRecord = { ...record, car_id: carId };
-    await App.store.saveTireRecordToDB(finalRecord);
-    const idx = App.store.tireLog.findIndex(t => t.id == record.id);
-    if (idx !== -1) App.store.tireLog[idx] = record;
-    else App.store.tireLog.push(record);
-    refreshUIToTires();
+    await App.store.saveTireRecordToDB(recordWithCarId);
+    const idx = App.store.tireLog.findIndex(t => t.id == recordWithCarId.id);
+    if (idx !== -1) App.store.tireLog[idx] = recordWithCarId;
+    else App.store.tireLog.push(recordWithCarId);
+    await queueAction({
+        type: 'save',
+        entityType: 'tire',
+        entityId: recordWithCarId.id,
+        data: recordWithCarId
+    });
+    App.toast('Шины сохранены локально', 'warning');
 };
 
 App.storage.deleteTireRecord = async function(id) {
     const carId = App.store.activeCarId;
-    if (!navigator.onLine) {
-        // Сначала локальное удаление, потом очередь
-        await App.db.delete('tires', id);
-        App.store.tireLog = App.store.tireLog.filter(t => t.id != id);
-        refreshUIToTires();
-        try {
-            await queueAction({
-                type: 'delete',
-                entityType: 'tire',
-                entityId: id,
-                data: { id: id, car_id: carId }
-            });
-        } catch (e) {
-            console.warn('[Storage] Ошибка добавления удаления шины в очередь, но локально уже удалено', e);
-        }
-        App.toast('Удаление сохранено локально', 'warning');
-        return;
-    }
-    const res = await App.supabase.from('tires').delete().eq('id', id).eq('car_id', carId).select();
-    checkResponse(res, 'delete');
     await App.db.delete('tires', id);
     App.store.tireLog = App.store.tireLog.filter(t => t.id != id);
     refreshUIToTires();
+    try {
+        await queueAction({
+            type: 'delete',
+            entityType: 'tire',
+            entityId: id,
+            data: { id: id, car_id: carId }
+        });
+    } catch (e) {
+        console.warn('[Storage] Ошибка добавления удаления шины в очередь, но локально уже удалено', e);
+    }
+    App.toast('Удаление сохранено локально', 'warning');
 };
 
 // ========== ПРОБЕГ ==========
 App.storage.addMileageRecord = async function(date, mileage, motohours) {
     const userId = await App.supa.getCurrentUserId();
     const carId = App.store.activeCarId;
-    if (!carId) {
-        console.error('[Storage] Нельзя добавить пробег: нет активного автомобиля');
-        App.toast('Ошибка: не выбран автомобиль', 'error');
-        return;
-    }
+    if (!carId) return;
     const record = { date, mileage, motohours, user_id: userId, car_id: carId };
     if (!record.id) record.id = crypto.randomUUID();
-    if (!navigator.onLine) {
-        await App.store.saveMileageRecordToDB(record);
-        App.store.mileageHistory.push(record);
-        await queueAction({
-            type: 'save',
-            entityType: 'mileage',
-            entityId: record.id,
-            data: record
-        });
-        App.toast('Запись пробега сохранена локально', 'warning');
-        refreshUIToMileage();
-        return;
-    }
-    const res = await App.supabase.from('mileage_log').insert(record).select();
-    checkResponse(res, 'save');
-    if (res.data && res.data[0]) record.id = res.data[0].id;
     await App.store.saveMileageRecordToDB(record);
     App.store.mileageHistory.push(record);
+    await queueAction({
+        type: 'save',
+        entityType: 'mileage',
+        entityId: record.id,
+        data: record
+    });
+    App.toast('Запись пробега сохранена локально', 'warning');
     refreshUIToMileage();
 };
 
 // ========== НАСТРОЙКИ ==========
 App.storage.saveSettings = async function(settings) {
     const carId = App.store.activeCarId;
-    if (!carId) {
-        App.toast('Нет активного автомобиля', 'error');
-        return;
-    }
+    if (!carId) return;
     const cleanedSettings = { ...settings };
     if (cleanedSettings.plateNumber !== undefined && cleanedSettings.plateNumber !== null) {
         cleanedSettings.plateNumber = (typeof cleanedSettings.plateNumber === 'object') ? '' : String(cleanedSettings.plateNumber);
@@ -631,49 +384,17 @@ App.storage.saveSettings = async function(settings) {
     } else {
         cleanedSettings.vin = '';
     }
-    
     const settingsWithCar = { ...cleanedSettings, car_id: carId };
-    
-    if (!navigator.onLine) {
-        Object.assign(App.store.settings, cleanedSettings);
-        await App.db.put('car_settings', settingsWithCar);
-        await queueAction({
-            type: 'save',
-            entityType: 'car_settings',
-            entityId: carId,
-            data: settingsWithCar
-        });
-        App.toast('Настройки сохранены локально', 'warning');
-        refreshUIToSettings();
-        return;
-    }
-    
-    try {
-        await App.supa.saveVehicleState({
-            currentMileage: cleanedSettings.currentMileage,
-            currentMotohours: cleanedSettings.currentMotohours,
-            avgDailyMileage: cleanedSettings.avgDailyMileage,
-            avgDailyMotohours: cleanedSettings.avgDailyMotohours,
-            carBrand: cleanedSettings.carBrand,
-            carModel: cleanedSettings.carModel,
-            carYear: cleanedSettings.carYear,
-            plateNumber: cleanedSettings.plateNumber,
-            vin: cleanedSettings.vin
-        });
-        await App.supa.saveUserSettings({
-            telegramToken: cleanedSettings.telegramToken,
-            telegramChatId: cleanedSettings.telegramChatId,
-            notificationMethod: cleanedSettings.notificationMethod,
-            reminderDays: cleanedSettings.reminderDays || '7,2'
-        });
-        Object.assign(App.store.settings, cleanedSettings);
-        await App.db.put('car_settings', settingsWithCar);
-        App.toast('Настройки сохранены', 'success');
-        refreshUIToSettings();
-    } catch (err) {
-        console.error('[Storage] Ошибка сохранения настроек онлайн:', err);
-        App.toast('Ошибка сохранения настроек', 'error');
-    }
+    Object.assign(App.store.settings, cleanedSettings);
+    await App.db.put('car_settings', settingsWithCar);
+    await queueAction({
+        type: 'save',
+        entityType: 'car_settings',
+        entityId: carId,
+        data: settingsWithCar
+    });
+    App.toast('Настройки сохранены локально', 'warning');
+    refreshUIToSettings();
 };
 
 App.storage.loadSettingsForCar = async function(carId) {
@@ -733,55 +454,59 @@ App.storage.loadAllData = async function() {
         return;
     }
 
-    try {
-        const [operations, fuelLog, tireLog, parts, history, settings, mileageHistory] = await Promise.all([
-            App.supa.loadOperations(),
-            App.supa.loadFuelLog(),
-            App.supa.loadTires(),
-            App.supa.loadParts(),
-            App.supa.loadHistory(),
-            App.supa.loadSettings(),
-            App.supa.loadMileageHistory()
-        ]);
+    const carId = App.store.activeCarId;
+    if (!carId) return;
 
-        const carId = App.store.activeCarId;
-        
-        const opsWithCar = operations.map(op => ({ ...op, id: op.id || crypto.randomUUID(), car_id: carId }));
-        const fuelWithCar = fuelLog.map(f => ({ ...f, id: f.id || crypto.randomUUID(), car_id: carId }));
-        const tiresWithCar = tireLog.map(t => ({ ...t, id: t.id || crypto.randomUUID(), car_id: carId }));
-        const partsWithCar = parts.map(p => ({ ...p, id: p.id || crypto.randomUUID(), car_id: carId }));
-        const historyWithCar = history.map(h => ({ ...h, id: h.id || crypto.randomUUID(), car_id: carId }));
-        const mileageWithCar = mileageHistory.map(m => ({ ...m, id: m.id || crypto.randomUUID(), car_id: carId }));
-
-        await App.db.putMany('operations', opsWithCar);
-        await App.db.putMany('fuel_log', fuelWithCar);
-        await App.db.putMany('tires', tiresWithCar);
-        await App.db.putMany('parts', partsWithCar);
-        await App.db.putMany('service_records', historyWithCar);
-        await App.db.putMany('mileage_log', mileageWithCar);
-        if (settings) {
-            const settingsWithCar = { ...settings, car_id: carId };
-            if (settingsWithCar.plateNumber && typeof settingsWithCar.plateNumber !== 'string') settingsWithCar.plateNumber = String(settingsWithCar.plateNumber);
-            if (settingsWithCar.vin && typeof settingsWithCar.vin !== 'string') settingsWithCar.vin = String(settingsWithCar.vin);
-            await App.db.put('car_settings', settingsWithCar);
-            Object.assign(App.store.settings, settings);
+    const loadTable = async (name, loader) => {
+        try {
+            const data = await loader();
+            return data || [];
+        } catch (err) {
+            console.error(`[Storage] Ошибка загрузки ${name}:`, err);
+            App.toast(`Не удалось загрузить ${name}`, 'warning');
+            return [];
         }
+    };
 
-        App.store.operations = opsWithCar;
-        App.store.fuelLog = fuelWithCar;
-        App.store.tireLog = tiresWithCar;
-        App.store.parts = partsWithCar;
-        App.store.serviceRecords = historyWithCar;
-        if (settings) Object.assign(App.store.settings, settings);
-        App.store.mileageHistory = mileageWithCar;
+    const operations = await loadTable('операций', App.supa.loadOperations);
+    const fuelLog = await loadTable('заправок', App.supa.loadFuelLog);
+    const tireLog = await loadTable('шин', App.supa.loadTires);
+    const parts = await loadTable('запчастей', App.supa.loadParts);
+    const history = await loadTable('истории', App.supa.loadHistory);
+    const settings = await loadTable('настроек', App.supa.loadSettings);
+    const mileageHistory = await loadTable('пробега', App.supa.loadMileageHistory);
 
-        document.getElementById('data-panel').style.display = 'block';
-        if (typeof App.renderAll === 'function') App.renderAll();
-        App.setSyncStatus('synced');
-    } catch (e) {
-        console.error(e);
-        App.toast('Ошибка загрузки данных', 'error');
+    const opsWithCar = operations.map(op => ({ ...op, id: op.id || crypto.randomUUID(), car_id: carId }));
+    const fuelWithCar = fuelLog.map(f => ({ ...f, id: f.id || crypto.randomUUID(), car_id: carId }));
+    const tiresWithCar = tireLog.map(t => ({ ...t, id: t.id || crypto.randomUUID(), car_id: carId }));
+    const partsWithCar = parts.map(p => ({ ...p, id: p.id || crypto.randomUUID(), car_id: carId }));
+    const historyWithCar = history.map(h => ({ ...h, id: h.id || crypto.randomUUID(), car_id: carId }));
+    const mileageWithCar = mileageHistory.map(m => ({ ...m, id: m.id || crypto.randomUUID(), car_id: carId }));
+
+    try { await App.db.putMany('operations', opsWithCar); } catch (e) { console.error(e); }
+    try { await App.db.putMany('fuel_log', fuelWithCar); } catch (e) { console.error(e); }
+    try { await App.db.putMany('tires', tiresWithCar); } catch (e) { console.error(e); }
+    try { await App.db.putMany('parts', partsWithCar); } catch (e) { console.error(e); }
+    try { await App.db.putMany('service_records', historyWithCar); } catch (e) { console.error(e); }
+    try { await App.db.putMany('mileage_log', mileageWithCar); } catch (e) { console.error(e); }
+    if (settings) {
+        const settingsWithCar = { ...settings, car_id: carId };
+        if (settingsWithCar.plateNumber && typeof settingsWithCar.plateNumber !== 'string') settingsWithCar.plateNumber = String(settingsWithCar.plateNumber);
+        if (settingsWithCar.vin && typeof settingsWithCar.vin !== 'string') settingsWithCar.vin = String(settingsWithCar.vin);
+        try { await App.db.put('car_settings', settingsWithCar); } catch (e) { console.error(e); }
+        Object.assign(App.store.settings, settings);
     }
+
+    App.store.operations = opsWithCar;
+    App.store.fuelLog = fuelWithCar;
+    App.store.tireLog = tiresWithCar;
+    App.store.parts = partsWithCar;
+    App.store.serviceRecords = historyWithCar;
+    App.store.mileageHistory = mileageWithCar;
+
+    document.getElementById('data-panel').style.display = 'block';
+    if (typeof App.renderAll === 'function') App.renderAll();
+    App.setSyncStatus('synced');
     if (App.events.currentActiveTab) {
         App.events.switchToTab(App.events.currentActiveTab);
     }
