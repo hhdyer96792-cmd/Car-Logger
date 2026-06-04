@@ -7,7 +7,7 @@ App.realtime._currentCarId = null;
 
 App.realtime._subscribeWithRetry = async function(carId) {
     if (!carId) return;
-    // Если модуль network.js не загружен, просто используем navigator.onLine
+    // Только здесь используем проверку реальной сети
     const online = (App.network && typeof App.network.isReallyOnline === 'function')
         ? await App.network.isReallyOnline()
         : navigator.onLine;
