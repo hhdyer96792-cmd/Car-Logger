@@ -517,7 +517,7 @@
                         }
                     }
 
-                    // ----- ГЛАВНОЕ: сначала получаем автомобили -----
+                    // ----- Сначала получаем автомобили -----
                     const { data: { user } } = await App.supabase.auth.getUser();
                     const username = user?.user_metadata?.username || user?.email?.split('@')[0] || '';
                     if (username) localStorage.setItem('vesta_username', username);
@@ -556,12 +556,12 @@
                         if (typeof App.ui.pages.renderCarTab === 'function') App.ui.pages.renderCarTab();
                     }
 
-                    // Теперь синхронизируемся и загружаем данные
+                    // Теперь синхронизируемся и загружаем данные (фоновая загрузка)
                     if (typeof App.db.sync !== 'undefined' && typeof App.db.sync.processSyncQueue === 'function') {
                         await App.db.sync.processSyncQueue();
                     }
                     if (typeof App.storage !== 'undefined' && typeof App.storage.loadAllData === 'function') {
-                        await App.storage.loadAllData().catch(err => console.warn('Ошибка loadAllData:', err));
+                        App.storage.loadAllData().catch(err => console.warn('Ошибка loadAllData:', err));
                     }
                     if (App.store.operations.length === 0) {
                         await forceLoadDataFromSupabase();
@@ -822,28 +822,28 @@
             });
         }
 
-        // Обработчик online: синхронизация при любом признаке сети
-window.addEventListener('online', async function() {
-    console.log('[Main] Получено событие online');
-    if (typeof App.toast === 'function') App.toast('Сеть восстановлена', 'success');
+        // Обработчик online: синхронизация и фоновая загрузка данных
+        window.addEventListener('online', async function() {
+            console.log('[Main] Получено событие online');
+            if (typeof App.toast === 'function') App.toast('Сеть восстановлена', 'success');
 
-    // 1. Синхронизация очереди (если ещё не запущена)
-    if (App.db.sync && !App.db.sync._isRunning) {
-        try { await App.db.sync.processSyncQueue(); } catch (e) { console.error(e); }
-    }
+            // 1. Синхронизация очереди
+            if (App.db.sync && !App.db.sync._isRunning) {
+                try { await App.db.sync.processSyncQueue(); } catch (e) { console.error(e); }
+            }
 
-    // 2. Загрузка свежих данных
-    if (App.store.activeCarId && typeof App.storage.loadAllData === 'function') {
-        try { await App.storage.loadAllData(); } catch (e) { console.error(e); }
-    }
+            // 2. Фоновая загрузка данных (не ждём)
+            if (App.store.activeCarId && typeof App.storage.loadAllData === 'function') {
+                App.storage.loadAllData().catch(e => console.error(e));
+            }
 
-    // 3. Realtime – пробуем подключить (внутри проверит реальную сеть)
-    if (App.realtime && typeof App.realtime.resubscribe === 'function') {
-        App.realtime.resubscribe();
-    }
+            // 3. Realtime пробуем включить только при реальной сети
+            if (App.realtime && typeof App.realtime.resubscribe === 'function') {
+                App.realtime.resubscribe();
+            }
 
-    if (typeof App.renderAll === 'function') App.renderAll();
-});
+            if (typeof App.renderAll === 'function') App.renderAll();
+        });
 
         window.addEventListener('offline', () => {
             if (typeof App.toast === 'function') App.toast('Вы офлайн', 'warning');
