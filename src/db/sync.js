@@ -6,7 +6,7 @@ App.db.sync = App.db.sync || {};
 const MAX_RETRIES = 10;
 const BASE_DELAY = 1000;
 const MAX_DELAY = 30000;
-const ACTION_TIMEOUT = 30000;   // 30 секунд на действие
+const ACTION_TIMEOUT = 10000;   // 10 секунд на действие
 
 App.db.sync._getDelay = function(retryCount) {
     const delay = Math.min(BASE_DELAY * Math.pow(2, retryCount), MAX_DELAY);
@@ -39,6 +39,13 @@ App.db.sync._updatePendingAction = async function(action, retryCount, errorMessa
 App.db.sync._executeAction = async function(action) {
     const { type, entityType, entityId, data } = action;
     console.log(`[Sync] Выполнение действия ${action.id}, тип=${type}, сущность=${entityType}`);
+
+    // Быстрая проверка доступности сервера
+    const online = await App.network.isReallyOnline();
+    if (!online) {
+        console.warn(`[Sync] Сервер недоступен, действие ${action.id} отложено`);
+        throw new Error('Сервер недоступен');
+    }
 
     if (type === 'delete' && entityType !== 'car') {
         return await App.db.sync._executeDelete(action);
@@ -276,6 +283,7 @@ App.db.sync.processSyncQueue = async function() {
             try {
                 await App.db.sync._executeAction(action);
                 await App.db.delete('pending_actions', action.id);
+                console.log(`[Sync] Действие ${action.id} выполнено и удалено из очереди`);
             } catch (err) {
                 const retry = (action.retryCount || 0) + 1;
                 await App.db.sync._updatePendingAction(action, retry, err.message);
