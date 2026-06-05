@@ -106,124 +106,104 @@ App.supa.clearUserIdCache = function() {
     cachedUserId = null;
 };
 
-// ========== ЗАГРУЗКА ДАННЫХ (таймаут 20 с) ==========
+// ========== ЗАГРУЗКА ДАННЫХ (БЕЗ таймаутов) ==========
 App.supa.loadOperations = function() {
     return withRetry(() =>
-        withTimeout(
-            App.supa.fetchTable('operations').then(({ data, error }) => {
-                if (error) throw error;
-                return (data || []).map(op => ({
-                    id: op.id,
-                    uuid: op.id,
-                    category: op.category,
-                    name: op.name,
-                    intervalKm: op.interval_km || 0,
-                    intervalMonths: op.interval_months || 0,
-                    intervalMotohours: op.interval_motohours || null,
-                    lastDate: op.last_date || null,
-                    lastMileage: op.last_mileage || 0,
-                    lastMotohours: op.last_motohours || 0,
-                    updatedAt: op.updated_at
-                }));
-            }),
-            20000, 'loadOperations'
-        ),
-    3, 500, 'loadOperations');
+        App.supa.fetchTable('operations').then(({ data, error }) => {
+            if (error) throw error;
+            return (data || []).map(op => ({
+                id: op.id,
+                uuid: op.id,
+                category: op.category,
+                name: op.name,
+                intervalKm: op.interval_km || 0,
+                intervalMonths: op.interval_months || 0,
+                intervalMotohours: op.interval_motohours || null,
+                lastDate: op.last_date || null,
+                lastMileage: op.last_mileage || 0,
+                lastMotohours: op.last_motohours || 0,
+                updatedAt: op.updated_at
+            }));
+        }), 3, 500, 'loadOperations');
 };
 
 App.supa.loadFuelLog = function() {
     return withRetry(() =>
-        withTimeout(
-            App.supa.fetchTable('fuel_log').then(({ data, error }) => {
-                if (error) throw error;
-                return (data || []).map(f => ({
-                    id: f.id,
-                    date: f.date,
-                    mileage: parseFloat(f.mileage) || 0,
-                    liters: parseFloat(f.liters) || 0,
-                    pricePerLiter: parseFloat(f.price_per_liter) || 0,
-                    fullTank: f.full_tank ? 'TRUE' : '',
-                    fuelType: f.fuel_type || 'Бензин',
-                    notes: f.notes || ''
-                }));
-            }),
-            20000, 'loadFuelLog'
-        ),
-    3, 500, 'loadFuelLog');
+        App.supa.fetchTable('fuel_log').then(({ data, error }) => {
+            if (error) throw error;
+            return (data || []).map(f => ({
+                id: f.id,
+                date: f.date,
+                mileage: parseFloat(f.mileage) || 0,
+                liters: parseFloat(f.liters) || 0,
+                pricePerLiter: parseFloat(f.price_per_liter) || 0,
+                fullTank: f.full_tank ? 'TRUE' : '',
+                fuelType: f.fuel_type || 'Бензин',
+                notes: f.notes || ''
+            }));
+        }), 3, 500, 'loadFuelLog');
 };
 
 App.supa.loadTires = function() {
     return withRetry(() =>
-        withTimeout(
-            App.supa.fetchTable('tires').then(({ data, error }) => {
-                if (error) throw error;
-                return (data || []).map(t => ({
-                    id: t.id,
-                    date: t.date,
-                    type: t.type || '',
-                    mileage: parseFloat(t.mileage) || 0,
-                    model: t.model || '',
-                    size: t.size || '',
-                    wear: t.wear || '',
-                    notes: t.notes || '',
-                    purchaseCost: parseFloat(t.purchase_cost) || 0,
-                    mountCost: parseFloat(t.mount_cost) || 0,
-                    isDIY: t.is_diy || false
-                }));
-            }),
-            20000, 'loadTires'
-        ),
-    3, 500, 'loadTires');
+        App.supa.fetchTable('tires').then(({ data, error }) => {
+            if (error) throw error;
+            return (data || []).map(t => ({
+                id: t.id,
+                date: t.date,
+                type: t.type || '',
+                mileage: parseFloat(t.mileage) || 0,
+                model: t.model || '',
+                size: t.size || '',
+                wear: t.wear || '',
+                notes: t.notes || '',
+                purchaseCost: parseFloat(t.purchase_cost) || 0,
+                mountCost: parseFloat(t.mount_cost) || 0,
+                isDIY: t.is_diy || false
+            }));
+        }), 3, 500, 'loadTires');
 };
 
 App.supa.loadParts = function() {
     return withRetry(() =>
-        withTimeout(
-            App.supa.fetchTable('parts').then(({ data, error }) => {
-                if (error) throw error;
-                return (data || []).map(p => ({
-                    id: p.id,
-                    uuid: p.id,
-                    operation: p.operation || '',
-                    oem: p.oem || '',
-                    analog: p.analog || '',
-                    price: p.price || '',
-                    supplier: p.supplier || '',
-                    link: p.link || '',
-                    comment: p.comment || '',
-                    inStock: parseFloat(p.in_stock) || 0,
-                    location: p.location || '',
-                    dateAdded: p.purchase_date || ''
-                }));
-            }),
-            20000, 'loadParts'
-        ),
-    3, 500, 'loadParts');
+        App.supa.fetchTable('parts').then(({ data, error }) => {
+            if (error) throw error;
+            return (data || []).map(p => ({
+                id: p.id,
+                uuid: p.id,
+                operation: p.operation || '',
+                oem: p.oem || '',
+                analog: p.analog || '',
+                price: p.price || '',
+                supplier: p.supplier || '',
+                link: p.link || '',
+                comment: p.comment || '',
+                inStock: parseFloat(p.in_stock) || 0,
+                location: p.location || '',
+                dateAdded: p.purchase_date || ''
+            }));
+        }), 3, 500, 'loadParts');
 };
 
 App.supa.loadHistory = function() {
     return withRetry(() =>
-        withTimeout(
-            App.supa.fetchTable('history').then(({ data, error }) => {
-                if (error) throw error;
-                return (data || []).map(h => ({
-                    id: h.id,
-                    operation_id: h.operation_id,
-                    date: h.date,
-                    mileage: h.mileage || '',
-                    motohours: h.motohours || '',
-                    parts_cost: h.parts_cost || 0,
-                    work_cost: h.work_cost || 0,
-                    is_diy: h.is_diy || false,
-                    notes: h.notes || '',
-                    photo_url: h.photo_url || '',
-                    user_id: h.user_id,
-                    rowIndex: h.id
-                }));
-            }),
-            20000, 'loadHistory'
-        ),
-    3, 500, 'loadHistory');
+        App.supa.fetchTable('history').then(({ data, error }) => {
+            if (error) throw error;
+            return (data || []).map(h => ({
+                id: h.id,
+                operation_id: h.operation_id,
+                date: h.date,
+                mileage: h.mileage || '',
+                motohours: h.motohours || '',
+                parts_cost: h.parts_cost || 0,
+                work_cost: h.work_cost || 0,
+                is_diy: h.is_diy || false,
+                notes: h.notes || '',
+                photo_url: h.photo_url || '',
+                user_id: h.user_id,
+                rowIndex: h.id
+            }));
+        }), 3, 500, 'loadHistory');
 };
 
 App.supa.loadSettings = function() {
@@ -256,22 +236,18 @@ App.supa.loadSettings = function() {
 
 App.supa.loadMileageHistory = function() {
     return withRetry(() =>
-        withTimeout(
-            App.supa.fetchTable('mileage_log').then(({ data, error }) => {
-                if (error) throw error;
-                return (data || []).map(m => ({
-                    id: m.id,
-                    date: m.date,
-                    mileage: parseFloat(m.mileage) || 0,
-                    motohours: parseFloat(m.motohours) || 0
-                })).sort((a, b) => new Date(a.date) - new Date(b.date));
-            }),
-            20000, 'loadMileageHistory'
-        ),
-    3, 500, 'loadMileageHistory');
+        App.supa.fetchTable('mileage_log').then(({ data, error }) => {
+            if (error) throw error;
+            return (data || []).map(m => ({
+                id: m.id,
+                date: m.date,
+                mileage: parseFloat(m.mileage) || 0,
+                motohours: parseFloat(m.motohours) || 0
+            })).sort((a, b) => new Date(a.date) - new Date(b.date));
+        }), 3, 500, 'loadMileageHistory');
 };
 
-// ========== СОХРАНЕНИЕ С UPSERT (таймаут 20 с) ==========
+// ========== СОХРАНЕНИЕ С UPSERT (таймаут 30 с) ==========
 App.supa.saveOperation = async function(op) {
     const userId = await App.supa.getCurrentUserId();
     const carId = op.car_id || App.store.activeCarId;
@@ -290,7 +266,7 @@ App.supa.saveOperation = async function(op) {
     };
     const { data, error } = await withTimeout(
         App.supabase.from('operations').upsert(record, { onConflict: 'id' }).select().single(),
-        20000, 'saveOperation'
+        30000, 'saveOperation'
     );
     if (error) throw error;
     return { data: [data], error: null };
@@ -313,7 +289,7 @@ App.supa.saveFuelRecord = async function(record) {
     };
     const { data: result, error } = await withTimeout(
         App.supabase.from('fuel_log').upsert(data, { onConflict: 'id' }).select().single(),
-        20000, 'saveFuelRecord'
+        30000, 'saveFuelRecord'
     );
     if (error) throw error;
     return { data: [result], error: null };
@@ -339,7 +315,7 @@ App.supa.saveTireRecord = async function(record) {
     };
     const { data: result, error } = await withTimeout(
         App.supabase.from('tires').upsert(data, { onConflict: 'id' }).select().single(),
-        20000, 'saveTireRecord'
+        30000, 'saveTireRecord'
     );
     if (error) throw error;
     return { data: [result], error: null };
@@ -365,7 +341,7 @@ App.supa.savePart = async function(part) {
     };
     const { data: result, error } = await withTimeout(
         App.supabase.from('parts').upsert(data, { onConflict: 'id' }).select().single(),
-        20000, 'savePart'
+        30000, 'savePart'
     );
     if (error) throw error;
     return { data: [result], error: null };
@@ -390,7 +366,7 @@ App.supa.saveHistoryRecord = async function(record) {
     };
     const { data: result, error } = await withTimeout(
         App.supabase.from('history').upsert(data, { onConflict: 'id' }).select().single(),
-        20000, 'saveHistoryRecord'
+        30000, 'saveHistoryRecord'
     );
     if (error) throw error;
     return { data: [result], error: null };
@@ -409,7 +385,7 @@ App.supa.addMileageRecord = async function(date, mileage, motohours, carId) {
     };
     const { data: result, error } = await withTimeout(
         App.supabase.from('mileage_log').upsert(record, { onConflict: 'id' }).select().single(),
-        20000, 'addMileageRecord'
+        30000, 'addMileageRecord'
     );
     if (error) throw error;
     return { data: [result], error: null };
@@ -478,21 +454,17 @@ App.supa.uploadPhoto = async function(file) {
 // ---------- Документы автомобиля ----------
 App.supa.loadCarDocuments = function() {
     return withRetry(() =>
-        withTimeout(
-            App.supa.fetchTable('car_documents').then(({ data, error }) => {
-                if (error) throw error;
-                return (data || []).map(doc => ({
-                    id: doc.id,
-                    type: doc.type,
-                    date: doc.date,
-                    photoUrl: doc.photo_url,
-                    amount: doc.amount,
-                    notes: doc.notes || ''
-                }));
-            }),
-            20000, 'loadCarDocuments'
-        ),
-    3, 500, 'loadCarDocuments');
+        App.supa.fetchTable('car_documents').then(({ data, error }) => {
+            if (error) throw error;
+            return (data || []).map(doc => ({
+                id: doc.id,
+                type: doc.type,
+                date: doc.date,
+                photoUrl: doc.photo_url,
+                amount: doc.amount,
+                notes: doc.notes || ''
+            }));
+        }), 3, 500, 'loadCarDocuments');
 };
 
 App.supa.addCarDocument = async function(doc) {
@@ -508,33 +480,24 @@ App.supa.addCarDocument = async function(doc) {
         amount: doc.amount,
         notes: doc.notes
     };
-    const { data, error } = await withTimeout(
-        App.supabase.from('car_documents').insert(record).select().single(),
-        20000, 'addCarDocument'
-    );
+    const { data, error } = await App.supabase.from('car_documents').insert(record).select().single();
     if (error) throw error;
     return { id: data.id, ...doc };
 };
 
 App.supa.updateCarDocument = async function(docId, updates) {
-    const { error } = await withTimeout(
-        App.supabase.from('car_documents').update({
-            type: updates.type,
-            date: updates.date,
-            amount: updates.amount,
-            notes: updates.notes
-        }).eq('id', docId),
-        20000, 'updateCarDocument'
-    );
+    const { error } = await App.supabase.from('car_documents').update({
+        type: updates.type,
+        date: updates.date,
+        amount: updates.amount,
+        notes: updates.notes
+    }).eq('id', docId);
     if (error) throw error;
     return true;
 };
 
 App.supa.deleteCarDocument = async function(docId) {
-    const { error } = await withTimeout(
-        App.supabase.from('car_documents').delete().eq('id', docId),
-        20000, 'deleteCarDocument'
-    );
+    const { error } = await App.supabase.from('car_documents').delete().eq('id', docId);
     if (error) throw error;
     return true;
 };
@@ -542,13 +505,10 @@ App.supa.deleteCarDocument = async function(docId) {
 // ---------- Мульти-авто ----------
 App.supa.loadCars = function() {
     ensureSupabase();
-    return withTimeout(
-        App.supabase.from('cars').select('*').then(({ data, error }) => {
-            if (error) throw error;
-            return data || [];
-        }),
-        20000, 'loadCars'
-    );
+    return App.supabase.from('cars').select('*').then(({ data, error }) => {
+        if (error) throw error;
+        return data || [];
+    });
 };
 
 App.supa.createCar = function(name) {
@@ -556,47 +516,32 @@ App.supa.createCar = function(name) {
         if (!userId) throw new Error('Not authenticated');
         ensureSupabase();
         const record = { id: crypto.randomUUID(), user_id: userId, name };
-        return withTimeout(
-            App.supabase.from('cars').insert(record).select().single(),
-            20000, 'createCar'
-        );
+        return App.supabase.from('cars').insert(record).select().single();
     });
 };
 
 App.supa.deleteCar = function(carId) {
     ensureSupabase();
-    return withTimeout(
-        App.supabase.from('cars').delete().eq('id', carId).select(),
-        20000, 'deleteCar'
-    );
+    return App.supabase.from('cars').delete().eq('id', carId).select();
 };
 
 App.supa.renameCar = function(carId, newName) {
     ensureSupabase();
-    return withTimeout(
-        App.supabase.from('cars').update({ name: newName }).eq('id', carId).select().single(),
-        20000, 'renameCar'
-    );
+    return App.supabase.from('cars').update({ name: newName }).eq('id', carId).select().single();
 };
 
 App.supa.inviteUserToCar = function(carId, email) {
     ensureSupabase();
-    return withTimeout(
-        App.supabase.from('car_shares').insert({ id: crypto.randomUUID(), car_id: carId, invited_email: email }).select().single(),
-        20000, 'inviteUserToCar'
-    );
+    return App.supabase.from('car_shares').insert({ id: crypto.randomUUID(), car_id: carId, invited_email: email }).select().single();
 };
 
 App.supa.getPendingInvites = function() {
     return App.supa.getCurrentUserId().then(userId => {
         if (!userId) return { data: [], error: null };
-        return withTimeout(
-            App.supabase.from('car_shares')
-                .select('*, cars(name)')
-                .eq('invited_user_id', userId)
-                .eq('accepted', false),
-            20000, 'getPendingInvites'
-        );
+        return App.supabase.from('car_shares')
+            .select('*, cars(name)')
+            .eq('invited_user_id', userId)
+            .eq('accepted', false);
     });
 };
 
@@ -604,48 +549,33 @@ App.supa.acceptInvite = async function(inviteId) {
     const userId = await App.supa.getCurrentUserId();
     if (!userId) throw new Error('Not authenticated');
     ensureSupabase();
-    return withTimeout(
-        App.supabase.from('car_shares')
-            .update({ accepted: true, invited_user_id: userId })
-            .eq('id', inviteId)
-            .select(),
-        20000, 'acceptInvite'
-    );
+    return App.supabase.from('car_shares')
+        .update({ accepted: true, invited_user_id: userId })
+        .eq('id', inviteId)
+        .select();
 };
 
 App.supa.declineInvite = function(inviteId) {
     ensureSupabase();
-    return withTimeout(
-        App.supabase.from('car_shares').delete().eq('id', inviteId).select(),
-        20000, 'declineInvite'
-    );
+    return App.supabase.from('car_shares').delete().eq('id', inviteId).select();
 };
 
 App.supa.getInviteByCode = function(code) {
     ensureSupabase();
-    return withTimeout(
-        App.supabase.from('car_shares')
-            .select('*, cars(name)')
-            .eq('invite_code', code)
-            .maybeSingle(),
-        20000, 'getInviteByCode'
-    );
+    return App.supabase.from('car_shares')
+        .select('*, cars(name)')
+        .eq('invite_code', code)
+        .maybeSingle();
 };
 
 App.supa.getCarShares = function(carId) {
     ensureSupabase();
-    return withTimeout(
-        App.supabase.from('car_shares').select('*').eq('car_id', carId),
-        20000, 'getCarShares'
-    );
+    return App.supabase.from('car_shares').select('*').eq('car_id', carId);
 };
 
 App.supa.deleteCarShare = function(shareId) {
     ensureSupabase();
-    return withTimeout(
-        App.supabase.from('car_shares').delete().eq('id', shareId).select(),
-        20000, 'deleteCarShare'
-    );
+    return App.supabase.from('car_shares').delete().eq('id', shareId).select();
 };
 
 App.supa.getVehicleState = async function(carId) {
@@ -668,10 +598,9 @@ App.supa.updateVehicleState = async function(carId, updates) {
         purchase_date: updates.purchaseDate,
         purchase_cost: updates.purchaseCost
     };
-    const { error } = await withTimeout(
-        App.supabase.from('vehicle_state').upsert(record, { onConflict: 'car_id' }),
-        20000, 'updateVehicleState'
-    );
+    const { error } = await App.supabase
+        .from('vehicle_state')
+        .upsert(record, { onConflict: 'car_id' });
     if (error) throw error;
     return true;
 };
