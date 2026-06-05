@@ -7,10 +7,7 @@ App.realtime._currentCarId = null;
 
 App.realtime._subscribeWithRetry = async function(carId) {
     if (!carId) return;
-    // Только здесь используем проверку реальной сети
-    const online = (App.network && typeof App.network.isReallyOnline === 'function')
-        ? await App.network.isReallyOnline()
-        : navigator.onLine;
+    const online = await App.network.isReallyOnline();
     if (!online) {
         console.log('[Realtime] Нет реальной сети, подписка отложена');
         return;
@@ -22,21 +19,13 @@ App.realtime._subscribeWithRetry = async function(carId) {
     for (const table of tables) {
         try {
             const channel = App.supabase.channel('realtime-' + table + '-' + carId)
-                .on('postgres_changes', {
-                    event: '*',
-                    schema: 'public',
-                    table: table,
-                    filter: 'car_id=eq.' + carId
-                }, payload => {
+                .on('postgres_changes', { event: '*', schema: 'public', table, filter: 'car_id=eq.' + carId }, payload => {
                     App.realtime.handleChange(table, payload);
                 })
-                .subscribe(status => {
-                    if (status === 'SUBSCRIBED') console.log(`[Realtime] Подписан на ${table}`);
-                    else if (status === 'CHANNEL_ERROR') console.warn(`[Realtime] Ошибка подписки на ${table}`);
-                });
+                .subscribe();
             App.realtime.channels.push(channel);
         } catch (err) {
-            console.error(`[Realtime] Не удалось создать канал ${table}:`, err);
+            console.error(`[Realtime] Ошибка подписки на ${table}:`, err);
         }
     }
 };
@@ -57,7 +46,7 @@ App.realtime.unsubscribeAll = function() {
     App.realtime.channels = [];
 };
 
-// handleChange – без изменений (вставьте текущую реализацию)
+// handleChange остается без изменений (вставьте текущую реализацию)
 App.realtime.handleChange = function(table, payload) {
     var eventType = payload.eventType;
     var newData = payload.new;
