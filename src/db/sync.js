@@ -6,7 +6,7 @@ App.db.sync = App.db.sync || {};
 const MAX_RETRIES = 10;
 const BASE_DELAY = 1000;
 const MAX_DELAY = 30000;
-const ACTION_TIMEOUT = 20000;   // 20 секунд на действие (совпадает с таймаутами в supabase.js)
+const ACTION_TIMEOUT = 20000;   // 20 секунд на действие
 
 App.db.sync._getDelay = function(retryCount) {
     const delay = Math.min(BASE_DELAY * Math.pow(2, retryCount), MAX_DELAY);
@@ -248,15 +248,6 @@ App.db.sync.processSyncQueue = async function() {
     if (App.db.sync._isRunning) {
         console.log('[Sync] Синхронизация уже выполняется');
         return;
-    }
-
-    // Один health-check перед синхронизацией
-    if (typeof App.network !== 'undefined' && typeof App.network.isReallyOnline === 'function') {
-        const online = await App.network.isReallyOnline();
-        if (!online) {
-            console.log('[Sync] Сервер недоступен, синхронизация отложена');
-            return;
-        }
     }
 
     App.db.sync._isRunning = true;
