@@ -45,13 +45,15 @@ const LOCAL_ASSETS = [
 // Установка
 self.addEventListener('install', e => {
     e.waitUntil(
-        caches.open(CACHE_NAME).then(cache =>
-            Promise.all(LOCAL_ASSETS.map(url =>
-                cache.add(new Request(url, { cache: 'no-cache' })).catch(err =>
-                    console.warn('[SW] Не удалось закэшировать:', url, err)
-                )
-            ))
-        ).then(() => self.skipWaiting())
+        caches.open(CACHE_NAME).then(cache => {
+            return Promise.all(
+                LOCAL_ASSETS.map(url => {
+                    return cache.add(new Request(url)).catch(err => {
+                        console.warn('[SW] Не удалось закэшировать:', url, err);
+                    });
+                })
+            );
+        }).then(() => self.skipWaiting())
     );
 });
 
