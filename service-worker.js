@@ -1,26 +1,9 @@
 // service-worker.js
-// ===== Firebase Cloud Messaging =====
-importScripts('https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js');
-importScripts('https://www.gstatic.com/firebasejs/9.22.0/firebase-messaging-compat.js');
-
-firebase.initializeApp({
-    apiKey: "AIzaSyCKz1GKDdqxtK6NyLQAZ84QqUUCaqTQDWQ",
-    authDomain: "car-k3eeper.firebaseapp.com",
-    projectId: "car-k3eeper",
-    storageBucket: "car-k3eeper.firebasestorage.app",
-    messagingSenderId: "826833638199",
-    appId: "1:826833638199:web:647fedbe3eae5b605240b2"
-});
-
-const messaging = firebase.messaging();
-messaging.onBackgroundMessage(payload => console.log('[SW] Фоновое сообщение:', payload));
-// =====================================
-
 const APP_VERSION = '2.1.0';
 const CACHE_NAME = `car-logger-v${APP_VERSION}`;
 const basePath = self.location.pathname.replace(/\/service-worker\.js$/, '');
 
-// Все локальные ресурсы приложения
+// Локальные ресурсы для кэширования
 const LOCAL_ASSETS = [
     '/index.html', '/style.css', '/manifest.json', '/icon-192.png', '/icon-512.png',
     '/src/main.js', '/src/events.js', '/src/state/store.js', '/src/api/supabase.js',
@@ -42,22 +25,18 @@ const LOCAL_ASSETS = [
     '/lib/firebase-messaging-compat.js'
 ];
 
-// Установка
 self.addEventListener('install', e => {
     e.waitUntil(
         caches.open(CACHE_NAME).then(cache => {
             return Promise.all(
-                LOCAL_ASSETS.map(url => {
-                    return cache.add(new Request(url)).catch(err => {
-                        console.warn('[SW] Не удалось закэшировать:', url, err);
-                    });
-                })
+                LOCAL_ASSETS.map(url =>
+                    cache.add(new Request(url)).catch(err => console.warn('[SW] Cache add failed:', url, err))
+                )
             );
         }).then(() => self.skipWaiting())
     );
 });
 
-// Активация
 self.addEventListener('activate', e => {
     e.waitUntil(
         caches.keys().then(keys =>
@@ -66,39 +45,30 @@ self.addEventListener('activate', e => {
     );
 });
 
-// Перехват запросов
 self.addEventListener('fetch', e => {
-    const url = new URL(e.request.url);
+    // Ничего не делаем с внешними запросами – они идут напрямую
+    if (!e.request.url.startsWith(self.location.origin)) return;
 
-    // Пропускаем ВСЕ внешние хосты – пусть браузер работает напрямую
-    if (url.hostname !== self.location.hostname) return;
-
-    // Навигация – сначала сеть, при провале index.html
+    // Для навигации (HTML) пытаемся загрузить из сети, иначе кэш
     if (e.request.mode === 'navigate') {
-        e.respondWith(fetch(e.request).catch(() => caches.match(basePath + '/index.html')));
-        return;
-    }
-
-    // Локальные ресурсы – кэш -> сеть
-    if (LOCAL_ASSETS.some(asset => url.pathname === basePath + asset)) {
         e.respondWith(
-            caches.match(e.request).then(cached => cached || fetch(e.request))
+            fetch(e.request).catch(() => caches.match(basePath + '/index.html'))
         );
         return;
     }
 
-    // Всё остальное – обычный сетевой запрос
-    e.respondWith(fetch(e.request));
+    // Для локальных ресурсов – кэш -> сеть
+    e.respondWith(
+        caches.match(e.request).then(cached => cached || fetch(e.request))
+    );
 });
 
-// Очистка кэша по запросу
 self.addEventListener('message', e => {
     if (e.data?.type === 'CLEAR_CACHE') {
         caches.delete(CACHE_NAME).then(() => console.log('[SW] Кэш очищен'));
     }
 });
 
-// Background Sync
 self.addEventListener('sync', e => {
     if (e.tag === 'vesta-sync') {
         e.waitUntil(
