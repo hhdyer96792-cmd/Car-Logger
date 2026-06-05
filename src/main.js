@@ -1,5 +1,5 @@
 // src/main.js
-// ===== Полифил crypto.randomUUID =====
+// ===== Полифил crypto.randomUUID для старых браузеров =====
 (function() {
     if (typeof crypto === 'undefined' || typeof crypto.randomUUID !== 'function') {
         crypto.randomUUID = function() {
@@ -121,7 +121,6 @@
     }
 
     function initAuthFormEvents(container) {
-        // ... оставьте без изменений, как в предыдущей версии ...
         const tabLogin = container.querySelector('#tab-login');
         const tabSocial = container.querySelector('#tab-social');
         const authLoginDiv = container.querySelector('#auth-login');
@@ -703,7 +702,7 @@
                     flowType: 'pkce'
                 },
                 realtime: {
-                    enabled: false
+                    enabled: false   // отключаем авто-WebSocket
                 }
             }
         );
@@ -813,19 +812,22 @@
             });
         }
 
-        // Обработчик online
+        // Обработчик online: синхронизация и фоновая загрузка данных
         window.addEventListener('online', async function() {
             console.log('[Main] Получено событие online');
             if (typeof App.toast === 'function') App.toast('Сеть восстановлена', 'success');
 
+            // 1. Синхронизация очереди
             if (App.db.sync && !App.db.sync._isRunning) {
                 try { await App.db.sync.processSyncQueue(); } catch (e) { console.error(e); }
             }
 
+            // 2. Фоновая загрузка данных (не ждём)
             if (App.store.activeCarId && typeof App.storage.loadAllData === 'function') {
                 App.storage.loadAllData().catch(e => console.error(e));
             }
 
+            // 3. Realtime пробуем включить
             if (App.realtime && typeof App.realtime.resubscribe === 'function') {
                 App.realtime.resubscribe();
             }
@@ -907,7 +909,7 @@
         })();
     }
 
-    // Глобальные функции восстановления (без изменений)
+    // Глобальные функции восстановления
     window.recoverViaTelegram = async function() {
         try {
             const username = await App.ui.promptModalAsync('Восстановление через Telegram', 'Введите ваш логин');
