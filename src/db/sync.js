@@ -6,7 +6,7 @@ App.db.sync = App.db.sync || {};
 const MAX_RETRIES = 10;
 const BASE_DELAY = 1000;
 const MAX_DELAY = 30000;
-const ACTION_TIMEOUT = 30000;   // 30 секунд на действие
+const ACTION_TIMEOUT = 30000;
 
 App.db.sync._getDelay = function(retryCount) {
     const delay = Math.min(BASE_DELAY * Math.pow(2, retryCount), MAX_DELAY);
@@ -49,6 +49,7 @@ App.db.sync._executeAction = async function(action) {
     try {
         const result = await Promise.race([
             (async () => {
+                // Сначала проверяем удаление – теперь оно внутри общей гонки
                 if (type === 'delete' && entityType !== 'car') {
                     return await App.db.sync._executeDelete(action);
                 }
@@ -102,13 +103,38 @@ App.db.sync._executeAction = async function(action) {
                         } else {
                             cleanedData.vin = '';
                         }
-                        await App.supa.saveVehicleState({ ...cleanedData });
-                        await App.supa.saveUserSettings({ ...cleanedData });
+                        await App.supa.saveVehicleState({
+                            currentMileage: cleanedData.currentMileage,
+                            currentMotohours: cleanedData.currentMotohours,
+                            avgDailyMileage: cleanedData.avgDailyMileage,
+                            avgDailyMotohours: cleanedData.avgDailyMotohours,
+                            carBrand: cleanedData.carBrand,
+                            carModel: cleanedData.carModel,
+                            carYear: cleanedData.carYear,
+                            plateNumber: cleanedData.plateNumber,
+                            vin: cleanedData.vin,
+                            baseMileage: cleanedData.baseMileage,
+                            baseMotohours: cleanedData.baseMotohours,
+                            purchaseDate: cleanedData.purchaseDate,
+                            purchaseCost: cleanedData.purchaseCost
+                        });
+                        await App.supa.saveUserSettings({
+                            telegramToken: cleanedData.telegramToken,
+                            telegramChatId: cleanedData.telegramChatId,
+                            notificationMethod: cleanedData.notificationMethod,
+                            reminderDays: cleanedData.reminderDays
+                        });
                         Object.assign(App.store.settings, cleanedData);
                         await App.db.put('car_settings', { ...App.store.settings, car_id: App.store.activeCarId });
-                        if (typeof App.ui.pages.loadCarDetails === 'function') App.ui.pages.loadCarDetails(App.store.activeCarId);
-                        if (typeof App.ui.pages.renderBasicParams === 'function') App.ui.pages.renderBasicParams();
-                        if (typeof App.ui.pages.renderCarTab === 'function') App.ui.pages.renderCarTab();
+                        if (typeof App.ui.pages.loadCarDetails === 'function') {
+                            App.ui.pages.loadCarDetails(App.store.activeCarId);
+                        }
+                        if (typeof App.ui.pages.renderBasicParams === 'function') {
+                            App.ui.pages.renderBasicParams();
+                        }
+                        if (typeof App.ui.pages.renderCarTab === 'function') {
+                            App.ui.pages.renderCarTab();
+                        }
                         return { success: true };
                     }
                     case 'car': {
@@ -255,19 +281,16 @@ App.db.sync.processSyncQueue = async function() {
     let errorCount = 0;
     try {
         await new Promise(r => setTimeout(r, 100));
-
         let pending = await App.db.getAll('pending_actions');
         if (!pending.length && App.store.pendingActions?.length) {
             console.warn('[Sync] Очередь в БД пуста, но store.pendingActions не пуст, пробуем снова...');
             await new Promise(r => setTimeout(r, 500));
             pending = await App.db.getAll('pending_actions');
         }
-
         if (!pending.length) {
             console.log('[Sync] Действий нет');
             return;
         }
-
         console.log(`[Sync] Действий: ${pending.length}`);
         for (let i = 0; i < pending.length; i++) {
             const action = pending[i];
@@ -280,8 +303,6 @@ App.db.sync.processSyncQueue = async function() {
                 errorCount++;
                 const retry = (action.retryCount || 0) + 1;
                 await App.db.sync._updatePendingAction(action, retry, err.message);
-
-                // Если ошибка явно сетевая – прерываем обработку очереди
                 if (err.message && (err.message.includes('fetch') || err.message.includes('network') || err.message.includes('timeout') || err.message.includes('abort'))) {
                     console.warn('[Sync] Обнаружена сетевая ошибка, синхронизация прервана');
                     break;
@@ -289,10 +310,8 @@ App.db.sync.processSyncQueue = async function() {
             }
             await new Promise(r => setTimeout(r, 200));
         }
-
         await App.store.loadFromIndexedDB();
         if (typeof App.renderAll === 'function') App.renderAll();
-
         if (errorCount === 0) {
             App.toast('Синхронизация завершена', 'success');
         } else {
