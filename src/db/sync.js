@@ -6,7 +6,7 @@ App.db.sync = App.db.sync || {};
 const MAX_RETRIES = 10;
 const BASE_DELAY = 1000;
 const MAX_DELAY = 30000;
-const ACTION_TIMEOUT = 10000;   // 10 секунд на действие
+const ACTION_TIMEOUT = 20000;   // 20 секунд на действие (совпадает с таймаутами в supabase.js)
 
 App.db.sync._getDelay = function(retryCount) {
     const delay = Math.min(BASE_DELAY * Math.pow(2, retryCount), MAX_DELAY);
@@ -40,18 +40,7 @@ App.db.sync._executeAction = async function(action) {
     const { type, entityType, entityId, data } = action;
     console.log(`[Sync] Выполнение действия ${action.id}, тип=${type}, сущность=${entityType}`);
 
-    // Быстрая проверка доступности сервера
-    const online = await App.network.isReallyOnline();
-    if (!online) {
-        console.warn(`[Sync] Сервер недоступен, действие ${action.id} отложено`);
-        throw new Error('Сервер недоступен');
-    }
-
-    if (type === 'delete' && entityType !== 'car') {
-        return await App.db.sync._executeDelete(action);
-    }
-
-    // Основная логика с защитным таймаутом
+    // Общий таймаут для любого действия (включая удаление)
     let timer;
     const timeoutPromise = new Promise((_, reject) => {
         timer = setTimeout(() => reject(new Error(`Действие ${action.id} превысило таймаут`)), ACTION_TIMEOUT);
@@ -60,6 +49,11 @@ App.db.sync._executeAction = async function(action) {
     try {
         const result = await Promise.race([
             (async () => {
+                // Сначала проверяем удаление – теперь оно внутри общей гонки
+                if (type === 'delete' && entityType !== 'car') {
+                    return await App.db.sync._executeDelete(action);
+                }
+
                 switch (entityType) {
                     case 'operation':
                     case 'fuel':
@@ -256,15 +250,23 @@ App.db.sync.processSyncQueue = async function() {
         return;
     }
 
+    // Один health-check перед синхронизацией
+    if (typeof App.network !== 'undefined' && typeof App.network.isReallyOnline === 'function') {
+        const online = await App.network.isReallyOnline();
+        if (!online) {
+            console.log('[Sync] Сервер недоступен, синхронизация отложена');
+            return;
+        }
+    }
+
     App.db.sync._isRunning = true;
     console.log('[Sync] Старт');
 
+    let errorCount = 0;
     try {
-        // Даём IndexedDB завершить транзакции
         await new Promise(r => setTimeout(r, 100));
 
         let pending = await App.db.getAll('pending_actions');
-        // Защита от ложного пустого чтения
         if (!pending.length && App.store.pendingActions?.length) {
             console.warn('[Sync] Очередь в БД пуста, но store.pendingActions не пуст, пробуем снова...');
             await new Promise(r => setTimeout(r, 500));
@@ -285,17 +287,30 @@ App.db.sync.processSyncQueue = async function() {
                 await App.db.delete('pending_actions', action.id);
                 console.log(`[Sync] Действие ${action.id} выполнено и удалено из очереди`);
             } catch (err) {
+                errorCount++;
                 const retry = (action.retryCount || 0) + 1;
                 await App.db.sync._updatePendingAction(action, retry, err.message);
+
+                // Если ошибка явно сетевая – прерываем обработку очереди
+                if (err.message && (err.message.includes('fetch') || err.message.includes('network') || err.message.includes('timeout') || err.message.includes('abort'))) {
+                    console.warn('[Sync] Обнаружена сетевая ошибка, синхронизация прервана');
+                    break;
+                }
             }
             await new Promise(r => setTimeout(r, 200));
         }
 
         await App.store.loadFromIndexedDB();
         if (typeof App.renderAll === 'function') App.renderAll();
-        App.toast('Синхронизация завершена', 'success');
+
+        if (errorCount === 0) {
+            App.toast('Синхронизация завершена', 'success');
+        } else {
+            App.toast(`Синхронизация завершена с ошибками (${errorCount}). Часть действий останется в очереди.`, 'warning');
+        }
     } catch (outerErr) {
         console.error('[Sync] Критическая ошибка:', outerErr);
+        App.toast('Ошибка синхронизации', 'error');
     } finally {
         App.db.sync._isRunning = false;
         clearTimeout(App.db.sync._retryTimeout);
