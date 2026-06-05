@@ -555,17 +555,14 @@
                         if (typeof App.ui.pages.renderCarSelector === 'function') App.ui.pages.renderCarSelector();
                         if (typeof App.ui.pages.renderCarTab === 'function') App.ui.pages.renderCarTab();
                     }
-
-                    // Теперь синхронизируемся и загружаем данные (фоновая загрузка)
-                    if (typeof App.db.sync !== 'undefined' && typeof App.db.sync.processSyncQueue === 'function') {
-                        await App.db.sync.processSyncQueue();
-                    }
-                    if (typeof App.storage !== 'undefined' && typeof App.storage.loadAllData === 'function') {
-                        App.storage.loadAllData().catch(err => console.warn('Ошибка loadAllData:', err));
-                    }
-                    if (App.store.operations.length === 0) {
-                        await forceLoadDataFromSupabase();
-                    }
+                    
+                    // Фоновая синхронизация и загрузка, без блокировок
+if (typeof App.db.sync !== 'undefined' && typeof App.db.sync.processSyncQueue === 'function') {
+    App.db.sync.processSyncQueue().catch(err => console.warn('Ошибка синхронизации:', err));
+}
+if (typeof App.storage !== 'undefined' && typeof App.storage.loadAllData === 'function') {
+    App.storage.loadAllData().catch(err => console.warn('Ошибка loadAllData:', err));
+}
 
                     if (typeof App.ui.pages.checkPendingInvites === 'function') App.ui.pages.checkPendingInvites();
                     if (App.store.activeCarId && App.realtime && typeof App.realtime.subscribeToCar === 'function') {
