@@ -1,5 +1,5 @@
 // src/main.js
-// ===== Полифил crypto.randomUUID для старых браузеров =====
+// ===== Полифил crypto.randomUUID =====
 (function() {
     if (typeof crypto === 'undefined' || typeof crypto.randomUUID !== 'function') {
         crypto.randomUUID = function() {
@@ -121,6 +121,7 @@
     }
 
     function initAuthFormEvents(container) {
+        // ... оставьте без изменений, как в предыдущей версии ...
         const tabLogin = container.querySelector('#tab-login');
         const tabSocial = container.querySelector('#tab-social');
         const authLoginDiv = container.querySelector('#auth-login');
@@ -702,7 +703,7 @@
                     flowType: 'pkce'
                 },
                 realtime: {
-                    enabled: false   // отключаем авто-WebSocket
+                    enabled: false
                 }
             }
         );
@@ -775,17 +776,7 @@
                 if (savedUsername) updateUsernameDisplay(savedUsername);
             }
             await handleOnlineSession();
-
-            // Проверка целостности кэша
-            if ('caches' in window) {
-                caches.match('./index.html').then(response => {
-                    if (!response) {
-                        console.warn('[Cache] Кэш приложения повреждён или отсутствует. Очищаем и перезагружаем.');
-                        caches.keys().then(keys => keys.forEach(key => caches.delete(key)));
-                        setTimeout(() => window.location.reload(), 1000);
-                    }
-                });
-            }
+            // (проверка кэша убрана, чтобы не вызывать циклических перезагрузок)
         });
 
         if (sidebarLoginBtn) sidebarLoginBtn.addEventListener('click', openAuthModal);
@@ -822,22 +813,19 @@
             });
         }
 
-        // Обработчик online: синхронизация и фоновая загрузка данных
+        // Обработчик online
         window.addEventListener('online', async function() {
             console.log('[Main] Получено событие online');
             if (typeof App.toast === 'function') App.toast('Сеть восстановлена', 'success');
 
-            // 1. Синхронизация очереди
             if (App.db.sync && !App.db.sync._isRunning) {
                 try { await App.db.sync.processSyncQueue(); } catch (e) { console.error(e); }
             }
 
-            // 2. Фоновая загрузка данных (не ждём)
             if (App.store.activeCarId && typeof App.storage.loadAllData === 'function') {
                 App.storage.loadAllData().catch(e => console.error(e));
             }
 
-            // 3. Realtime пробуем включить только при реальной сети
             if (App.realtime && typeof App.realtime.resubscribe === 'function') {
                 App.realtime.resubscribe();
             }
@@ -919,7 +907,7 @@
         })();
     }
 
-    // Глобальные функции восстановления
+    // Глобальные функции восстановления (без изменений)
     window.recoverViaTelegram = async function() {
         try {
             const username = await App.ui.promptModalAsync('Восстановление через Telegram', 'Введите ваш логин');
