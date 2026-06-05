@@ -6,7 +6,7 @@ App.db.sync = App.db.sync || {};
 const MAX_RETRIES = 10;
 const BASE_DELAY = 1000;
 const MAX_DELAY = 30000;
-const ACTION_TIMEOUT = 15000;   // 15 секунд на одно действие
+const ACTION_TIMEOUT = 30000;   // 30 секунд на действие
 
 App.db.sync._getDelay = function(retryCount) {
     const delay = Math.min(BASE_DELAY * Math.pow(2, retryCount), MAX_DELAY);
@@ -40,7 +40,6 @@ App.db.sync._executeAction = async function(action) {
     const { type, entityType, entityId, data } = action;
     console.log(`[Sync] Выполнение действия ${action.id}, тип=${type}, сущность=${entityType}`);
 
-    // Все delete-действия (кроме cars) направляем в специализированный обработчик
     if (type === 'delete' && entityType !== 'car') {
         return await App.db.sync._executeDelete(action);
     }
@@ -249,52 +248,53 @@ App.db.sync.processSyncQueue = async function() {
         console.log('[Sync] Синхронизация уже выполняется');
         return;
     }
+
     App.db.sync._isRunning = true;
-    console.log('[Sync] Старт синхронизации...');
+    console.log('[Sync] Старт');
+
     try {
-        const pending = await App.db.getAll('pending_actions');
+        // Даём IndexedDB завершить транзакции
+        await new Promise(r => setTimeout(r, 100));
+
+        let pending = await App.db.getAll('pending_actions');
+        // Защита от ложного пустого чтения
+        if (!pending.length && App.store.pendingActions?.length) {
+            console.warn('[Sync] Очередь в БД пуста, но store.pendingActions не пуст, пробуем снова...');
+            await new Promise(r => setTimeout(r, 500));
+            pending = await App.db.getAll('pending_actions');
+        }
+
         if (!pending.length) {
-            console.log('[Sync] Нет отложенных действий');
+            console.log('[Sync] Действий нет');
             return;
         }
-        console.log(`[Sync] Начинаем синхронизацию ${pending.length} действий`);
+
+        console.log(`[Sync] Действий: ${pending.length}`);
         for (let i = 0; i < pending.length; i++) {
             const action = pending[i];
-            console.log(`[Sync] Обработка ${i+1}/${pending.length}: ${action.id}`);
+            console.log(`[Sync] ${i+1}/${pending.length}: ${action.id}`);
             try {
                 await App.db.sync._executeAction(action);
                 await App.db.delete('pending_actions', action.id);
-                console.log(`[Sync] Действие ${action.id} выполнено и удалено из очереди`);
             } catch (err) {
-                console.error(`[Sync] Ошибка действия ${action.id}:`, err);
-                const newRetryCount = (action.retryCount || 0) + 1;
-                await App.db.sync._updatePendingAction(action, newRetryCount, err.message);
-                // Продолжаем цикл
+                const retry = (action.retryCount || 0) + 1;
+                await App.db.sync._updatePendingAction(action, retry, err.message);
             }
-            // Небольшая пауза
             await new Promise(r => setTimeout(r, 200));
         }
-        console.log('[Sync] Все действия обработаны, обновляем UI...');
+
         await App.store.loadFromIndexedDB();
-        if (typeof App.events !== 'undefined' && App.events.currentActiveTab) {
-            App.events.switchToTab(App.events.currentActiveTab);
-        }
         if (typeof App.renderAll === 'function') App.renderAll();
-        App.toast('Данные синхронизированы', 'success');
+        App.toast('Синхронизация завершена', 'success');
     } catch (outerErr) {
-        console.error('[Sync] Критическая ошибка синхронизации:', outerErr);
-        App.toast('Ошибка синхронизации', 'error');
+        console.error('[Sync] Критическая ошибка:', outerErr);
     } finally {
         App.db.sync._isRunning = false;
-        console.log('[Sync] Синхронизация завершена');
         clearTimeout(App.db.sync._retryTimeout);
-        App.db.sync._retryTimeout = setTimeout(() => {
-            App.db.sync.processSyncQueue();
-        }, 60000);
+        App.db.sync._retryTimeout = setTimeout(() => App.db.sync.processSyncQueue(), 60000);
     }
 };
 
 App.db.sync.forceSync = async function() {
-    console.log('[Sync] forceSync вызван');
     await App.db.sync.processSyncQueue();
 };
