@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes">
 <meta http-equiv="Content-Security-Policy" content="
+  default-src 'self';
   connect-src 'self' 
     https://qbjlccdqaudyvedpysil.supabase.co 
     wss://qbjlccdqaudyvedpysil.supabase.co 
@@ -16,8 +17,14 @@
     https://www.google.com
     https://www.gstatic.com
     https://api.github.com
-    https://cdnjs.cloudflare.com;
-  script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://unpkg.com https://cdnjs.cloudflare.com https://www.gstatic.com https://cdn.sheetjs.com;
+    https://cdnjs.cloudflare.com
+    https: wss:;
+  script-src 'self' 'unsafe-inline' 'unsafe-eval' 
+    https://cdn.jsdelivr.net 
+    https://unpkg.com 
+    https://cdnjs.cloudflare.com 
+    https://www.gstatic.com 
+    https://cdn.sheetjs.com;
   style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://unpkg.com;
   img-src 'self' data: blob: https://qbjlccdqaudyvedpysil.supabase.co https:;
   worker-src 'self' blob:;
