@@ -1,4 +1,4 @@
-// src/db/sync.js
+// src/db/sync.js (последняя версия, без health-check, с таймаутом)
 window.App = window.App || {};
 App.db = App.db || {};
 App.db.sync = App.db.sync || {};
@@ -18,21 +18,10 @@ App.db.sync._updatePendingAction = async function(action, retryCount, errorMessa
     action.retryCount = retryCount;
     action.lastError = errorMessage;
     action.lastAttempt = Date.now();
-
     if (retryCount >= MAX_RETRIES) {
         console.error(`[Sync] Действие ${action.id} временно провалилось (${retryCount} попыток), оставлено в очереди:`, errorMessage);
-        await App.db.put('error_log', {
-            id: crypto.randomUUID(),
-            type: 'sync_failed_retry_later',
-            action: action,
-            timestamp: Date.now(),
-            message: errorMessage
-        });
-        if (typeof App.toast === 'function') {
-            App.toast('Некоторые действия не синхронизированы — попробуйте позже', 'warning');
-        }
+        await App.db.put('error_log', { id: crypto.randomUUID(), type: 'sync_failed_retry_later', action: action, timestamp: Date.now(), message: errorMessage });
     }
-
     await App.db.put('pending_actions', action);
 };
 
@@ -40,7 +29,6 @@ App.db.sync._executeAction = async function(action) {
     const { type, entityType, entityId, data } = action;
     console.log(`[Sync] Выполнение действия ${action.id}, тип=${type}, сущность=${entityType}`);
 
-    // Общий таймаут для любого действия (включая удаление)
     let timer;
     const timeoutPromise = new Promise((_, reject) => {
         timer = setTimeout(() => reject(new Error(`Действие ${action.id} превысило таймаут`)), ACTION_TIMEOUT);
@@ -49,18 +37,11 @@ App.db.sync._executeAction = async function(action) {
     try {
         const result = await Promise.race([
             (async () => {
-                // Сначала проверяем удаление – теперь оно внутри общей гонки
                 if (type === 'delete' && entityType !== 'car') {
                     return await App.db.sync._executeDelete(action);
                 }
-
                 switch (entityType) {
-                    case 'operation':
-                    case 'fuel':
-                    case 'tire':
-                    case 'part':
-                    case 'history':
-                    case 'mileage': {
+                    case 'operation': case 'fuel': case 'tire': case 'part': case 'history': case 'mileage': {
                         const map = {
                             'operation': () => App.supa.saveOperation(data),
                             'fuel': () => App.supa.saveFuelRecord(data),
@@ -103,38 +84,13 @@ App.db.sync._executeAction = async function(action) {
                         } else {
                             cleanedData.vin = '';
                         }
-                        await App.supa.saveVehicleState({
-                            currentMileage: cleanedData.currentMileage,
-                            currentMotohours: cleanedData.currentMotohours,
-                            avgDailyMileage: cleanedData.avgDailyMileage,
-                            avgDailyMotohours: cleanedData.avgDailyMotohours,
-                            carBrand: cleanedData.carBrand,
-                            carModel: cleanedData.carModel,
-                            carYear: cleanedData.carYear,
-                            plateNumber: cleanedData.plateNumber,
-                            vin: cleanedData.vin,
-                            baseMileage: cleanedData.baseMileage,
-                            baseMotohours: cleanedData.baseMotohours,
-                            purchaseDate: cleanedData.purchaseDate,
-                            purchaseCost: cleanedData.purchaseCost
-                        });
-                        await App.supa.saveUserSettings({
-                            telegramToken: cleanedData.telegramToken,
-                            telegramChatId: cleanedData.telegramChatId,
-                            notificationMethod: cleanedData.notificationMethod,
-                            reminderDays: cleanedData.reminderDays
-                        });
+                        await App.supa.saveVehicleState({ ...cleanedData });
+                        await App.supa.saveUserSettings({ ...cleanedData });
                         Object.assign(App.store.settings, cleanedData);
                         await App.db.put('car_settings', { ...App.store.settings, car_id: App.store.activeCarId });
-                        if (typeof App.ui.pages.loadCarDetails === 'function') {
-                            App.ui.pages.loadCarDetails(App.store.activeCarId);
-                        }
-                        if (typeof App.ui.pages.renderBasicParams === 'function') {
-                            App.ui.pages.renderBasicParams();
-                        }
-                        if (typeof App.ui.pages.renderCarTab === 'function') {
-                            App.ui.pages.renderCarTab();
-                        }
+                        if (typeof App.ui.pages.loadCarDetails === 'function') App.ui.pages.loadCarDetails(App.store.activeCarId);
+                        if (typeof App.ui.pages.renderBasicParams === 'function') App.ui.pages.renderBasicParams();
+                        if (typeof App.ui.pages.renderCarTab === 'function') App.ui.pages.renderCarTab();
                         return { success: true };
                     }
                     case 'car': {
@@ -200,40 +156,26 @@ App.db.sync._executeDelete = async function(action) {
                 .eq('id', entityId)
                 .eq('car_id', carId)
                 .select('id');
-
             if (error) {
-                if (error.status === 404) {
-                    console.log(`[Sync] Запись ${entityId} не найдена на сервере, считаем удалённой`);
-                    break;
-                }
+                if (error.status === 404) break;
                 throw error;
             }
-
-            console.log(`[Sync] Удаление на сервере успешно для ${entityId}, удалено записей: ${deleted?.length || 0}`);
             break;
         } catch (err) {
-            console.error(`[Sync] Попытка ${attempt} удаления на сервере не удалась:`, err.message);
+            console.error(`[Sync] Попытка ${attempt} удаления:`, err.message);
             if (attempt === MAX_RETRIES) {
-                console.error(`[Sync] Удаление ${entityId} не удалось после ${MAX_RETRIES} попыток, оставляем в очереди`);
                 action.retryCount = MAX_RETRIES;
                 action.lastError = err.message;
                 action.lastAttempt = Date.now();
                 await App.db.put('pending_actions', action);
-                throw new Error(`Удаление отложено, будет повторено при следующей синхронизации`);
+                throw new Error(`Удаление отложено`);
             }
             await new Promise(r => setTimeout(r, 1000 * attempt));
         }
     }
 
-    // Локальная очистка
-    try { await App.db.delete(tableName, entityId); } catch (e) { /* ignore */ }
-    const storeKey = {
-        'operations': 'operations',
-        'fuel_log': 'fuelLog',
-        'tires': 'tireLog',
-        'parts': 'parts',
-        'history': 'serviceRecords'
-    }[tableName];
+    try { await App.db.delete(tableName, entityId); } catch (e) {}
+    const storeKey = { 'operations': 'operations', 'fuel_log': 'fuelLog', 'tires': 'tireLog', 'parts': 'parts', 'history': 'serviceRecords' }[tableName];
     if (storeKey && App.store[storeKey]) {
         App.store[storeKey] = App.store[storeKey].filter(i => i.id != entityId);
     }
@@ -266,45 +208,30 @@ App.db.sync.processSyncQueue = async function() {
         setTimeout(() => App.db.sync.processSyncQueue(), 1000);
         return;
     }
-    if (!navigator.onLine) {
-        console.log('[Sync] Нет сети, синхронизация отложена');
-        return;
-    }
-    if (App.db.sync._isRunning) {
-        console.log('[Sync] Синхронизация уже выполняется');
-        return;
-    }
+    if (!navigator.onLine) return;
+    if (App.db.sync._isRunning) return;
 
     App.db.sync._isRunning = true;
-    console.log('[Sync] Старт');
-
     let errorCount = 0;
     try {
         await new Promise(r => setTimeout(r, 100));
         let pending = await App.db.getAll('pending_actions');
         if (!pending.length && App.store.pendingActions?.length) {
-            console.warn('[Sync] Очередь в БД пуста, но store.pendingActions не пуст, пробуем снова...');
             await new Promise(r => setTimeout(r, 500));
             pending = await App.db.getAll('pending_actions');
         }
-        if (!pending.length) {
-            console.log('[Sync] Действий нет');
-            return;
-        }
-        console.log(`[Sync] Действий: ${pending.length}`);
+        if (!pending.length) return;
+
         for (let i = 0; i < pending.length; i++) {
             const action = pending[i];
-            console.log(`[Sync] ${i+1}/${pending.length}: ${action.id}`);
             try {
                 await App.db.sync._executeAction(action);
                 await App.db.delete('pending_actions', action.id);
-                console.log(`[Sync] Действие ${action.id} выполнено и удалено из очереди`);
             } catch (err) {
                 errorCount++;
                 const retry = (action.retryCount || 0) + 1;
                 await App.db.sync._updatePendingAction(action, retry, err.message);
                 if (err.message && (err.message.includes('fetch') || err.message.includes('network') || err.message.includes('timeout') || err.message.includes('abort'))) {
-                    console.warn('[Sync] Обнаружена сетевая ошибка, синхронизация прервана');
                     break;
                 }
             }
@@ -312,14 +239,8 @@ App.db.sync.processSyncQueue = async function() {
         }
         await App.store.loadFromIndexedDB();
         if (typeof App.renderAll === 'function') App.renderAll();
-        if (errorCount === 0) {
-            App.toast('Синхронизация завершена', 'success');
-        } else {
-            App.toast(`Синхронизация завершена с ошибками (${errorCount}). Часть действий останется в очереди.`, 'warning');
-        }
     } catch (outerErr) {
         console.error('[Sync] Критическая ошибка:', outerErr);
-        App.toast('Ошибка синхронизации', 'error');
     } finally {
         App.db.sync._isRunning = false;
         clearTimeout(App.db.sync._retryTimeout);
