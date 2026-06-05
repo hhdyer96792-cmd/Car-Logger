@@ -32,7 +32,6 @@ async function queueAction(action) {
             console.warn('[Storage] Background Sync registration failed:', err);
         }
     }
-    // Всегда пытаемся сразу запустить синхронизацию – она проверит navigator.onLine внутри
     if (typeof App.db.sync.processSyncQueue === 'function') {
         setTimeout(() => App.db.sync.processSyncQueue(), 50);
     }
@@ -440,71 +439,76 @@ App.storage.loadSettingsForCar = async function(carId) {
     }
 };
 
-// ========== ЗАГРУЗКА ВСЕХ ДАННЫХ ==========
+// ========== ЗАГРУЗКА ВСЕХ ДАННЫХ (фоновая, неблокирующая) ==========
 App.storage.loadAllData = async function() {
+    // 1. Мгновенно загружаем локальные данные и отображаем
+    await App.store.loadFromIndexedDB();
+    document.getElementById('data-panel').style.display = 'block';
+    if (typeof App.renderAll === 'function') App.renderAll();
+    App.setSyncStatus('local');
+
     if (!navigator.onLine) {
-        App.toast('Нет подключения к интернету. Показываю кэшированные данные.', 'warning');
-        await App.store.loadFromIndexedDB();
-        document.getElementById('data-panel').style.display = 'block';
-        if (typeof App.renderAll === 'function') App.renderAll();
-        App.setSyncStatus('local');
+        App.toast('Вы офлайн. Работаем с локальными данными.', 'warning');
         return;
     }
 
     const carId = App.store.activeCarId;
     if (!carId) return;
 
+    // 2. Последовательная загрузка серверных данных (не нагружаем канал)
     const loadTable = async (name, loader) => {
         try {
             const data = await loader();
             return data || [];
         } catch (err) {
-            console.error(`[Storage] Ошибка загрузки ${name}:`, err);
-            App.toast(`Не удалось загрузить ${name}`, 'warning');
-            return [];
+            console.warn(`[Storage] Не удалось загрузить ${name}:`, err.message);
+            return null;   // null = не обновляем
         }
     };
 
-    const operations = await loadTable('операций', App.supa.loadOperations);
-    const fuelLog = await loadTable('заправок', App.supa.loadFuelLog);
-    const tireLog = await loadTable('шин', App.supa.loadTires);
-    const parts = await loadTable('запчастей', App.supa.loadParts);
-    const history = await loadTable('истории', App.supa.loadHistory);
-    const settings = await loadTable('настроек', App.supa.loadSettings);
-    const mileageHistory = await loadTable('пробега', App.supa.loadMileageHistory);
-
-    const opsWithCar = operations.map(op => ({ ...op, id: op.id || crypto.randomUUID(), car_id: carId }));
-    const fuelWithCar = fuelLog.map(f => ({ ...f, id: f.id || crypto.randomUUID(), car_id: carId }));
-    const tiresWithCar = tireLog.map(t => ({ ...t, id: t.id || crypto.randomUUID(), car_id: carId }));
-    const partsWithCar = parts.map(p => ({ ...p, id: p.id || crypto.randomUUID(), car_id: carId }));
-    const historyWithCar = history.map(h => ({ ...h, id: h.id || crypto.randomUUID(), car_id: carId }));
-    const mileageWithCar = mileageHistory.map(m => ({ ...m, id: m.id || crypto.randomUUID(), car_id: carId }));
-
-    try { await App.db.putMany('operations', opsWithCar); } catch (e) { console.error(e); }
-    try { await App.db.putMany('fuel_log', fuelWithCar); } catch (e) { console.error(e); }
-    try { await App.db.putMany('tires', tiresWithCar); } catch (e) { console.error(e); }
-    try { await App.db.putMany('parts', partsWithCar); } catch (e) { console.error(e); }
-    try { await App.db.putMany('service_records', historyWithCar); } catch (e) { console.error(e); }
-    try { await App.db.putMany('mileage_log', mileageWithCar); } catch (e) { console.error(e); }
-    if (settings) {
-        const settingsWithCar = { ...settings, car_id: carId };
-        if (settingsWithCar.plateNumber && typeof settingsWithCar.plateNumber !== 'string') settingsWithCar.plateNumber = String(settingsWithCar.plateNumber);
-        if (settingsWithCar.vin && typeof settingsWithCar.vin !== 'string') settingsWithCar.vin = String(settingsWithCar.vin);
-        try { await App.db.put('car_settings', settingsWithCar); } catch (e) { console.error(e); }
-        Object.assign(App.store.settings, settings);
+    const updates = {};
+    for (const [key, loader] of [
+        ['operations', App.supa.loadOperations],
+        ['fuel_log', App.supa.loadFuelLog],
+        ['tires', App.supa.loadTires],
+        ['parts', App.supa.loadParts],
+        ['history', App.supa.loadHistory],
+        ['mileage', App.supa.loadMileageHistory],
+        ['settings', App.supa.loadSettings]
+    ]) {
+        updates[key] = await loadTable(key, loader);
     }
 
-    App.store.operations = opsWithCar;
-    App.store.fuelLog = fuelWithCar;
-    App.store.tireLog = tiresWithCar;
-    App.store.parts = partsWithCar;
-    App.store.serviceRecords = historyWithCar;
-    App.store.mileageHistory = mileageWithCar;
+    // 3. Аккуратно обновляем Store и IndexedDB только успешными данными
+    if (updates.operations) {
+        App.store.operations = updates.operations.map(op => ({ ...op, car_id: carId }));
+        await App.db.putMany('operations', App.store.operations);
+    }
+    if (updates.fuel_log) {
+        App.store.fuelLog = updates.fuel_log.map(f => ({ ...f, car_id: carId }));
+        await App.db.putMany('fuel_log', App.store.fuelLog);
+    }
+    if (updates.tires) {
+        App.store.tireLog = updates.tires.map(t => ({ ...t, car_id: carId }));
+        await App.db.putMany('tires', App.store.tireLog);
+    }
+    if (updates.parts) {
+        App.store.parts = updates.parts.map(p => ({ ...p, car_id: carId }));
+        await App.db.putMany('parts', App.store.parts);
+    }
+    if (updates.history) {
+        App.store.serviceRecords = updates.history.map(h => ({ ...h, car_id: carId }));
+        await App.db.putMany('service_records', App.store.serviceRecords);
+    }
+    if (updates.mileage) {
+        App.store.mileageHistory = updates.mileage.map(m => ({ ...m, car_id: carId }));
+        await App.db.putMany('mileage_log', App.store.mileageHistory);
+    }
+    if (updates.settings) {
+        Object.assign(App.store.settings, updates.settings);
+        await App.db.put('car_settings', { ...App.store.settings, car_id: carId });
+    }
 
-    document.getElementById('data-panel').style.display = 'block';
     if (typeof App.renderAll === 'function') App.renderAll();
     App.setSyncStatus('synced');
-    if (App.events.currentActiveTab) {
-        App.events.switchToTab(App.events.currentActiveTab);
-    }
 };
