@@ -6,7 +6,7 @@ App.db.sync = App.db.sync || {};
 const MAX_RETRIES = 10;
 const BASE_DELAY = 1000;
 const MAX_DELAY = 30000;
-const ACTION_TIMEOUT = 20000;   // 20 секунд на действие
+const ACTION_TIMEOUT = 30000;   // 30 секунд на действие
 
 App.db.sync._getDelay = function(retryCount) {
     const delay = Math.min(BASE_DELAY * Math.pow(2, retryCount), MAX_DELAY);
@@ -49,7 +49,6 @@ App.db.sync._executeAction = async function(action) {
     try {
         const result = await Promise.race([
             (async () => {
-                // Сначала проверяем удаление – теперь оно внутри общей гонки
                 if (type === 'delete' && entityType !== 'car') {
                     return await App.db.sync._executeDelete(action);
                 }
