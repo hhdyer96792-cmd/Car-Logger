@@ -11,6 +11,7 @@ function checkResponse({ data, error }, actionName) {
 
 async function queueAction(action) {
     await App.store.addPendingAction(action);
+    // Обновляем UI после добавления в очередь
     if (action.entityType === 'fuel') refreshUIToFuel();
     else if (action.entityType === 'operation') refreshUIToTables();
     else if (action.entityType === 'part') refreshUIToParts();
@@ -36,13 +37,33 @@ async function queueAction(action) {
     }
 }
 
-function refreshUIToFuel() { if (typeof App.ui.pages.renderFuelTab === 'function') App.ui.pages.renderFuelTab(); }
-function refreshUIToTables() { if (typeof App.ui.pages.renderTOTable === 'function') App.ui.pages.renderTOTable(); if (typeof App.ui.pages.renderDashboard === 'function') App.ui.pages.renderDashboard(); }
-function refreshUIToParts() { if (typeof App.ui.pages.renderPartsTab === 'function') App.ui.pages.renderPartsTab(); if (typeof App.ui.pages.renderDashboard === 'function') App.ui.pages.renderDashboard(); }
-function refreshUIToTires() { if (typeof App.ui.pages.renderTiresTab === 'function') App.ui.pages.renderTiresTab(); if (typeof App.ui.pages.renderDashboard === 'function') App.ui.pages.renderDashboard(); }
-function refreshUIToMileage() { if (typeof App.ui.pages.renderDashboard === 'function') App.ui.pages.renderDashboard(); if (typeof App.ui.pages.renderTOStats === 'function') App.ui.pages.renderTOStats(); }
-function refreshUIToSettings() { if (typeof App.ui.pages.populateSettingsFields === 'function') App.ui.pages.populateSettingsFields(); if (typeof App.ui.pages.renderDashboard === 'function') App.ui.pages.renderDashboard(); }
-function refreshUIToHistory() { if (typeof App.ui.pages.renderHistoryCards === 'function') App.ui.pages.renderHistoryCards(); if (typeof App.ui.pages.renderDashboard === 'function') App.ui.pages.renderDashboard(); }
+function refreshUIToFuel() {
+    if (typeof App.ui.pages.renderFuelTab === 'function') App.ui.pages.renderFuelTab();
+}
+function refreshUIToTables() {
+    if (typeof App.ui.pages.renderTOTable === 'function') App.ui.pages.renderTOTable();
+    if (typeof App.ui.pages.renderDashboard === 'function') App.ui.pages.renderDashboard();
+}
+function refreshUIToParts() {
+    if (typeof App.ui.pages.renderPartsTab === 'function') App.ui.pages.renderPartsTab();
+    if (typeof App.ui.pages.renderDashboard === 'function') App.ui.pages.renderDashboard();
+}
+function refreshUIToTires() {
+    if (typeof App.ui.pages.renderTiresTab === 'function') App.ui.pages.renderTiresTab();
+    if (typeof App.ui.pages.renderDashboard === 'function') App.ui.pages.renderDashboard();
+}
+function refreshUIToMileage() {
+    if (typeof App.ui.pages.renderDashboard === 'function') App.ui.pages.renderDashboard();
+    if (typeof App.ui.pages.renderTOStats === 'function') App.ui.pages.renderTOStats();
+}
+function refreshUIToSettings() {
+    if (typeof App.ui.pages.populateSettingsFields === 'function') App.ui.pages.populateSettingsFields();
+    if (typeof App.ui.pages.renderDashboard === 'function') App.ui.pages.renderDashboard();
+}
+function refreshUIToHistory() {
+    if (typeof App.ui.pages.renderHistoryCards === 'function') App.ui.pages.renderHistoryCards();
+    if (typeof App.ui.pages.renderDashboard === 'function') App.ui.pages.renderDashboard();
+}
 
 // ========== АВТОМОБИЛИ ==========
 App.storage.saveCar = async function(car) {
@@ -58,6 +79,7 @@ App.storage.saveCar = async function(car) {
         entityId: carWithId.id,
         data: carWithId
     });
+    App.toast('Автомобиль сохранён локально', 'warning');
     return carWithId;
 };
 
@@ -70,6 +92,7 @@ App.storage.deleteCar = async function(carId) {
         entityId: carId,
         data: { id: carId, car_id: carId }
     });
+    App.toast('Удаление сохранено локально', 'warning');
     return true;
 };
 
@@ -85,6 +108,7 @@ App.storage.renameCar = async function(carId, newName) {
         entityId: carId,
         data: updatedCar
     });
+    App.toast('Переименование сохранено локально', 'warning');
     return true;
 };
 
@@ -101,6 +125,7 @@ App.storage.addCarDocument = async function(doc) {
         entityId: docWithCarId.id,
         data: docWithCarId
     });
+    App.toast('Документ сохранён локально', 'warning');
     return docWithCarId;
 };
 
@@ -114,7 +139,10 @@ App.storage.deleteCarDocument = async function(docId) {
             entityId: docId,
             data: { id: docId, car_id: carId }
         });
-    } catch (e) { console.warn(e); }
+    } catch (e) {
+        console.warn('[Storage] Ошибка добавления удаления документа в очередь, но локально уже удалён', e);
+    }
+    App.toast('Удаление документа сохранено локально', 'warning');
     return true;
 };
 
@@ -129,6 +157,7 @@ App.storage.saveVehicleStateAndSettings = async function(state, settings) {
     Object.assign(App.store.settings, cleanState, settings);
     await App.db.put('car_settings', { ...App.store.settings, car_id: carId });
     await queueAction({ type: 'save', entityType: 'car_settings', entityId: carId, data });
+    App.toast('Параметры сохранены локально', 'warning');
 };
 
 // ========== ОПЕРАЦИИ ==========
@@ -147,6 +176,7 @@ App.storage.saveOperation = async function(op) {
         entityId: opWithCarId.id,
         data: opWithCarId
     });
+    App.toast('Операция сохранена локально', 'warning');
 };
 
 App.storage.deleteOperation = async function(operationId) {
@@ -161,7 +191,10 @@ App.storage.deleteOperation = async function(operationId) {
             entityId: operationId,
             data: { id: operationId, car_id: carId }
         });
-    } catch (e) { console.warn(e); }
+    } catch (e) {
+        console.warn('[Storage] Ошибка добавления удаления операции в очередь, но локально уже удалена', e);
+    }
+    App.toast('Удаление сохранено локально', 'warning');
 };
 
 // ========== ИСТОРИЯ ==========
@@ -178,6 +211,7 @@ App.storage.addHistoryRecord = async function(rec) {
         entityId: recWithCarId.id,
         data: recWithCarId
     });
+    App.toast('Запись сохранена локально', 'warning');
     refreshUIToHistory();
 };
 
@@ -195,7 +229,10 @@ App.storage.deleteHistoryRecord = async function(rowIndex) {
             entityId: record.id,
             data: { id: record.id, car_id: carId }
         });
-    } catch (e) { console.warn(e); }
+    } catch (e) {
+        console.warn('[Storage] Ошибка добавления удаления истории в очередь, но локально уже удалена', e);
+    }
+    App.toast('Удаление сохранено локально', 'warning');
 };
 
 // ========== ЗАПЧАСТИ ==========
@@ -214,6 +251,7 @@ App.storage.savePart = async function(part) {
         entityId: partWithCarId.id,
         data: partWithCarId
     });
+    App.toast('Запчасть сохранена локально', 'warning');
 };
 
 App.storage.deletePart = async function(partId) {
@@ -228,7 +266,10 @@ App.storage.deletePart = async function(partId) {
             entityId: partId,
             data: { id: partId, car_id: carId }
         });
-    } catch (e) { console.warn(e); }
+    } catch (e) {
+        console.warn('[Storage] Ошибка добавления удаления запчасти в очередь, но локально уже удалена', e);
+    }
+    App.toast('Удаление сохранено локально', 'warning');
 };
 
 // ========== ТОПЛИВО ==========
@@ -247,6 +288,7 @@ App.storage.saveFuelRecord = async function(id, record) {
         entityId: recordWithCarId.id,
         data: recordWithCarId
     });
+    App.toast('Заправка сохранена локально', 'warning');
 };
 
 App.storage.deleteFuelRecord = async function(id) {
@@ -261,7 +303,10 @@ App.storage.deleteFuelRecord = async function(id) {
             entityId: id,
             data: { id: id, car_id: carId }
         });
-    } catch (e) { console.warn(e); }
+    } catch (e) {
+        console.warn('[Storage] Ошибка добавления удаления топлива в очередь, но локально уже удалено', e);
+    }
+    App.toast('Удаление сохранено локально', 'warning');
 };
 
 // ========== ШИНЫ ==========
@@ -280,6 +325,7 @@ App.storage.saveTireRecord = async function(id, record) {
         entityId: recordWithCarId.id,
         data: recordWithCarId
     });
+    App.toast('Шины сохранены локально', 'warning');
 };
 
 App.storage.deleteTireRecord = async function(id) {
@@ -294,7 +340,10 @@ App.storage.deleteTireRecord = async function(id) {
             entityId: id,
             data: { id: id, car_id: carId }
         });
-    } catch (e) { console.warn(e); }
+    } catch (e) {
+        console.warn('[Storage] Ошибка добавления удаления шины в очередь, но локально уже удалено', e);
+    }
+    App.toast('Удаление сохранено локально', 'warning');
 };
 
 // ========== ПРОБЕГ ==========
@@ -312,6 +361,7 @@ App.storage.addMileageRecord = async function(date, mileage, motohours) {
         entityId: record.id,
         data: record
     });
+    App.toast('Запись пробега сохранена локально', 'warning');
     refreshUIToMileage();
 };
 
@@ -339,6 +389,7 @@ App.storage.saveSettings = async function(settings) {
         entityId: carId,
         data: settingsWithCar
     });
+    App.toast('Настройки сохранены локально', 'warning');
     refreshUIToSettings();
 };
 
@@ -400,7 +451,7 @@ const methodMap = {
     car_documents: 'loadCarDocuments'
 };
 
-App.storage.loadFirstPage = async function(table, pageSize = 50) {
+App.storage.loadFirstPage = async function(table, pageSize = 30) {
     if (!navigator.onLine) {
         return App.store[table] || [];
     }
@@ -409,7 +460,11 @@ App.storage.loadFirstPage = async function(table, pageSize = 50) {
     try {
         const { data, error } = await App.supa[methodName](1, pageSize);
         if (error) throw error;
-        return data || [];
+        const carId = App.store.activeCarId;
+        const items = (data || []).map(item => ({ ...item, car_id: carId }));
+        await App.db.putMany(table, items);
+        App.store[table] = items;
+        return items;
     } catch (err) {
         console.warn(`[Storage] Не удалось загрузить ${table}:`, err.message);
         return App.store[table] || [];
@@ -417,7 +472,6 @@ App.storage.loadFirstPage = async function(table, pageSize = 50) {
 };
 
 App.storage.loadAllData = async function() {
-    // Совместимость: просто загружаем локальные данные.
     await App.store.loadFromIndexedDB();
     document.getElementById('data-panel').style.display = 'block';
     if (typeof App.renderAll === 'function') App.renderAll();
