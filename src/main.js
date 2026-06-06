@@ -308,7 +308,7 @@
                     const mobileRowOnline = document.getElementById('mobile-header-row2');
                     if (mobileRowOnline) mobileRowOnline.style.display = 'flex';
 
-                    // PIN / мастер-пароль (упрощено, но с проверками)
+                    // PIN / мастер-пароль
                     let masterPassword = null;
                     const hasPin = App.localAuth && await App.localAuth.isPinSet();
                     if (hasPin) {
@@ -324,7 +324,7 @@
                                     if (typeof App.renderAll === 'function') App.renderAll();
                                 }
                             }
-                        } catch (pinError) { console.warn('PIN error:', pinError); }
+                        } catch (pinError) {}
                     }
                     if (!masterPassword) {
                         const hasMasterPassword = localStorage.getItem('vesta_master_password_set') === 'true';
@@ -378,7 +378,7 @@
                         }
                     }
 
-                    // ----- Сначала получаем автомобили -----
+                    // Автомобили
                     const { data: { user } } = await App.supabase.auth.getUser();
                     const username = user?.user_metadata?.username || user?.email?.split('@')[0] || '';
                     if (username) localStorage.setItem('vesta_username', username);
@@ -387,18 +387,11 @@
                     if (user) {
                         let cars = [];
                         try {
-                            const { data, error } = await App.supabase
-                                .from('cars')
-                                .select('*')
-                                .eq('user_id', user.id);
+                            const { data, error } = await App.supabase.from('cars').select('*').eq('user_id', user.id);
                             if (!error && data && data.length > 0) cars = data;
                         } catch (err) {}
                         if (cars.length === 0) {
-                            const { data: newCar } = await App.supabase
-                                .from('cars')
-                                .insert({ name: 'Мой автомобиль', user_id: user.id })
-                                .select()
-                                .single();
+                            const { data: newCar } = await App.supabase.from('cars').insert({ name: 'Мой автомобиль', user_id: user.id }).select().single();
                             if (newCar) cars = [newCar];
                         }
                         if (cars.length > 0) {
