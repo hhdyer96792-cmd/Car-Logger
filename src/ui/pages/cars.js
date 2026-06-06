@@ -2,49 +2,6 @@
 window.App = window.App || {};
 App.ui.pages = App.ui.pages || {};
 
-// Делегирование для кнопок автомобиля (не теряется после перерисовки)
-document.body.addEventListener('click', (e) => {
-    const target = e.target.closest('#add-car-btn');
-    if (target) {
-        e.preventDefault();
-        App.ui.pages.addCar();
-        return;
-    }
-    const renameTarget = e.target.closest('#rename-car-btn');
-    if (renameTarget) {
-        e.preventDefault();
-        App.ui.pages.renameCar();
-        return;
-    }
-    const deleteTarget = e.target.closest('#delete-car-btn');
-    if (deleteTarget) {
-        e.preventDefault();
-        App.ui.pages.deleteCar();
-        return;
-    }
-    const saveDetailsTarget = e.target.closest('#save-car-details-btn');
-    if (saveDetailsTarget) {
-        e.preventDefault();
-        // Сохраняем данные автомобиля
-        const brand = document.getElementById('car-brand')?.value?.trim();
-        const model = document.getElementById('car-model')?.value?.trim();
-        const year = parseInt(document.getElementById('car-year')?.value) || null;
-        const plate = document.getElementById('car-plate')?.value?.trim();
-        const vin = document.getElementById('car-vin')?.value?.trim();
-        if (brand !== undefined) App.store.settings.carBrand = brand || '';
-        if (model !== undefined) App.store.settings.carModel = model || '';
-        App.store.settings.carYear = year;
-        if (plate !== undefined) App.store.settings.plateNumber = plate || '';
-        if (vin !== undefined) App.store.settings.vin = vin || '';
-        App.storage.saveSettings(App.store.settings).then(() => {
-            App.toast('Данные автомобиля сохранены', 'success');
-        }).catch(err => {
-            console.error(err);
-            App.toast('Ошибка сохранения', 'error');
-        });
-    }
-});
-
 /* ========== ЛОКАЛЬНЫЙ КЭШ ДОКУМЕНТОВ ========== */
 App.ui.pages._carDocuments = [];
 
@@ -56,10 +13,13 @@ App.ui.pages._getUserIdSafe = async function() {
 
 /* ========== ФУНКЦИИ РАБОТЫ С ДОКУМЕНТАМИ ========== */
 App.ui.pages.loadCarDocuments = async function() {
-    if (!App.store.activeCarId) return [];
+    if (!App.store.activeCarId) {
+        App.ui.pages._carDocuments = [];
+        return [];
+    }
     try {
         const data = await App.supa.loadCarDocuments();
-        App.ui.pages._carDocuments = data;
+        App.ui.pages._carDocuments = data || [];
     } catch (e) {
         console.warn('Не удалось загрузить документы:', e);
         App.ui.pages._carDocuments = [];
@@ -69,8 +29,8 @@ App.ui.pages.loadCarDocuments = async function() {
 
 App.ui.pages.addCarDocument = async function(doc) {
     if (!App.store.activeCarId) return null;
-    try {
-        const newDoc = await App.supa.addCarDocument(doc);
+    const newDoc = await App.storage.addCarDocument(doc);
+    if (newDoc) {
         App.ui.pages._carDocuments.unshift({
             id: newDoc.id,
             type: newDoc.type,
@@ -81,16 +41,14 @@ App.ui.pages.addCarDocument = async function(doc) {
         });
         if (App.store.isPremium && typeof App.modules.load === 'function') {
             App.modules.load('premium/imageCache', true).then(imageCache => {
-                if (imageCache && imageCache.cachePhotoAfterUpload) {
+                if (imageCache?.cachePhotoAfterUpload) {
                     imageCache.cachePhotoAfterUpload(newDoc.photoUrl).catch(console.warn);
                 }
-            }).catch(err => console.warn('[ImageCache] Failed to load module:', err));
+            }).catch(console.warn);
         }
         return newDoc;
-    } catch (e) {
-        console.error('Ошибка добавления документа:', e);
-        return null;
     }
+    return null;
 };
 
 App.ui.pages.updateCarDocument = async function(docId, updates) {
@@ -106,14 +64,106 @@ App.ui.pages.updateCarDocument = async function(docId, updates) {
 };
 
 App.ui.pages.deleteCarDocument = async function(docId) {
-    try {
-        await App.supa.deleteCarDocument(docId);
+    const success = await App.storage.deleteCarDocument(docId);
+    if (success) {
         App.ui.pages._carDocuments = App.ui.pages._carDocuments.filter(d => d.id !== docId);
-        return true;
-    } catch (e) {
-        console.error('Ошибка удаления документа:', e);
-        return false;
     }
+    return success;
+};
+
+/* ========== CRUD АВТОМОБИЛЕЙ (через storage.js) ========== */
+App.ui.pages.addCar = async function() {
+    const name = await App.ui.promptModalAsync('Название автомобиля', 'Мой автомобиль');
+    if (!name) return;
+    const userId = await App.ui.pages._getUserIdSafe();
+    if (!userId) {
+        App.toast('Пользователь не авторизован', 'error');
+        return;
+    }
+    const newCar = await App.storage.saveCar({ name, user_id: userId });
+    if (newCar) {
+        App.store.setActiveCar(newCar.id);
+        App.ui.pages.renderCarSelector();
+        App.ui.pages.updateCarSelectorOnCarTab();
+        if (typeof App.ui.pages.renderCarTab === 'function') App.ui.pages.renderCarTab();
+        await App.storage.loadAllData();
+        App.toast('Автомобиль добавлен', 'success');
+    }
+};
+
+App.ui.pages.renameCar = async function() {
+    const carId = App.store.activeCarId;
+    if (!carId) { App.toast('Нет выбранного автомобиля', 'warning'); return; }
+    const userId = await App.ui.pages._getUserIdSafe();
+    const car = App.store.cars.find(c => c.id == carId);
+    if (!car || car.user_id !== userId) {
+        App.toast('Только владелец может переименовывать автомобиль', 'warning');
+        return;
+    }
+    const newName = await App.ui.promptModalAsync('Новое название', car.name);
+    if (!newName || newName === car.name) return;
+    const success = await App.storage.renameCar(carId, newName);
+    if (success) {
+        App.ui.pages.renderCarSelector();
+        App.ui.pages.updateCarSelectorOnCarTab();
+        if (typeof App.ui.pages.renderCarTab === 'function') App.ui.pages.renderCarTab();
+        App.toast('Название обновлено', 'success');
+    }
+};
+
+App.ui.pages.deleteCar = async function() {
+    const carId = App.store.activeCarId;
+    if (!carId) { App.toast('Нет выбранного автомобиля', 'warning'); return; }
+    const userId = await App.ui.pages._getUserIdSafe();
+    const car = App.store.cars.find(c => c.id == carId);
+    if (!car || car.user_id !== userId) {
+        App.toast('Только владелец может удалять автомобиль', 'warning');
+        return;
+    }
+    const confirmed = await App.ui.confirmModalAsync('Удалить автомобиль и все его данные? Это действие необратимо.');
+    if (!confirmed) return;
+    const success = await App.storage.deleteCar(carId);
+    if (success) {
+        App.store.cars = App.store.cars.filter(c => c.id != carId);
+        if (App.store.cars.length > 0) {
+            App.store.setActiveCar(App.store.cars[0].id);
+        } else {
+            App.store.activeCarId = null;
+            localStorage.removeItem('vesta_active_car_id');
+        }
+        App.ui.pages.renderCarSelector();
+        App.ui.pages.updateCarSelectorOnCarTab();
+        await App.storage.loadAllData();
+        if (typeof App.renderAll === 'function') App.renderAll();
+        App.toast('Автомобиль удалён', 'success');
+    }
+};
+
+/* ========== ОБНОВЛЕНИЕ СЕЛЕКТОРА НА ВКЛАДКЕ АВТОМОБИЛЬ ========== */
+App.ui.pages.updateCarSelectorOnCarTab = function() {
+    const selector = document.getElementById('car-page-selector');
+    if (!selector) return;
+    if (!App.store.cars || App.store.cars.length === 0) {
+        selector.innerHTML = '<option value="">-- Нет автомобилей --</option>';
+        return;
+    }
+    let html = '';
+    App.store.cars.forEach(car => {
+        const selected = (car.id === App.store.activeCarId) ? ' selected' : '';
+        html += `<option value="${car.id}"${selected}>${App.utils.escapeHtml(car.name)}</option>`;
+    });
+    selector.innerHTML = html;
+
+    const newSelector = selector.cloneNode(true);
+    selector.parentNode.replaceChild(newSelector, selector);
+    newSelector.addEventListener('change', (e) => {
+        const carId = e.target.value;
+        if (carId) {
+            App.store.setActiveCar(carId);
+            if (typeof App.storage.loadAllData === 'function') App.storage.loadAllData();
+        }
+    });
+    App.initIcons();
 };
 
 /* ========== РЕНДЕР СЕЛЕКТОРА АВТОМОБИЛЯ ========== */
@@ -175,125 +225,7 @@ App.ui.pages.renderCarSelector = function() {
     App.initIcons();
 };
 
-/* ========== CRUD АВТОМОБИЛЕЙ (с поддержкой офлайн) ========== */
-App.ui.pages.addCar = function() {
-    App.ui.promptModal('Название автомобиля', 'Мой автомобиль', function(name) {
-        if (!name) return;
-        App.supa.createCar(name).then(function(res) {
-            var car = res.data;
-            if (!car) {
-                console.warn('createCar вернул пустой ответ, перезагружаем список');
-                return App.store.loadCars().then(function() {
-                    App.ui.pages.renderCarSelector();
-                });
-            }
-            App.store.cars.push(car);
-            App.store.setActiveCar(car.id);
-            App.ui.pages.renderCarSelector();
-            if (App.realtime && App.realtime.subscribeToCar) {
-                App.realtime.subscribeToCar(car.id);
-            }
-            App.storage.loadAllData().then(function() {
-                if (typeof App.renderAll === 'function') App.renderAll();
-                if (typeof App.ui.pages.renderCarTab === 'function') App.ui.pages.renderCarTab();
-            });
-            App.toast('Автомобиль добавлен', 'success');
-        }).catch(function(err) {
-            console.error(err);
-            App.toast('Ошибка создания авто', 'error');
-        });
-    });
-};
-
-App.ui.pages.renameCar = async function() {
-    var carId = App.store.activeCarId;
-    if (!carId) { App.toast('Нет выбранного автомобиля', 'warning'); return; }
-    var userId = await App.ui.pages._getUserIdSafe();
-    var car = App.store.cars.find(c => c.id == carId);
-    if (!car || car.user_id !== userId) {
-        App.toast('Только владелец может переименовывать автомобиль', 'warning');
-        return;
-    }
-    App.ui.promptModal('Новое название', car.name, async function(newName) {
-        if (!newName || newName === car.name) return;
-        
-        // Офлайн-режим: сохраняем действие в очередь
-        if (!navigator.onLine) {
-            await App.store.addPendingAction({
-                type: 'save',
-                entityType: 'car',
-                entityId: carId,
-                data: { id: carId, name: newName, user_id: car.user_id }
-            });
-            car.name = newName;
-            await App.db.put('cars', car);
-            App.ui.pages.renderCarSelector();
-            if (typeof App.ui.pages.updateCarSelectorOnCarTab === 'function') App.ui.pages.updateCarSelectorOnCarTab();
-            App.toast('Название обновлено локально, синхронизируется позже', 'warning');
-            return;
-        }
-        
-        try {
-            await App.supa.renameCar(carId, newName);
-            car.name = newName;
-            App.ui.pages.renderCarSelector();
-            if (typeof App.ui.pages.updateCarSelectorOnCarTab === 'function') App.ui.pages.updateCarSelectorOnCarTab();
-            App.toast('Название обновлено', 'success');
-        } catch (err) {
-            console.error(err);
-            App.toast('Ошибка переименования', 'error');
-        }
-    });
-};
-
-App.ui.pages.deleteCar = async function() {
-    var carId = App.store.activeCarId;
-    if (!carId) { App.toast('Нет выбранного автомобиля', 'warning'); return; }
-    var userId = await App.ui.pages._getUserIdSafe();
-    var car = App.store.cars.find(c => c.id == carId);
-    if (!car || car.user_id !== userId) {
-        App.toast('Только владелец может удалять автомобиль', 'warning');
-        return;
-    }
-    App.ui.confirmModal('Удалить автомобиль и все его данные? Это действие необратимо.', async function() {
-        if (!navigator.onLine) {
-            // Офлайн: помечаем на удаление
-            await App.store.addPendingAction({
-                type: 'delete',
-                entityType: 'car',
-                entityId: carId,
-                data: { id: carId }
-            });
-            App.store.cars = App.store.cars.filter(c => c.id != carId);
-            App.store.activeCarId = null;
-            await App.db.delete('cars', carId);
-            App.ui.pages.renderCarSelector();
-            App.toast('Автомобиль помечен на удаление, синхронизируется позже', 'warning');
-            return;
-        }
-        
-        try {
-            await App.supa.deleteCar(carId);
-            App.store.cars = App.store.cars.filter(c => c.id != carId);
-            App.store.activeCarId = null;
-            App.ui.pages.renderCarSelector();
-            App.store.operations = [];
-            App.store.fuelLog = [];
-            App.store.tireLog = [];
-            App.store.parts = [];
-            App.store.serviceRecords = [];
-            App.store.mileageHistory = [];
-            if (typeof App.renderAll === 'function') App.renderAll();
-            if (typeof App.ui.pages.renderCarTab === 'function') App.ui.pages.renderCarTab();
-            App.toast('Автомобиль удалён', 'success');
-        } catch (err) {
-            console.error(err);
-            App.toast('Ошибка удаления', 'error');
-        }
-    });
-};
-
-/* ========== ПРИГЛАШЕНИЯ (ИСПРАВЛЕНА: однократная привязка через делегирование) ========== */
+/* ========== ПРИГЛАШЕНИЯ (делегирование) ========== */
 App.ui.pages.inviteUser = async function() {
     var carId = App.store.activeCarId;
     if (!carId) {
@@ -394,6 +326,7 @@ App.ui.pages.checkPendingInvites = function() {
                     App.store.loadCars().then(function() {
                         App.ui.pages.renderCarSelector();
                         App.storage.loadAllData();
+                        App.ui.pages.updateCarSelectorOnCarTab();
                     });
                 }).catch(function(err) {
                     console.error(err);
@@ -464,7 +397,30 @@ App.ui.pages.renderCarTab = function() {
             }
         };
     }
-  
+
+    document.getElementById('add-car-btn').onclick = App.ui.pages.addCar;
+    document.getElementById('rename-car-btn').onclick = App.ui.pages.renameCar;
+    document.getElementById('delete-car-btn').onclick = App.ui.pages.deleteCar;
+    document.getElementById('save-car-details-btn').onclick = async function() {
+    const brand = document.getElementById('car-brand')?.value?.trim() || '';
+    const model = document.getElementById('car-model')?.value?.trim() || '';
+    const year = parseInt(document.getElementById('car-year')?.value) || null;
+    const plate = document.getElementById('car-plate')?.value?.trim() || '';
+    const vin = document.getElementById('car-vin')?.value?.trim() || '';
+    
+    App.store.settings.carBrand = brand;
+    App.store.settings.carModel = model;
+    App.store.settings.carYear = year;
+    App.store.settings.plateNumber = plate;
+    App.store.settings.vin = vin;
+    
+    await App.storage.saveVehicleStateAndSettings(
+        { carBrand: brand, carModel: model, carYear: year, plateNumber: plate, vin: vin },
+        {}
+    );
+    App.toast('Данные автомобиля сохранены', 'success');
+};
+
     if (App.store.activeCarId) {
         App.ui.pages.loadCarDetailsWithRetry(App.store.activeCarId);
     } else {
@@ -601,7 +557,7 @@ App.ui.pages.renderCarTab = function() {
     App.initIcons();
 };
 
-/* ========== УЛУЧШЕННАЯ ФУНКЦИЯ ЗАГРУЗКИ ДЕТАЛЕЙ ========== */
+/* ========== УЛУЧШЕННАЯ ЗАГРУЗКА ДЕТАЛЕЙ АВТОМОБИЛЯ ========== */
 App.ui.pages.loadCarDetailsWithRetry = function(carId, maxAttempts = 20, delayMs = 200) {
     let attempts = 0;
     const tryLoad = () => {
@@ -629,27 +585,22 @@ App.ui.pages.loadCarDetails = function(carId) {
     var plateField = document.getElementById('car-plate');
     var vinField = document.getElementById('car-vin');
     
-    if (!brandField || !modelField || !yearField || !plateField) return;
+    if (!brandField || !modelField || !yearField || !plateField) {
+        return;
+    }
     
     var s = App.store.settings;
-    brandField.value = (s.carBrand || '').toString();
-    modelField.value = (s.carModel || '').toString();
+    brandField.value = s.carBrand || '';
+    modelField.value = s.carModel || '';
     yearField.value = s.carYear || '';
-    
-    // Защита от объектов
-    const plateValue = s.plateNumber;
-    plateField.value = (plateValue && typeof plateValue === 'object') ? '' : (plateValue || '').toString();
-    
-    if (vinField) {
-        const vinValue = s.vin;
-        vinField.value = (vinValue && typeof vinValue === 'object') ? '' : (vinValue || '').toString();
-    }
+    plateField.value = s.plateNumber || '';
+    if (vinField) vinField.value = s.vin || '';
 };
 
-/* ========== ДЕЛЕГИРОВАНИЕ СОБЫТИЙ ДЛЯ КНОПКИ ПРИГЛАШЕНИЯ ========== */
+/* ========== ДЕЛЕГИРОВАНИЕ КНОПКИ ПРИГЛАШЕНИЯ ========== */
 function setupInviteDelegation() {
     document.body.addEventListener('click', function(e) {
-        const target = e.target.closest('#invite-btn');
+        var target = e.target.closest('#invite-btn');
         if (target && target.id === 'invite-btn') {
             e.preventDefault();
             e.stopPropagation();
@@ -658,13 +609,12 @@ function setupInviteDelegation() {
     });
     console.log('[Cars] Делегирование для кнопки приглашения настроено');
 }
-
 if (!window._inviteDelegationSet) {
     setupInviteDelegation();
     window._inviteDelegationSet = true;
 }
 
-/* ========== ОСНОВНЫЕ ПАРАМЕТРЫ (с исправлением [object Object]) ========== */
+/* ========== ОСНОВНЫЕ ПАРАМЕТРЫ (с защитой от null) ========== */
 App.ui.pages.renderBasicParams = async function() {
     let baseMileage = 0, baseMotohours = 0, purchaseDate = '', purchaseCost = 0;
     if (App.store.activeCarId && App.supa && typeof App.supa.getVehicleState === 'function') {
@@ -706,24 +656,23 @@ App.ui.pages.renderBasicParams = async function() {
     App.store.purchaseCost = purchaseCost;
     App.ui.pages.updateOwnershipCost();
 
-    var saveParamsBtn = document.getElementById('save-params-btn');
+    const saveParamsBtn = document.getElementById('save-params-btn');
     if (saveParamsBtn) {
         saveParamsBtn.onclick = async function() {
-            var newBaseMileage = parseInt(document.getElementById('set-base-mileage')?.value) || 0;
-            var newBaseMotohours = parseInt(document.getElementById('set-base-motohours')?.value) || 0;
-            var dateStr = document.getElementById('purchase-date')?.value || '';
-            var newPurchaseDate = dateStr ? App.utils.ddmmYYYYtoISO(dateStr) : null;
-            var newPurchaseCost = parseFloat(document.getElementById('purchase-cost')?.value) || 0;
+            const newBaseMileage = parseInt(document.getElementById('set-base-mileage')?.value) || 0;
+            const newBaseMotohours = parseInt(document.getElementById('set-base-motohours')?.value) || 0;
+            const dateStr = document.getElementById('purchase-date')?.value || '';
+            const newPurchaseDate = dateStr ? App.utils.ddmmYYYYtoISO(dateStr) : null;
+            const newPurchaseCost = parseFloat(document.getElementById('purchase-cost')?.value) || 0;
 
-            if (App.store.activeCarId && App.supa && typeof App.supa.updateVehicleState === 'function') {
-                await App.supa.updateVehicleState(App.store.activeCarId, {
-                    baseMileage: newBaseMileage,
-                    baseMotohours: newBaseMotohours,
-                    purchaseDate: newPurchaseDate,
-                    purchaseCost: newPurchaseCost
-                });
-            }
-
+            const state = {
+                baseMileage: newBaseMileage,
+                baseMotohours: newBaseMotohours,
+                purchaseDate: newPurchaseDate,
+                purchaseCost: newPurchaseCost
+            };
+            await App.storage.saveVehicleStateAndSettings(state, {});
+            
             App.store.baseMileage = newBaseMileage;
             App.store.baseMotohours = newBaseMotohours;
             App.store.purchaseDate = newPurchaseDate;
@@ -866,20 +815,16 @@ App.ui.pages.renderExportBlock = function() {
     }
 };
 
-/* ========== ДОКУМЕНТЫ (без изменений, но оставлен код) ========== */
+/* ========== ДОКУМЕНТЫ (ФОТО + OCR + АККОРДЕОНЫ) ========== */
 App.ui.pages.renderDocuments = function() {
     var container = document.getElementById('documents-accordions');
     if (!container) return;
 
     var docs = App.ui.pages._carDocuments;
-    // Проверка, что docs — массив
     if (!Array.isArray(docs)) {
-        container.innerHTML = '<p class="hint">Документы загружаются...</p>';
-        return;
-    }
-    if (docs.length === 0) {
-        container.innerHTML = '<p class="hint">Нет документов</p>';
-        return;
+        console.warn('[Cars] _carDocuments не является массивом, сбрасываем');
+        docs = [];
+        App.ui.pages._carDocuments = [];
     }
 
     var grouped = {};
@@ -1281,231 +1226,204 @@ App.ui.pages.renderSharingListForCarTab = function() {
         console.error(err);
         container.innerHTML = '<p class="hint">Ошибка загрузки</p>';
     });
-    
-    // ==================== ЭКСПОРТ И ПРОЧИЕ ФУНКЦИИ ====================
-    App.ui.pages.subscribeToPush = function() {};
-    App.ui.pages.openPhotoFolder = function() { App.toast('Фотографии теперь хранятся в Supabase Storage', 'info'); };
-    App.ui.pages.shareTable = function() { window.open('https://docs.google.com/spreadsheets/d/' + App.store.spreadsheetId + '/edit', '_blank'); };
-    App.ui.pages.handleExport = function() {
-        var type = document.getElementById('export-type-select')?.value || 'to';
-        var format = document.getElementById('export-format-select')?.value || 'csv';
+};
 
-        if (format === 'csv') {
-            var exportData = App.ui.pages.getExportData(type);
-            if (exportData && exportData.data) {
-                App.ui.pages.exportToCSV(exportData.data, exportData.filename, exportData.headers);
-            }
-        } else if (format === 'xlsx') {
-            if (type === 'all') {
-                App.ui.pages.exportToExcelAll();
-            } else {
-                App.ui.pages.exportToExcelForType(type);
-            }
-        }
-    };
+// ==================== ЭКСПОРТ И ПРОЧИЕ ФУНКЦИИ ====================
+App.ui.pages.subscribeToPush = function() {};
+App.ui.pages.openPhotoFolder = function() { App.toast('Фотографии теперь хранятся в Supabase Storage', 'info'); };
+App.ui.pages.shareTable = function() { window.open('https://docs.google.com/spreadsheets/d/' + App.store.spreadsheetId + '/edit', '_blank'); };
+App.ui.pages.handleExport = function() {
+    var type = document.getElementById('export-type-select')?.value || 'to';
+    var format = document.getElementById('export-format-select')?.value || 'csv';
 
-    App.ui.pages.getExportData = function(type) {
-        switch (type) {
-            case 'to':
-                return {
-                    data: App.store.operations.map(function(op) {
-                        return [op.category, op.name, op.lastDate || '', op.lastMileage || '', op.lastMotohours || '', op.intervalKm, op.intervalMonths, op.intervalMotohours ?? ''];
-                    }),
-                    headers: ['Категория', 'Операция', 'Последняя дата', 'Последний пробег', 'Последние моточасы', 'Интервал км', 'Интервал мес', 'Интервал м/ч'],
-                    filename: 'vesta_operations'
-                };
-            case 'fuel':
-                return {
-                    data: App.store.fuelLog.map(function(f) {
-                        return [f.date, f.mileage, f.liters, f.pricePerLiter, (f.fullTank === 'TRUE' || f.fullTank === true) ? 'Да' : 'Нет', f.fuelType, f.notes || ''];
-                    }),
-                    headers: ['Дата', 'Пробег', 'Литры', 'Цена/л', 'Полный бак', 'Тип топлива', 'Примечание'],
-                    filename: 'vesta_fuel'
-                };
-            case 'tires':
-                return {
-                    data: App.store.tireLog.map(function(t) {
-                        return [t.date, t.type, t.mileage, t.model || '', t.size || '', t.wear || '', t.notes || '', t.purchaseCost || '', t.mountCost || '', t.isDIY ? 'Да' : 'Нет'];
-                    }),
-                    headers: ['Дата', 'Тип', 'Пробег', 'Модель', 'Размер', 'Износ', 'Примечание', 'Стоимость покупки', 'Стоимость монтажа', 'DIY'],
-                    filename: 'vesta_tires'
-                };
-            case 'parts':
-                return {
-                    data: App.store.parts.map(function(p) {
-                        return [p.operation, p.oem, p.analog, p.price, p.supplier, p.link, p.comment, p.inStock || 0, p.location || ''];
-                    }),
-                    headers: ['Операция', 'OEM', 'Аналог', 'Цена', 'Поставщик', 'Ссылка', 'Комментарий', 'В наличии (шт.)', 'Место хранения'],
-                    filename: 'vesta_parts'
-                };
-            case 'history':
-                var filtered = App.ui.pages.getFilteredHistory();
-                return {
-                    data: filtered.map(function(record) {
-                        var op = App.store.operations.find(function(o) { return o.id == record.operation_id; });
-                        return [record.date || '', op ? op.name : 'Неизвестно', record.mileage || '', record.motohours || '', record.parts_cost || '', record.work_cost || '', record.notes || '', (record.is_diy === 'TRUE' || record.is_diy === true) ? 'Да' : 'Нет'];
-                    }),
-                    headers: ['Дата', 'Операция', 'Пробег', 'Моточасы', 'Запчасти (₽)', 'Работа (₽)', 'Примечание', 'DIY'],
-                    filename: 'vesta_history'
-                };
-            case 'all':
-                App.toast('Функция "Все данные" скачает несколько файлов по очереди.', 'info');
-                var types = ['to', 'fuel', 'tires', 'parts', 'history'];
-                types.forEach(function(t) {
-                    var d = App.ui.pages.getExportData(t);
-                    if (d && d.data.length) App.ui.pages.exportToCSV(d.data, d.filename, d.headers);
-                });
-                return null;
-            default:
-                return null;
+    if (format === 'csv') {
+        var exportData = App.ui.pages.getExportData(type);
+        if (exportData && exportData.data) {
+            App.ui.pages.exportToCSV(exportData.data, exportData.filename, exportData.headers);
         }
-    };
+    } else if (format === 'xlsx') {
+        if (type === 'all') {
+            App.ui.pages.exportToExcelAll();
+        } else {
+            App.ui.pages.exportToExcelForType(type);
+        }
+    }
+};
 
-    App.ui.pages.exportToCSV = function(data, filename, headers) {
-        if (!data || data.length === 0) {
-            App.toast('Нет данных для экспорта', 'warning');
-            return;
-        }
-        var csvRows = [];
-        if (headers) csvRows.push(headers.join(';'));
-        for (var i = 0; i < data.length; i++) {
-            var row = data[i];
-            var values = row.map(function(cell) {
-                var cellStr = String(cell ?? '').replace(/"/g, '""');
-                if (cellStr.indexOf(';') !== -1 || cellStr.indexOf('\n') !== -1 || cellStr.indexOf('"') !== -1) {
-                    return '"' + cellStr + '"';
-                }
-                return cellStr;
-            });
-            csvRows.push(values.join(';'));
-        }
-        var blob = new Blob(['\uFEFF' + csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' });
-        var link = document.createElement('a');
-        var url = URL.createObjectURL(blob);
-        link.href = url;
-        link.download = filename + '_' + new Date().toISOString().slice(0, 19).replace(/:/g, '-') + '.csv';
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        URL.revokeObjectURL(url);
-        App.toast('Экспорт CSV выполнен', 'success');
-    };
-
-    App.ui.pages.exportToExcelForType = function(type) {
-        var wsData, sheetName;
-        switch (type) {
-            case 'to':
-                wsData = XLSX.utils.json_to_sheet(App.store.operations.map(function(op) {
-                    return { 'Категория': op.category, 'Операция': op.name, 'Последняя дата': op.lastDate || '', 'Последний пробег': op.lastMileage || '', 'Последние моточасы': op.lastMotohours || '', 'Интервал км': op.intervalKm || '', 'Интервал мес': op.intervalMonths || '', 'Интервал м/ч': op.intervalMotohours || '' };
-                }));
-                sheetName = 'Журнал ТО';
-                break;
-            case 'fuel':
-                wsData = XLSX.utils.json_to_sheet(App.store.fuelLog.map(function(f) {
-                    return { 'Дата': f.date, 'Пробег': f.mileage, 'Литры': f.liters, 'Цена/л': f.pricePerLiter, 'Полный бак': (f.fullTank === 'TRUE' || f.fullTank === true) ? 'Да' : 'Нет', 'Тип топлива': f.fuelType || 'Бензин', 'Примечание': f.notes || '' };
-                }));
-                sheetName = 'Топливо';
-                break;
-            case 'tires':
-                wsData = XLSX.utils.json_to_sheet(App.store.tireLog.map(function(t) {
-                    return { 'Дата': t.date, 'Тип': t.type, 'Пробег': t.mileage, 'Модель': t.model || '', 'Размер': t.size || '', 'Износ': t.wear || '', 'Примечание': t.notes || '', 'Стоимость покупки': t.purchaseCost || '', 'Стоимость монтажа': t.mountCost || '', 'DIY': t.isDIY ? 'Да' : 'Нет' };
-                }));
-                sheetName = 'Шины';
-                break;
-            case 'parts':
-                wsData = XLSX.utils.json_to_sheet(App.store.parts.map(function(p) {
-                    return { 'Операция': p.operation, 'OEM': p.oem, 'Аналог': p.analog, 'Цена': p.price, 'Поставщик': p.supplier, 'Ссылка': p.link, 'Комментарий': p.comment, 'В наличии (шт.)': p.inStock || 0, 'Место хранения': p.location || '' };
-                }));
-                sheetName = 'Запчасти';
-                break;
-            case 'history':
-                wsData = XLSX.utils.json_to_sheet(App.ui.pages.getFilteredHistory().map(function(record) {
+App.ui.pages.getExportData = function(type) {
+    switch (type) {
+        case 'to':
+            return {
+                data: App.store.operations.map(function(op) {
+                    return [op.category, op.name, op.lastDate || '', op.lastMileage || '', op.lastMotohours || '', op.intervalKm, op.intervalMonths, op.intervalMotohours ?? ''];
+                }),
+                headers: ['Категория', 'Операция', 'Последняя дата', 'Последний пробег', 'Последние моточасы', 'Интервал км', 'Интервал мес', 'Интервал м/ч'],
+                filename: 'vesta_operations'
+            };
+        case 'fuel':
+            return {
+                data: App.store.fuelLog.map(function(f) {
+                    return [f.date, f.mileage, f.liters, f.pricePerLiter, (f.fullTank === 'TRUE' || f.fullTank === true) ? 'Да' : 'Нет', f.fuelType, f.notes || ''];
+                }),
+                headers: ['Дата', 'Пробег', 'Литры', 'Цена/л', 'Полный бак', 'Тип топлива', 'Примечание'],
+                filename: 'vesta_fuel'
+            };
+        case 'tires':
+            return {
+                data: App.store.tireLog.map(function(t) {
+                    return [t.date, t.type, t.mileage, t.model || '', t.size || '', t.wear || '', t.notes || '', t.purchaseCost || '', t.mountCost || '', t.isDIY ? 'Да' : 'Нет'];
+                }),
+                headers: ['Дата', 'Тип', 'Пробег', 'Модель', 'Размер', 'Износ', 'Примечание', 'Стоимость покупки', 'Стоимость монтажа', 'DIY'],
+                filename: 'vesta_tires'
+            };
+        case 'parts':
+            return {
+                data: App.store.parts.map(function(p) {
+                    return [p.operation, p.oem, p.analog, p.price, p.supplier, p.link, p.comment, p.inStock || 0, p.location || ''];
+                }),
+                headers: ['Операция', 'OEM', 'Аналог', 'Цена', 'Поставщик', 'Ссылка', 'Комментарий', 'В наличии (шт.)', 'Место хранения'],
+                filename: 'vesta_parts'
+            };
+        case 'history':
+            var filtered = App.ui.pages.getFilteredHistory();
+            return {
+                data: filtered.map(function(record) {
                     var op = App.store.operations.find(function(o) { return o.id == record.operation_id; });
-                    return { 'Дата': record.date || '', 'Операция': op ? op.name : 'Неизвестно', 'Пробег': record.mileage || '', 'Моточасы': record.motohours || '', 'Запчасти (₽)': record.parts_cost || '', 'Работа (₽)': record.work_cost || '', 'DIY': (record.is_diy === 'TRUE' || record.is_diy === true) ? 'Да' : 'Нет', 'Примечание': record.notes || '' };
-                }));
-                sheetName = 'История ТО';
-                break;
-            default:
-                return false;
-        }
-        var wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, wsData, sheetName);
-        var fileName = 'vesta_' + sheetName + '_' + new Date().toISOString().slice(0, 19).replace(/:/g, '-') + '.xlsx';
-        XLSX.writeFile(wb, fileName);
-        return true;
-    };
+                    return [record.date || '', op ? op.name : 'Неизвестно', record.mileage || '', record.motohours || '', record.parts_cost || '', record.work_cost || '', record.notes || '', (record.is_diy === 'TRUE' || record.is_diy === true) ? 'Да' : 'Нет'];
+                }),
+                headers: ['Дата', 'Операция', 'Пробег', 'Моточасы', 'Запчасти (₽)', 'Работа (₽)', 'Примечание', 'DIY'],
+                filename: 'vesta_history'
+            };
+        case 'all':
+            App.toast('Функция "Все данные" скачает несколько файлов по очереди.', 'info');
+            var types = ['to', 'fuel', 'tires', 'parts', 'history'];
+            types.forEach(function(t) {
+                var d = App.ui.pages.getExportData(t);
+                if (d && d.data.length) App.ui.pages.exportToCSV(d.data, d.filename, d.headers);
+            });
+            return null;
+        default:
+            return null;
+    }
+};
 
-    App.ui.pages.exportToExcelAll = function() {
-        var wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(App.store.operations.map(function(op) { return { 'Категория': op.category, 'Операция': op.name, 'Последняя дата': op.lastDate || '', 'Последний пробег': op.lastMileage || '', 'Последние моточасы': op.lastMotohours || '', 'Интервал км': op.intervalKm || '', 'Интервал мес': op.intervalMonths || '', 'Интервал м/ч': op.intervalMotohours || '' }; })), 'Журнал ТО');
-        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(App.store.parts.map(function(p) { return { 'Операция': p.operation, 'OEM': p.oem, 'Аналог': p.analog, 'Цена': p.price, 'Поставщик': p.supplier, 'Ссылка': p.link, 'Комментарий': p.comment, 'В наличии (шт.)': p.inStock || 0, 'Место хранения': p.location || '' }; })), 'Запчасти');
-        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(App.store.fuelLog.map(function(f) { return { 'Дата': f.date, 'Пробег': f.mileage, 'Литры': f.liters, 'Цена/л': f.pricePerLiter, 'Полный бак': (f.fullTank === 'TRUE' || f.fullTank === true) ? 'Да' : 'Нет', 'Тип топлива': f.fuelType || 'Бензин', 'Примечание': f.notes || '' }; })), 'Топливо');
-        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(App.store.tireLog.map(function(t) { return { 'Дата': t.date, 'Тип': t.type, 'Пробег': t.mileage, 'Модель': t.model || '', 'Размер': t.size || '', 'Износ': t.wear || '', 'Примечание': t.notes || '', 'Стоимость покупки': t.purchaseCost || '', 'Стоимость монтажа': t.mountCost || '', 'DIY': t.isDIY ? 'Да' : 'Нет' }; })), 'Шины');
-        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(App.ui.pages.getFilteredHistory().map(function(rec) { var op = App.store.operations.find(function(o) { return o.id == rec.operation_id; }); return { 'Дата': rec.date || '', 'Операция': op ? op.name : 'Неизвестно', 'Пробег': rec.mileage || '', 'Моточасы': rec.motohours || '', 'Запчасти (₽)': rec.parts_cost || '', 'Работа (₽)': rec.work_cost || '', 'DIY': (rec.is_diy === 'TRUE' || rec.is_diy === true) ? 'Да' : 'Нет', 'Примечание': rec.notes || '' }; })), 'История');
-        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(App.store.mileageHistory.map(function(m) { return { 'Дата': m.date, 'Пробег': m.mileage, 'Моточасы': m.motohours || '' }; })), 'Пробег');
-        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet([{ 'Пробег': App.store.settings.currentMileage, 'Моточасы': App.store.settings.currentMotohours, 'Ср. пробег/день': App.store.settings.avgDailyMileage, 'Ср. моточасы/день': App.store.settings.avgDailyMotohours, 'Способ уведомлений': App.store.settings.notificationMethod || 'telegram', 'Базовый пробег': App.store.baseMileage, 'Базовые моточасы': App.store.baseMotohours, 'Дата покупки': App.store.purchaseDate }]), 'Настройки');
-        var fileName = 'vesta_backup_' + new Date().toISOString().slice(0, 19).replace(/:/g, '-') + '.xlsx';
-        XLSX.writeFile(wb, fileName);
-        App.toast('Экспорт в Excel выполнен', 'success');
-    };
-
-    App.ui.pages.generateServiceReport = function() {
-        if (typeof html2pdf === 'undefined') {
-            App.toast('Библиотека html2pdf не загружена', 'error');
-            return;
-        }
-        var totalMaintenance = App.store.serviceRecords.reduce(function(s, r) { return s + (Number(r.parts_cost) || 0) + (Number(r.work_cost) || 0); }, 0);
-        var totalFuel = App.store.fuelLog.reduce(function(s, f) { return s + (f.liters * f.pricePerLiter); }, 0);
-        var totalCost = totalMaintenance + totalFuel;
-        var avgCostPerKm = App.store.settings.currentMileage ? totalCost / App.store.settings.currentMileage : 0;
-        var reportHtml = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Сервисная история</title><style>body{font-family:sans-serif;margin:20px}h1{color:#3498db}h2{border-bottom:1px solid #ccc}table{width:100%;border-collapse:collapse;margin-bottom:20px}td,th{border:1px solid #ddd;padding:8px}th{background:#f2f2f2}.stat-card{display:inline-block;background:#f9f9f9;padding:10px;margin:5px;border-radius:8px}</style></head><body><h1>Сервисная история</h1><p><strong>Дата:</strong>' + new Date().toLocaleDateString('ru-RU') + '</p><p><strong>Пробег:</strong>' + App.store.settings.currentMileage.toLocaleString() + ' км</p><h2>Расходы</h2><div>' +
-            '<div class="stat-card">ТО: ' + totalMaintenance.toFixed(2) + ' ₽</div><div class="stat-card">Топливо: ' + totalFuel.toFixed(2) + ' ₽</div><div class="stat-card">Всего: ' + totalCost.toFixed(2) + ' ₽</div><div class="stat-card">1 км: ' + avgCostPerKm.toFixed(2) + ' ₽</div></div><h2>Операции</h2><table><thead><tr><th>Категория</th><th>Операция</th><th>Интервал км</th><th>Интервал мес</th><th>Последнее ТО</th><th>Последний пробег</th></tr></thead><tbody>';
-        App.store.operations.forEach(function(op) { reportHtml += '<tr><td>' + App.utils.escapeHtml(op.category) + '</td><td>' + App.utils.escapeHtml(op.name) + '</td><td>' + (op.intervalKm || '—') + '</td><td>' + (op.intervalMonths || '—') + '</td><td>' + (op.lastDate || '—') + '</td><td>' + (op.lastMileage || '—') + '</td></table>'; });
-        reportHtml += '</tbody></table><h2>История ТО</h2><tr><thead><tr><th>Дата</th><th>Операция</th><th>Пробег</th><th>Запчасти</th><th>Работа</th><th>DIY</th><th>Прим.</th></tr></thead><tbody>';
-        App.store.serviceRecords.sort(function(a,b){return new Date(b.date)-new Date(a.date);}).forEach(function(rec){ var op=App.store.operations.find(function(o){return o.id==rec.operation_id;}); reportHtml+='<tr><td>'+ (rec.date||'')+'</td><td>'+ App.utils.escapeHtml(op?op.name:'Неизвестно')+'</td><td>'+ (rec.mileage||'')+'</td><td>'+ (rec.parts_cost||'0')+'</td><td>'+ (rec.work_cost||'0')+'</td><td>'+ (rec.is_diy===true?'Да':'Нет')+'</td><td>'+ (rec.notes||'')+'</td></tr>'; });
-        reportHtml += '</tbody></table></body></html>';
-        var element = document.createElement('div');
-        element.innerHTML = reportHtml;
-        document.body.appendChild(element);
-        html2pdf().from(element).set({
-            margin: [0.5, 0.5, 0.5, 0.5],
-            filename: 'servisnaya_istoriya_' + new Date().toISOString().slice(0, 19).replace(/:/g, '-') + '.pdf',
-            image: { type: 'jpeg', quality: 0.98 },
-            html2canvas: { scale: 2, letterRendering: true },
-            jsPDF: { unit: 'in', format: 'a4', orientation: 'portrait' }
-        }).save().finally(function() {
-            document.body.removeChild(element);
-        });
-    };
-
-    App.ui.pages.forceSync = function() {
-        App.toast('Данные уже синхронизированы с Supabase', 'info');
-    };
-
-    // ========== ОБНОВЛЕНИЕ СЕЛЕКТОРА АВТОМОБИЛЕЙ НА ВКЛАДКЕ ==========
-    App.ui.pages.updateCarSelectorOnCarTab = function() {
-        const selector = document.getElementById('car-page-selector');
-        if (!selector) return;
-        if (!App.store.cars || App.store.cars.length === 0) {
-            selector.innerHTML = '<option value="">-- Нет автомобилей --</option>';
-            return;
-        }
-        let html = '';
-        App.store.cars.forEach(car => {
-            const selected = (car.id === App.store.activeCarId) ? ' selected' : '';
-            html += `<option value="${car.id}"${selected}>${App.utils.escapeHtml(car.name)}</option>`;
-        });
-        selector.innerHTML = html;
-        
-        const newSelector = selector.cloneNode(true);
-        selector.parentNode.replaceChild(newSelector, selector);
-        newSelector.addEventListener('change', (e) => {
-            const carId = e.target.value;
-            if (carId) {
-                App.store.setActiveCar(carId);
-                if (typeof App.storage.loadAllData === 'function') App.storage.loadAllData();
+App.ui.pages.exportToCSV = function(data, filename, headers) {
+    if (!data || data.length === 0) {
+        App.toast('Нет данных для экспорта', 'warning');
+        return;
+    }
+    var csvRows = [];
+    if (headers) csvRows.push(headers.join(';'));
+    for (var i = 0; i < data.length; i++) {
+        var row = data[i];
+        var values = row.map(function(cell) {
+            var cellStr = String(cell ?? '').replace(/"/g, '""');
+            if (cellStr.indexOf(';') !== -1 || cellStr.indexOf('\n') !== -1 || cellStr.indexOf('"') !== -1) {
+                return '"' + cellStr + '"';
             }
+            return cellStr;
         });
-        App.initIcons();
-    };
+        csvRows.push(values.join(';'));
+    }
+    var blob = new Blob(['\uFEFF' + csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    var link = document.createElement('a');
+    var url = URL.createObjectURL(blob);
+    link.href = url;
+    link.download = filename + '_' + new Date().toISOString().slice(0, 19).replace(/:/g, '-') + '.csv';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    App.toast('Экспорт CSV выполнен', 'success');
+};
+
+App.ui.pages.exportToExcelForType = function(type) {
+    var wsData, sheetName;
+    switch (type) {
+        case 'to':
+            wsData = XLSX.utils.json_to_sheet(App.store.operations.map(function(op) {
+                return { 'Категория': op.category, 'Операция': op.name, 'Последняя дата': op.lastDate || '', 'Последний пробег': op.lastMileage || '', 'Последние моточасы': op.lastMotohours || '', 'Интервал км': op.intervalKm || '', 'Интервал мес': op.intervalMonths || '', 'Интервал м/ч': op.intervalMotohours || '' };
+            }));
+            sheetName = 'Журнал ТО';
+            break;
+        case 'fuel':
+            wsData = XLSX.utils.json_to_sheet(App.store.fuelLog.map(function(f) {
+                return { 'Дата': f.date, 'Пробег': f.mileage, 'Литры': f.liters, 'Цена/л': f.pricePerLiter, 'Полный бак': (f.fullTank === 'TRUE' || f.fullTank === true) ? 'Да' : 'Нет', 'Тип топлива': f.fuelType || 'Бензин', 'Примечание': f.notes || '' };
+            }));
+            sheetName = 'Топливо';
+            break;
+        case 'tires':
+            wsData = XLSX.utils.json_to_sheet(App.store.tireLog.map(function(t) {
+                return { 'Дата': t.date, 'Тип': t.type, 'Пробег': t.mileage, 'Модель': t.model || '', 'Размер': t.size || '', 'Износ': t.wear || '', 'Примечание': t.notes || '', 'Стоимость покупки': t.purchaseCost || '', 'Стоимость монтажа': t.mountCost || '', 'DIY': t.isDIY ? 'Да' : 'Нет' };
+            }));
+            sheetName = 'Шины';
+            break;
+        case 'parts':
+            wsData = XLSX.utils.json_to_sheet(App.store.parts.map(function(p) {
+                return { 'Операция': p.operation, 'OEM': p.oem, 'Аналог': p.analog, 'Цена': p.price, 'Поставщик': p.supplier, 'Ссылка': p.link, 'Комментарий': p.comment, 'В наличии (шт.)': p.inStock || 0, 'Место хранения': p.location || '' };
+            }));
+            sheetName = 'Запчасти';
+            break;
+        case 'history':
+            wsData = XLSX.utils.json_to_sheet(App.ui.pages.getFilteredHistory().map(function(record) {
+                var op = App.store.operations.find(function(o) { return o.id == record.operation_id; });
+                return { 'Дата': record.date || '', 'Операция': op ? op.name : 'Неизвестно', 'Пробег': record.mileage || '', 'Моточасы': record.motohours || '', 'Запчасти (₽)': record.parts_cost || '', 'Работа (₽)': record.work_cost || '', 'DIY': (record.is_diy === 'TRUE' || record.is_diy === true) ? 'Да' : 'Нет', 'Примечание': record.notes || '' };
+            }));
+            sheetName = 'История ТО';
+            break;
+        default:
+            return false;
+    }
+    var wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, wsData, sheetName);
+    var fileName = 'vesta_' + sheetName + '_' + new Date().toISOString().slice(0, 19).replace(/:/g, '-') + '.xlsx';
+    XLSX.writeFile(wb, fileName);
+    return true;
+};
+
+App.ui.pages.exportToExcelAll = function() {
+    var wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(App.store.operations.map(function(op) { return { 'Категория': op.category, 'Операция': op.name, 'Последняя дата': op.lastDate || '', 'Последний пробег': op.lastMileage || '', 'Последние моточасы': op.lastMotohours || '', 'Интервал км': op.intervalKm || '', 'Интервал мес': op.intervalMonths || '', 'Интервал м/ч': op.intervalMotohours || '' }; })), 'Журнал ТО');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(App.store.parts.map(function(p) { return { 'Операция': p.operation, 'OEM': p.oem, 'Аналог': p.analog, 'Цена': p.price, 'Поставщик': p.supplier, 'Ссылка': p.link, 'Комментарий': p.comment, 'В наличии (шт.)': p.inStock || 0, 'Место хранения': p.location || '' }; })), 'Запчасти');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(App.store.fuelLog.map(function(f) { return { 'Дата': f.date, 'Пробег': f.mileage, 'Литры': f.liters, 'Цена/л': f.pricePerLiter, 'Полный бак': (f.fullTank === 'TRUE' || f.fullTank === true) ? 'Да' : 'Нет', 'Тип топлива': f.fuelType || 'Бензин', 'Примечание': f.notes || '' }; })), 'Топливо');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(App.store.tireLog.map(function(t) { return { 'Дата': t.date, 'Тип': t.type, 'Пробег': t.mileage, 'Модель': t.model || '', 'Размер': t.size || '', 'Износ': t.wear || '', 'Примечание': t.notes || '', 'Стоимость покупки': t.purchaseCost || '', 'Стоимость монтажа': t.mountCost || '', 'DIY': t.isDIY ? 'Да' : 'Нет' }; })), 'Шины');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(App.ui.pages.getFilteredHistory().map(function(rec) { var op = App.store.operations.find(function(o) { return o.id == rec.operation_id; }); return { 'Дата': rec.date || '', 'Операция': op ? op.name : 'Неизвестно', 'Пробег': rec.mileage || '', 'Моточасы': rec.motohours || '', 'Запчасти (₽)': rec.parts_cost || '', 'Работа (₽)': rec.work_cost || '', 'DIY': (rec.is_diy === 'TRUE' || rec.is_diy === true) ? 'Да' : 'Нет', 'Примечание': rec.notes || '' }; })), 'История');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(App.store.mileageHistory.map(function(m) { return { 'Дата': m.date, 'Пробег': m.mileage, 'Моточасы': m.motohours || '' }; })), 'Пробег');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet([{ 'Пробег': App.store.settings.currentMileage, 'Моточасы': App.store.settings.currentMotohours, 'Ср. пробег/день': App.store.settings.avgDailyMileage, 'Ср. моточасы/день': App.store.settings.avgDailyMotohours, 'Способ уведомлений': App.store.settings.notificationMethod || 'telegram', 'Базовый пробег': App.store.baseMileage, 'Базовые моточасы': App.store.baseMotohours, 'Дата покупки': App.store.purchaseDate }]), 'Настройки');
+    var fileName = 'vesta_backup_' + new Date().toISOString().slice(0, 19).replace(/:/g, '-') + '.xlsx';
+    XLSX.writeFile(wb, fileName);
+    App.toast('Экспорт в Excel выполнен', 'success');
+};
+
+App.ui.pages.generateServiceReport = function() {
+    if (typeof html2pdf === 'undefined') {
+        App.toast('Библиотека html2pdf не загружена', 'error');
+        return;
+    }
+    var totalMaintenance = App.store.serviceRecords.reduce(function(s, r) { return s + (Number(r.parts_cost) || 0) + (Number(r.work_cost) || 0); }, 0);
+    var totalFuel = App.store.fuelLog.reduce(function(s, f) { return s + (f.liters * f.pricePerLiter); }, 0);
+    var totalCost = totalMaintenance + totalFuel;
+    var avgCostPerKm = App.store.settings.currentMileage ? totalCost / App.store.settings.currentMileage : 0;
+    var reportHtml = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Сервисная история</title><style>body{font-family:sans-serif;margin:20px}h1{color:#3498db}h2{border-bottom:1px solid #ccc}table{width:100%;border-collapse:collapse;margin-bottom:20px}td,th{border:1px solid #ddd;padding:8px}th{background:#f2f2f2}.stat-card{display:inline-block;background:#f9f9f9;padding:10px;margin:5px;border-radius:8px}</style></head><body><h1>Сервисная история</h1><p><strong>Дата:</strong>' + new Date().toLocaleDateString('ru-RU') + '</p><p><strong>Пробег:</strong>' + App.store.settings.currentMileage.toLocaleString() + ' км</p><h2>Расходы</h2><div>' +
+        '<div class="stat-card">ТО: ' + totalMaintenance.toFixed(2) + ' ₽</div><div class="stat-card">Топливо: ' + totalFuel.toFixed(2) + ' ₽</div><div class="stat-card">Всего: ' + totalCost.toFixed(2) + ' ₽</div><div class="stat-card">1 км: ' + avgCostPerKm.toFixed(2) + ' ₽</div></div><h2>Операции</h2><tr><thead><tr><th>Категория</th><th>Операция</th><th>Интервал км</th><th>Интервал мес</th><th>Последнее ТО</th><th>Последний пробег</th></tr></thead><tbody>';
+    App.store.operations.forEach(function(op) { reportHtml += '<tr><td>' + App.utils.escapeHtml(op.category) + '</td><td>' + App.utils.escapeHtml(op.name) + '</td><td>' + (op.intervalKm || '—') + '</td><td>' + (op.intervalMonths || '—') + '</td><td>' + (op.lastDate || '—') + '</td><td>' + (op.lastMileage || '—') + '</td></tr>'; });
+    reportHtml += '</tbody></table><h2>История ТО</h2><table><thead><tr><th>Дата</th><th>Операция</th><th>Пробег</th><th>Запчасти</th><th>Работа</th><th>DIY</th><th>Прим.</th></tr></thead><tbody>';
+    App.store.serviceRecords.sort(function(a,b){return new Date(b.date)-new Date(a.date);}).forEach(function(rec){ var op=App.store.operations.find(function(o){return o.id==rec.operation_id;}); reportHtml+='<tr><td>'+ (rec.date||'')+'</td><td>'+ App.utils.escapeHtml(op?op.name:'Неизвестно')+'</td><td>'+ (rec.mileage||'')+'</td><td>'+ (rec.parts_cost||'0')+'</td><td>'+ (rec.work_cost||'0')+'</td><td>'+ (rec.is_diy===true?'Да':'Нет')+'<tr><td>'+ (rec.notes||'')+'</td></tr>'; });
+    reportHtml += '</tbody></table></body></html>';
+    var element = document.createElement('div');
+    element.innerHTML = reportHtml;
+    document.body.appendChild(element);
+    html2pdf().from(element).set({
+        margin: [0.5, 0.5, 0.5, 0.5],
+        filename: 'servisnaya_istoriya_' + new Date().toISOString().slice(0, 19).replace(/:/g, '-') + '.pdf',
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2, letterRendering: true },
+        jsPDF: { unit: 'in', format: 'a4', orientation: 'portrait' }
+    }).save().finally(function() {
+        document.body.removeChild(element);
+    });
+};
+
+App.ui.pages.forceSync = function() {
+    App.toast('Данные уже синхронизированы с Supabase', 'info');
 };
