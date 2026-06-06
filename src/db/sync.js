@@ -6,7 +6,7 @@ App.db.sync = App.db.sync || {};
 const MAX_RETRIES = 10;
 const BASE_DELAY = 1000;
 const MAX_DELAY = 30000;
-const ACTION_TIMEOUT = 30000;
+const ACTION_TIMEOUT = 20000;   // 20 секунд
 
 App.db.sync._getDelay = function(retryCount) {
     const delay = Math.min(BASE_DELAY * Math.pow(2, retryCount), MAX_DELAY);
@@ -19,7 +19,9 @@ App.db.sync._updatePendingAction = async function(action, retryCount, errorMessa
     action.lastError = errorMessage;
     action.lastAttempt = Date.now();
     if (retryCount >= MAX_RETRIES) {
-        console.error(`[Sync] Действие ${action.id} временно провалилось (${retryCount} попыток), оставлено в очереди:`, errorMessage);
+        // Откладываем повтор на 24 часа
+        action.nextRetry = Date.now() + 24 * 60 * 60 * 1000;
+        console.error(`[Sync] Действие ${action.id} отложено до ${new Date(action.nextRetry).toLocaleString()}`);
         await App.db.put('error_log', { id: crypto.randomUUID(), type: 'sync_failed_retry_later', action: action, timestamp: Date.now(), message: errorMessage });
     }
     await App.db.put('pending_actions', action);
@@ -29,138 +31,74 @@ App.db.sync._executeAction = async function(action) {
     const { type, entityType, entityId, data } = action;
     console.log(`[Sync] Выполнение действия ${action.id}, тип=${type}, сущность=${entityType}`);
 
-    let timer;
-    const timeoutPromise = new Promise((_, reject) => {
-        timer = setTimeout(() => reject(new Error(`Действие ${action.id} превысило таймаут`)), ACTION_TIMEOUT);
-    });
+    const controller = new AbortController();
+    const signal = controller.signal;
+    const timeoutId = setTimeout(() => controller.abort(), ACTION_TIMEOUT);
 
     try {
-        const result = await Promise.race([
-            (async () => {
-                if (type === 'delete' && entityType !== 'car') {
-                    return await App.db.sync._executeDelete(action);
+        const result = await (async () => {
+            if (type === 'delete' && entityType !== 'car') {
+                return await App.db.sync._executeDelete(action, signal);
+            }
+            switch (entityType) {
+                case 'operation': return await App.supa.saveOperation(data, signal);
+                case 'fuel':      return await App.supa.saveFuelRecord(data, signal);
+                case 'tire':      return await App.supa.saveTireRecord(data, signal);
+                case 'part':      return await App.supa.savePart(data, signal);
+                case 'history':   return await App.supa.saveHistoryRecord(data, signal);
+                case 'mileage':   return await App.supa.addMileageRecord(data.date, data.mileage, data.motohours, data.car_id, signal);
+                case 'car_document': {
+                    const { data: docData, error: docError } = await App.supabase.from('car_documents').upsert(data, { onConflict: 'id' }).select().single().abortSignal(signal);
+                    if (docError) throw docError;
+                    if (docData.id !== entityId) await App.db.sync._updateLocalId(entityType, entityId, docData);
+                    return { success: true };
                 }
-                switch (entityType) {
-                    case 'operation':
-                    case 'fuel':
-                    case 'tire':
-                    case 'part':
-                    case 'history':
-                    case 'mileage': {
-                        const map = {
-                            'operation': () => App.supa.saveOperation(data),
-                            'fuel': () => App.supa.saveFuelRecord(data),
-                            'tire': () => App.supa.saveTireRecord(data),
-                            'part': () => App.supa.savePart(data),
-                            'history': () => App.supa.saveHistoryRecord(data),
-                            'mileage': () => App.supa.addMileageRecord(data.date, data.mileage, data.motohours, data.car_id)
-                        };
-                        const supabaseMethodCall = map[entityType];
-                        if (!supabaseMethodCall) throw new Error(`No method for ${entityType}`);
-                        const res = await supabaseMethodCall();
-                        if (res.error) throw res.error;
-                        if (res.data && res.data[0] && res.data[0].id !== entityId) {
-                            await App.db.sync._updateLocalId(entityType, entityId, res.data[0]);
-                        }
-                        return { success: true };
-                    }
-                    case 'car_document': {
-                        const { data: docData, error: docError } = await App.supabase
-                            .from('car_documents')
-                            .upsert(data, { onConflict: 'id' })
-                            .select()
-                            .single();
-                        if (docError) throw docError;
-                        if (docData.id !== entityId) {
-                            await App.db.sync._updateLocalId(entityType, entityId, docData);
-                        }
-                        return { success: true };
-                    }
-                    case 'car_state_settings':
-                    case 'car_settings': {
-                        const cleanedData = { ...data };
-                        if (cleanedData.plateNumber !== undefined && cleanedData.plateNumber !== null) {
-                            cleanedData.plateNumber = (typeof cleanedData.plateNumber === 'object') ? '' : String(cleanedData.plateNumber);
-                        } else {
-                            cleanedData.plateNumber = '';
-                        }
-                        if (cleanedData.vin !== undefined && cleanedData.vin !== null) {
-                            cleanedData.vin = (typeof cleanedData.vin === 'object') ? '' : String(cleanedData.vin);
-                        } else {
-                            cleanedData.vin = '';
-                        }
-                        await App.supa.saveVehicleState({ ...cleanedData });
-                        await App.supa.saveUserSettings({ ...cleanedData });
-                        Object.assign(App.store.settings, cleanedData);
-                        await App.db.put('car_settings', { ...App.store.settings, car_id: App.store.activeCarId });
-                        if (typeof App.ui.pages.loadCarDetails === 'function') App.ui.pages.loadCarDetails(App.store.activeCarId);
-                        if (typeof App.ui.pages.renderBasicParams === 'function') App.ui.pages.renderBasicParams();
-                        if (typeof App.ui.pages.renderCarTab === 'function') App.ui.pages.renderCarTab();
-                        return { success: true };
-                    }
-                    case 'car': {
-                        if (type === 'save') {
-                            const { data: carData, error: carError } = await App.supabase
-                                .from('cars')
-                                .upsert(data, { onConflict: 'id' })
-                                .select()
-                                .single();
-                            if (carError) throw carError;
-                            if (carData.id !== entityId) {
-                                await App.db.sync._updateLocalId(entityType, entityId, carData);
-                            } else {
-                                const idx = App.store.cars.findIndex(c => c.id == carData.id);
-                                if (idx !== -1) App.store.cars[idx] = carData;
-                                else App.store.cars.push(carData);
-                                await App.db.put('cars', carData);
-                            }
-                        } else if (type === 'delete') {
-                            const { error } = await App.supabase.from('cars').delete().eq('id', entityId);
-                            if (error && error.status !== 404) throw error;
-                            await App.db.delete('cars', entityId);
-                            await App.db.delete('car_settings', entityId);
-                            const idx = App.store.cars.findIndex(c => c.id == entityId);
-                            if (idx !== -1) App.store.cars.splice(idx, 1);
-                        }
-                        return { success: true };
-                    }
-                    default:
-                        throw new Error(`Unknown entityType: ${entityType}`);
+                case 'car_state_settings':
+                case 'car_settings': {
+                    const cleanedData = { ...data };
+                    if (cleanedData.plateNumber !== undefined && cleanedData.plateNumber !== null) cleanedData.plateNumber = String(cleanedData.plateNumber);
+                    if (cleanedData.vin !== undefined && cleanedData.vin !== null) cleanedData.vin = String(cleanedData.vin);
+                    await App.supa.saveVehicleState(cleanedData);
+                    await App.supa.saveUserSettings(cleanedData);
+                    Object.assign(App.store.settings, cleanedData);
+                    await App.db.put('car_settings', { ...App.store.settings, car_id: App.store.activeCarId });
+                    return { success: true };
                 }
-            })(),
-            timeoutPromise
-        ]);
+                case 'car': {
+                    if (type === 'save') {
+                        const { data: carData, error: carError } = await App.supabase.from('cars').upsert(data, { onConflict: 'id' }).select().single().abortSignal(signal);
+                        if (carError) throw carError;
+                        if (carData.id !== entityId) await App.db.sync._updateLocalId(entityType, entityId, carData);
+                        else { const idx = App.store.cars.findIndex(c => c.id == carData.id); if (idx !== -1) App.store.cars[idx] = carData; else App.store.cars.push(carData); await App.db.put('cars', carData); }
+                    } else if (type === 'delete') {
+                        const { error } = await App.supabase.from('cars').delete().eq('id', entityId).abortSignal(signal);
+                        if (error && error.status !== 404) throw error;
+                        await App.db.delete('cars', entityId);
+                        await App.db.delete('car_settings', entityId);
+                        const idx = App.store.cars.findIndex(c => c.id == entityId);
+                        if (idx !== -1) App.store.cars.splice(idx, 1);
+                    }
+                    return { success: true };
+                }
+                default: throw new Error(`Unknown entityType: ${entityType}`);
+            }
+        })();
         return result;
-    } catch (err) {
-        throw err;
     } finally {
-        clearTimeout(timer);
+        clearTimeout(timeoutId);
     }
 };
 
-App.db.sync._executeDelete = async function(action) {
+App.db.sync._executeDelete = async function(action, signal) {
     const { entityType, entityId, data } = action;
-    let tableName;
-    switch (entityType) {
-        case 'operation': tableName = 'operations'; break;
-        case 'fuel': tableName = 'fuel_log'; break;
-        case 'tire': tableName = 'tires'; break;
-        case 'part': tableName = 'parts'; break;
-        case 'history': tableName = 'history'; break;
-        default: throw new Error(`Unknown entityType for delete: ${entityType}`);
-    }
-
+    const tableName = { operation: 'operations', fuel: 'fuel_log', tire: 'tires', part: 'parts', history: 'history' }[entityType];
+    if (!tableName) throw new Error(`Unknown entityType for delete: ${entityType}`);
     const carId = data.car_id || App.store.activeCarId;
     console.log(`[Sync] Удаление на сервере: ${tableName} id=${entityId}, car_id=${carId}`);
 
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
         try {
-            const { data: deleted, error } = await App.supabase
-                .from(tableName)
-                .delete()
-                .eq('id', entityId)
-                .eq('car_id', carId)
-                .select('id');
+            const { data: deleted, error } = await App.supabase.from(tableName).delete().eq('id', entityId).eq('car_id', carId).select('id').abortSignal(signal);
             if (error) {
                 if (error.status === 404) break;
                 throw error;
@@ -173,17 +111,14 @@ App.db.sync._executeDelete = async function(action) {
                 action.lastError = err.message;
                 action.lastAttempt = Date.now();
                 await App.db.put('pending_actions', action);
-                throw new Error(`Удаление отложено`);
+                throw new Error('Удаление отложено');
             }
             await new Promise(r => setTimeout(r, 1000 * attempt));
         }
     }
-
     try { await App.db.delete(tableName, entityId); } catch (e) {}
-    const storeKey = { 'operations': 'operations', 'fuel_log': 'fuelLog', 'tires': 'tireLog', 'parts': 'parts', 'history': 'serviceRecords' }[tableName];
-    if (storeKey && App.store[storeKey]) {
-        App.store[storeKey] = App.store[storeKey].filter(i => i.id != entityId);
-    }
+    const storeKey = { operations: 'operations', fuel_log: 'fuelLog', tires: 'tireLog', parts: 'parts', history: 'serviceRecords' }[tableName];
+    if (storeKey && App.store[storeKey]) App.store[storeKey] = App.store[storeKey].filter(i => i.id != entityId);
     return { success: true };
 };
 
@@ -200,19 +135,13 @@ App.db.sync._updateLocalId = async function(entityType, oldId, serverRecord) {
         default: return;
     }
     const idx = storeArray.findIndex(i => i.id == oldId);
-    if (idx !== -1) {
-        storeArray.splice(idx, 1);
-        await App.db.delete(storeName, oldId);
-    }
+    if (idx !== -1) { storeArray.splice(idx, 1); await App.db.delete(storeName, oldId); }
     storeArray.push(serverRecord);
     await App.db.put(storeName, serverRecord);
 };
 
 App.db.sync.processSyncQueue = async function() {
-    if (!App.db._db) {
-        setTimeout(() => App.db.sync.processSyncQueue(), 1000);
-        return;
-    }
+    if (!App.db._db) { setTimeout(() => App.db.sync.processSyncQueue(), 1000); return; }
     if (!navigator.onLine) return;
     if (App.db.sync._isRunning) return;
 
@@ -221,10 +150,8 @@ App.db.sync.processSyncQueue = async function() {
     try {
         await new Promise(r => setTimeout(r, 100));
         let pending = await App.db.getAll('pending_actions');
-        if (!pending.length && App.store.pendingActions?.length) {
-            await new Promise(r => setTimeout(r, 500));
-            pending = await App.db.getAll('pending_actions');
-        }
+        // Пропускаем действия, отложенные на будущее
+        pending = pending.filter(action => !action.nextRetry || action.nextRetry <= Date.now());
         if (!pending.length) return;
 
         for (let i = 0; i < pending.length; i++) {
@@ -244,8 +171,9 @@ App.db.sync.processSyncQueue = async function() {
         }
         await App.store.loadFromIndexedDB();
         if (typeof App.renderAll === 'function') App.renderAll();
-        if (typeof App.setSyncStatus === 'function') {
-            App.setSyncStatus(pending.length === 0 && errorCount === 0 ? 'synced' : 'pending');
+        const syncIndicator = document.getElementById('sync-indicator');
+        if (syncIndicator) {
+            syncIndicator.className = pending.length === 0 && errorCount === 0 ? 'synced' : 'pending';
         }
     } catch (outerErr) {
         console.error('[Sync] Критическая ошибка:', outerErr);
