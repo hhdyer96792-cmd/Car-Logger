@@ -928,7 +928,6 @@ App.ui.pages.renderDocuments = function() {
     });
     container.innerHTML = html;
     App.initIcons();
-};
 
     container.querySelectorAll('.accordion-header').forEach(function(header) {
         header.addEventListener('click', function() {
