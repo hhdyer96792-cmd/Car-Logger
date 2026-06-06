@@ -820,6 +820,7 @@ App.ui.pages.renderDocuments = function() {
     var container = document.getElementById('documents-accordions');
     if (!container) return;
 
+    // Гарантируем, что _carDocuments всегда массив
     var docs = App.ui.pages._carDocuments;
     if (!Array.isArray(docs)) {
         console.warn('[Cars] _carDocuments не является массивом, сбрасываем');
@@ -827,6 +828,7 @@ App.ui.pages.renderDocuments = function() {
         App.ui.pages._carDocuments = [];
     }
 
+    // Сначала показываем локальные документы, затем в фоне обновляем
     var grouped = {};
     docs.forEach(function(doc) {
         var type = doc.type || 'Прочее';
@@ -873,6 +875,15 @@ App.ui.pages.renderDocuments = function() {
     });
     container.innerHTML = html;
     App.initIcons();
+
+    // Загружаем документы с сервера в фоне и обновляем UI
+    App.ui.pages.loadCarDocuments().then(function(updatedDocs) {
+        if (updatedDocs !== docs) {
+            App.ui.pages._carDocuments = updatedDocs;
+            App.ui.pages.renderDocuments(); // перерисовка
+        }
+    }).catch(function() {});
+};
 
     container.querySelectorAll('.accordion-header').forEach(function(header) {
         header.addEventListener('click', function() {
