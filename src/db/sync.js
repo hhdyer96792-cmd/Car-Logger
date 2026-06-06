@@ -1,4 +1,4 @@
-// src/db/sync.js (последняя версия, без health-check, с таймаутом)
+// src/db/sync.js
 window.App = window.App || {};
 App.db = App.db || {};
 App.db.sync = App.db.sync || {};
@@ -41,7 +41,12 @@ App.db.sync._executeAction = async function(action) {
                     return await App.db.sync._executeDelete(action);
                 }
                 switch (entityType) {
-                    case 'operation': case 'fuel': case 'tire': case 'part': case 'history': case 'mileage': {
+                    case 'operation':
+                    case 'fuel':
+                    case 'tire':
+                    case 'part':
+                    case 'history':
+                    case 'mileage': {
                         const map = {
                             'operation': () => App.supa.saveOperation(data),
                             'fuel': () => App.supa.saveFuelRecord(data),
@@ -239,6 +244,9 @@ App.db.sync.processSyncQueue = async function() {
         }
         await App.store.loadFromIndexedDB();
         if (typeof App.renderAll === 'function') App.renderAll();
+        if (typeof App.setSyncStatus === 'function') {
+            App.setSyncStatus(pending.length === 0 && errorCount === 0 ? 'synced' : 'pending');
+        }
     } catch (outerErr) {
         console.error('[Sync] Критическая ошибка:', outerErr);
     } finally {
