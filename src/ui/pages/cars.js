@@ -871,7 +871,17 @@ App.ui.pages.renderDocuments = function() {
     var container = document.getElementById('documents-accordions');
     if (!container) return;
 
-    var docs = App.ui.pages._carDocuments || [];
+    var docs = App.ui.pages._carDocuments;
+    // Проверка, что docs — массив
+    if (!Array.isArray(docs)) {
+        container.innerHTML = '<p class="hint">Документы загружаются...</p>';
+        return;
+    }
+    if (docs.length === 0) {
+        container.innerHTML = '<p class="hint">Нет документов</p>';
+        return;
+    }
+
     var grouped = {};
     docs.forEach(function(doc) {
         var type = doc.type || 'Прочее';
@@ -918,6 +928,7 @@ App.ui.pages.renderDocuments = function() {
     });
     container.innerHTML = html;
     App.initIcons();
+};
 
     container.querySelectorAll('.accordion-header').forEach(function(header) {
         header.addEventListener('click', function() {
