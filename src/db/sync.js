@@ -6,7 +6,7 @@ App.db.sync = App.db.sync || {};
 const MAX_RETRIES = 10;
 const BASE_DELAY = 1000;
 const MAX_DELAY = 30000;
-const ACTION_TIMEOUT = 20000;   // 20 секунд
+const ACTION_TIMEOUT = 20000;
 
 App.db.sync._getDelay = function(retryCount) {
     const delay = Math.min(BASE_DELAY * Math.pow(2, retryCount), MAX_DELAY);
@@ -19,9 +19,7 @@ App.db.sync._updatePendingAction = async function(action, retryCount, errorMessa
     action.lastError = errorMessage;
     action.lastAttempt = Date.now();
     if (retryCount >= MAX_RETRIES) {
-        // Откладываем повтор на 24 часа
-        action.nextRetry = Date.now() + 24 * 60 * 60 * 1000;
-        console.error(`[Sync] Действие ${action.id} отложено до ${new Date(action.nextRetry).toLocaleString()}`);
+        console.error(`[Sync] Действие ${action.id} отложено после ${retryCount} попыток`);
         await App.db.put('error_log', { id: crypto.randomUUID(), type: 'sync_failed_retry_later', action: action, timestamp: Date.now(), message: errorMessage });
     }
     await App.db.put('pending_actions', action);
@@ -150,7 +148,6 @@ App.db.sync.processSyncQueue = async function() {
     try {
         await new Promise(r => setTimeout(r, 100));
         let pending = await App.db.getAll('pending_actions');
-        // Пропускаем действия, отложенные на будущее
         pending = pending.filter(action => !action.nextRetry || action.nextRetry <= Date.now());
         if (!pending.length) return;
 
