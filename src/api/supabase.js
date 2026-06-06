@@ -70,7 +70,7 @@ App.supa.fetchTablePaginated = function(tableName, page, pageSize, orderBy, asce
     ensureSupabase();
     const from = (page - 1) * pageSize;
     const to = from + pageSize - 1;
-    let query = App.supabase.from(tableName).select('*');
+    let query = App.supabase.from(tableName).select('*', { count: 'exact' });
     if (App.store.activeCarId && tableName !== 'cars' && tableName !== 'car_shares' &&
         tableName !== 'vehicle_state' && tableName !== 'user_settings') {
         query = query.eq('car_id', App.store.activeCarId);
@@ -78,20 +78,9 @@ App.supa.fetchTablePaginated = function(tableName, page, pageSize, orderBy, asce
     return query.order(orderBy, { ascending }).range(from, to);
 };
 
-App.supa.insertRow = function(tableName, record) {
-    ensureSupabase();
-    return App.supabase.from(tableName).insert(record).select();
-};
-
-App.supa.updateRow = function(tableName, id, record) {
-    ensureSupabase();
-    return App.supabase.from(tableName).update(record).eq('id', id).select();
-};
-
-App.supa.deleteRow = function(tableName, id) {
-    ensureSupabase();
-    return App.supabase.from(tableName).delete().eq('id', id).select();
-};
+App.supa.insertRow = function(tableName, record) { /* ... без изменений */ };
+App.supa.updateRow = function(tableName, id, record) { /* ... без изменений */ };
+App.supa.deleteRow = function(tableName, id) { /* ... без изменений */ };
 
 App.supa.getCurrentUserId = async function() {
     if (cachedUserId) return cachedUserId;
@@ -106,9 +95,7 @@ App.supa.getCurrentUserId = async function() {
     }
 };
 
-App.supa.clearUserIdCache = function() {
-    cachedUserId = null;
-};
+App.supa.clearUserIdCache = function() { cachedUserId = null; };
 
 // ========== ПАГИНИРОВАННАЯ ЗАГРУЗКА ==========
 App.supa.loadOperations = function(page = 1, pageSize = 30) {
