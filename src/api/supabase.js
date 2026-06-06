@@ -66,11 +66,11 @@ App.supa.fetchTable = function(tableName) {
     return query;
 };
 
-App.supa.fetchTablePaginated = function(tableName, page, pageSize, orderBy, ascending, includeCount = false) {
+App.supa.fetchTablePaginated = function(tableName, page, pageSize, orderBy, ascending) {
     ensureSupabase();
     const from = (page - 1) * pageSize;
     const to = from + pageSize - 1;
-    let query = App.supabase.from(tableName).select('*', includeCount ? { count: 'exact' } : {});
+    let query = App.supabase.from(tableName).select('*');
     if (App.store.activeCarId && tableName !== 'cars' && tableName !== 'car_shares' &&
         tableName !== 'vehicle_state' && tableName !== 'user_settings') {
         query = query.eq('car_id', App.store.activeCarId);
@@ -110,24 +110,24 @@ App.supa.clearUserIdCache = function() {
     cachedUserId = null;
 };
 
-// ========== ЗАГРУЗКА ДАННЫХ (первые страницы) ==========
-App.supa.loadOperations = function(page = 1, pageSize = 50) {
+// ========== ПАГИНИРОВАННАЯ ЗАГРУЗКА ==========
+App.supa.loadOperations = function(page = 1, pageSize = 30) {
     return App.supa.fetchTablePaginated('operations', page, pageSize, 'updated_at', false);
 };
 
-App.supa.loadFuelLog = function(page = 1, pageSize = 50) {
+App.supa.loadFuelLog = function(page = 1, pageSize = 30) {
     return App.supa.fetchTablePaginated('fuel_log', page, pageSize, 'date', false);
 };
 
-App.supa.loadTires = function(page = 1, pageSize = 50) {
+App.supa.loadTires = function(page = 1, pageSize = 30) {
     return App.supa.fetchTablePaginated('tires', page, pageSize, 'date', false);
 };
 
-App.supa.loadParts = function(page = 1, pageSize = 50) {
+App.supa.loadParts = function(page = 1, pageSize = 30) {
     return App.supa.fetchTablePaginated('parts', page, pageSize, 'date_added', false);
 };
 
-App.supa.loadHistory = function(page = 1, pageSize = 50) {
+App.supa.loadHistory = function(page = 1, pageSize = 30) {
     return App.supa.fetchTablePaginated('history', page, pageSize, 'date', false);
 };
 
@@ -161,7 +161,7 @@ App.supa.loadMileageHistory = function(page = 1, pageSize = 100) {
     return App.supa.fetchTablePaginated('mileage_log', page, pageSize, 'date', false);
 };
 
-// ========== СОХРАНЕНИЕ С UPSERT ==========
+// ========== СОХРАНЕНИЕ (без таймаутов) ==========
 App.supa.saveOperation = async function(op) {
     const userId = await App.supa.getCurrentUserId();
     const carId = op.car_id || App.store.activeCarId;
@@ -178,11 +178,7 @@ App.supa.saveOperation = async function(op) {
         user_id: userId,
         car_id: carId
     };
-    const { data, error } = await App.supabase
-        .from('operations')
-        .upsert(record, { onConflict: 'id' })
-        .select()
-        .single();
+    const { data, error } = await App.supabase.from('operations').upsert(record, { onConflict: 'id' }).select().single();
     if (error) throw error;
     return { data: [data], error: null };
 };
@@ -202,11 +198,7 @@ App.supa.saveFuelRecord = async function(record) {
         user_id: userId,
         car_id: carId
     };
-    const { data: result, error } = await App.supabase
-        .from('fuel_log')
-        .upsert(data, { onConflict: 'id' })
-        .select()
-        .single();
+    const { data: result, error } = await App.supabase.from('fuel_log').upsert(data, { onConflict: 'id' }).select().single();
     if (error) throw error;
     return { data: [result], error: null };
 };
@@ -229,11 +221,7 @@ App.supa.saveTireRecord = async function(record) {
         user_id: userId,
         car_id: carId
     };
-    const { data: result, error } = await App.supabase
-        .from('tires')
-        .upsert(data, { onConflict: 'id' })
-        .select()
-        .single();
+    const { data: result, error } = await App.supabase.from('tires').upsert(data, { onConflict: 'id' }).select().single();
     if (error) throw error;
     return { data: [result], error: null };
 };
@@ -256,11 +244,7 @@ App.supa.savePart = async function(part) {
         user_id: userId,
         car_id: carId
     };
-    const { data: result, error } = await App.supabase
-        .from('parts')
-        .upsert(data, { onConflict: 'id' })
-        .select()
-        .single();
+    const { data: result, error } = await App.supabase.from('parts').upsert(data, { onConflict: 'id' }).select().single();
     if (error) throw error;
     return { data: [result], error: null };
 };
@@ -282,11 +266,7 @@ App.supa.saveHistoryRecord = async function(record) {
         user_id: userId,
         car_id: carId
     };
-    const { data: result, error } = await App.supabase
-        .from('history')
-        .upsert(data, { onConflict: 'id' })
-        .select()
-        .single();
+    const { data: result, error } = await App.supabase.from('history').upsert(data, { onConflict: 'id' }).select().single();
     if (error) throw error;
     return { data: [result], error: null };
 };
@@ -302,11 +282,7 @@ App.supa.addMileageRecord = async function(date, mileage, motohours, carId) {
         user_id: userId,
         car_id: effectiveCarId
     };
-    const { data: result, error } = await App.supabase
-        .from('mileage_log')
-        .upsert(record, { onConflict: 'id' })
-        .select()
-        .single();
+    const { data: result, error } = await App.supabase.from('mileage_log').upsert(record, { onConflict: 'id' }).select().single();
     if (error) throw error;
     return { data: [result], error: null };
 };
@@ -372,7 +348,7 @@ App.supa.uploadPhoto = async function(file) {
 };
 
 // ---------- Документы автомобиля ----------
-App.supa.loadCarDocuments = function(page = 1, pageSize = 50) {
+App.supa.loadCarDocuments = function(page = 1, pageSize = 30) {
     return App.supa.fetchTablePaginated('car_documents', page, pageSize, 'date', false);
 };
 
