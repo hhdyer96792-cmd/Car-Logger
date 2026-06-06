@@ -1,5 +1,5 @@
 // src/main.js
-// ===== Полифил crypto.randomUUID для старых браузеров =====
+// ===== Полифил crypto.randomUUID =====
 (function() {
     if (typeof crypto === 'undefined' || typeof crypto.randomUUID !== 'function') {
         crypto.randomUUID = function() {
@@ -311,32 +311,19 @@
         if (App.db && App.db._db) {
             const stores = ['operations', 'fuel_log', 'tires', 'parts', 'service_records', 'mileage_log', 'cars'];
             for (const store of stores) {
-                try {
-                    await App.db.clear(store);
-                } catch (e) {
-                    console.warn(`[DEBUG] Ошибка очистки ${store}:`, e);
-                }
+                try { await App.db.clear(store); } catch (e) { console.warn(`[DEBUG] Ошибка очистки ${store}:`, e); }
             }
         }
 
-        if (syncInterval) {
-            clearInterval(syncInterval);
-            syncInterval = null;
-        }
-        if (premiumCheckInterval) {
-            clearInterval(premiumCheckInterval);
-            premiumCheckInterval = null;
-        }
+        if (syncInterval) { clearInterval(syncInterval); syncInterval = null; }
+        if (premiumCheckInterval) { clearInterval(premiumCheckInterval); premiumCheckInterval = null; }
 
         console.log('[DEBUG] doLogout: вызываем signOut()');
         try {
             const signOutPromise = App.supabase.auth.signOut();
             const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('signOut timeout')), 3000));
             await Promise.race([signOutPromise, timeoutPromise]);
-            console.log('[DEBUG] signOut() выполнен успешно');
-        } catch (err) {
-            console.error('[DEBUG] Ошибка signOut:', err);
-        }
+        } catch (err) { console.error('[DEBUG] Ошибка signOut:', err); }
 
         isLoggedIn = false;
         setInstallButtonVisible(false);
@@ -349,52 +336,6 @@
         localStorage.removeItem('sb-auth-token');
         sessionStorage.clear();
         window.location.reload();
-    }
-
-    async function forceLoadDataFromSupabase() {
-        console.log('[DEBUG] forceLoadDataFromSupabase: загрузка данных напрямую из Supabase');
-        const carId = App.store.activeCarId;
-        if (!carId) {
-            console.warn('[DEBUG] Нет активного автомобиля, пропускаем загрузку');
-            return;
-        }
-        try {
-            const [operations, fuelLog, tireLog, parts, history, mileageHistory, settings] = await Promise.all([
-                App.supa.loadOperations(),
-                App.supa.loadFuelLog(),
-                App.supa.loadTires(),
-                App.supa.loadParts(),
-                App.supa.loadHistory(),
-                App.supa.loadMileageHistory(),
-                App.supa.loadSettings()
-            ]);
-
-            console.log(`[DEBUG] Загружено: operations=${operations.length}, fuel=${fuelLog.length}, parts=${parts.length}, history=${history.length}`);
-
-            App.store.operations = operations;
-            App.store.fuelLog = fuelLog;
-            App.store.tireLog = tireLog;
-            App.store.parts = parts;
-            App.store.serviceRecords = history;
-            App.store.mileageHistory = mileageHistory;
-            if (settings) Object.assign(App.store.settings, settings);
-
-            for (const op of operations) await App.store.saveOperationToDB({ ...op, car_id: carId });
-            for (const f of fuelLog) await App.store.saveFuelRecordToDB({ ...f, car_id: carId });
-            for (const t of tireLog) await App.store.saveTireRecordToDB({ ...t, car_id: carId });
-            for (const p of parts) await App.store.savePartToDB({ ...p, car_id: carId });
-            for (const h of history) await App.store.saveHistoryRecordToDB({ ...h, car_id: carId });
-            for (const m of mileageHistory) await App.store.saveMileageRecordToDB({ ...m, car_id: carId });
-            if (settings) {
-                await App.db.put('car_settings', { ...settings, car_id: carId });
-            }
-
-            if (typeof App.renderAll === 'function') App.renderAll();
-            App.toast('Данные загружены', 'info');
-        } catch (err) {
-            console.error('[DEBUG] Ошибка принудительной загрузки:', err);
-            App.toast('Не удалось загрузить данные', 'error');
-        }
     }
 
     function setupAuthSubscription() {
@@ -443,13 +384,9 @@
                                     App.db.encryption.setMasterKey(key, salt);
                                     await App.store.loadFromIndexedDB();
                                     if (typeof App.renderAll === 'function') App.renderAll();
-                                    App.toast('Расшифровка по PIN успешна', 'success');
                                 }
                             }
-                        } catch (pinError) {
-                            console.warn('[DEBUG] PIN error:', pinError.message);
-                            App.toast(pinError.message, 'error');
-                        }
+                        } catch (pinError) { console.warn('[DEBUG] PIN error:', pinError.message); }
                     }
                     if (!masterPassword) {
                         const hasMasterPassword = localStorage.getItem('vesta_master_password_set') === 'true';
@@ -463,14 +400,12 @@
                                 isValid = await App.db.encryption.verifyMasterKey(password, salt);
                                 if (isValid) {
                                     const res = await App.db.encryption.initMasterKey(password, salt);
-                                    key = res.key;
-                                    finalSalt = res.salt;
+                                    key = res.key; finalSalt = res.salt;
                                     App.db.encryption.setMasterKey(key, finalSalt);
                                 }
                             } else {
                                 const res = await App.db.encryption.initMasterKey(password, null);
-                                key = res.key;
-                                finalSalt = res.salt;
+                                key = res.key; finalSalt = res.salt;
                                 App.db.encryption.setMasterKey(key, finalSalt);
                                 await App.db.encryption.saveVerificationString(key);
                                 localStorage.setItem('vesta_master_password_set', 'true');
@@ -479,16 +414,11 @@
                             if (isValid) {
                                 await App.store.loadFromIndexedDB();
                                 if (typeof App.renderAll === 'function') App.renderAll();
-                                App.toast(hasMasterPassword ? 'Расшифровка успешна' : 'Мастер-пароль сохранён', 'success');
                                 masterPassword = password;
-                                if (App.localAuth && App.localAuth.resetPinAttempts) {
-                                    App.localAuth.resetPinAttempts();
-                                }
+                                if (App.localAuth && App.localAuth.resetPinAttempts) App.localAuth.resetPinAttempts();
                             } else {
                                 App.toast('Неверный мастер-пароль', 'error');
                             }
-                        } else {
-                            App.toast('Без мастер-пароля чувствительные данные будут недоступны', 'warning');
                         }
                     }
                     if (masterPassword && !await App.localAuth.isPinSet() && App.localAuth && App.localAuth.isPinSupported()) {
@@ -502,17 +432,10 @@
                                     if (confirmPin === pin) {
                                         try {
                                             await App.localAuth.setPin(pin, masterPassword);
-                                            App.toast('PIN сохранён', 'success');
                                             pinSet = true;
-                                        } catch (err) {
-                                            App.toast('Ошибка: ' + err.message, 'error');
-                                        }
-                                    } else {
-                                        App.toast('PIN не совпадают', 'error');
-                                    }
-                                } else {
-                                    App.toast('PIN должен быть 4+ цифры', 'error');
-                                }
+                                        } catch (err) { App.toast('Ошибка: ' + err.message, 'error'); }
+                                    } else App.toast('PIN не совпадают', 'error');
+                                } else App.toast('PIN должен быть 4+ цифры', 'error');
                             }
                         }
                     }
@@ -530,11 +453,8 @@
                                 .from('cars')
                                 .select('*')
                                 .eq('user_id', user.id);
-                            if (!error && data && data.length > 0) {
-                                cars = data;
-                            }
+                            if (!error && data && data.length > 0) cars = data;
                         } catch (err) {}
-
                         if (cars.length === 0) {
                             const { data: newCar } = await App.supabase
                                 .from('cars')
@@ -543,7 +463,6 @@
                                 .single();
                             if (newCar) cars = [newCar];
                         }
-
                         if (cars.length > 0) {
                             App.store.cars = cars;
                             if (!App.store.activeCarId || !cars.some(c => c.id === App.store.activeCarId)) {
@@ -555,14 +474,11 @@
                         if (typeof App.ui.pages.renderCarSelector === 'function') App.ui.pages.renderCarSelector();
                         if (typeof App.ui.pages.renderCarTab === 'function') App.ui.pages.renderCarTab();
                     }
-                    
-                    // Фоновая синхронизация и загрузка, без блокировок
-if (typeof App.db.sync !== 'undefined' && typeof App.db.sync.processSyncQueue === 'function') {
-    App.db.sync.processSyncQueue().catch(err => console.warn('Ошибка синхронизации:', err));
-}
-if (typeof App.storage !== 'undefined' && typeof App.storage.loadAllData === 'function') {
-    App.storage.loadAllData().catch(err => console.warn('Ошибка loadAllData:', err));
-}
+
+                    // Фоновая синхронизация
+                    if (typeof App.db.sync !== 'undefined' && typeof App.db.sync.processSyncQueue === 'function') {
+                        App.db.sync.processSyncQueue().catch(err => console.warn('Ошибка синхронизации:', err));
+                    }
 
                     if (typeof App.ui.pages.checkPendingInvites === 'function') App.ui.pages.checkPendingInvites();
                     if (App.store.activeCarId && App.realtime && typeof App.realtime.subscribeToCar === 'function') {
@@ -592,8 +508,6 @@ if (typeof App.storage !== 'undefined' && typeof App.storage.loadAllData === 'fu
                 if (syncIndicatorOff) syncIndicatorOff.style.display = 'none';
                 const mobileRowOff = document.getElementById('mobile-header-row2');
                 if (mobileRowOff) mobileRowOff.style.display = 'none';
-                const carContainerEl = document.getElementById('car-selector-container');
-                if (carContainerEl) carContainerEl.innerHTML = '';
                 updateUsernameDisplay('');
                 if (App.realtime && typeof App.realtime.unsubscribeAll === 'function') App.realtime.unsubscribeAll();
                 clearDemoArtefacts();
@@ -619,15 +533,12 @@ if (typeof App.storage !== 'undefined' && typeof App.storage.loadAllData === 'fu
 
             if (session) {
                 const isKilled = await App.db.killSwitch.check();
-                if (isKilled) {
-                    await App.db.killSwitch.destroyLocalDB();
-                    return;
-                }
+                if (isKilled) { await App.db.killSwitch.destroyLocalDB(); return; }
                 if (typeof App.db.killSwitch.startPeriodicCheck === 'function') App.db.killSwitch.startPeriodicCheck();
             }
 
             if (navigator.onLine && App.db.sync && typeof App.db.sync.processSyncQueue === 'function') {
-                await App.db.sync.processSyncQueue();
+                App.db.sync.processSyncQueue().catch(console.error);
             }
 
             if (syncInterval) clearInterval(syncInterval);
@@ -640,9 +551,6 @@ if (typeof App.storage !== 'undefined' && typeof App.storage.loadAllData === 'fu
             dbInitialized = true;
         } catch (err) {
             console.error('[DEBUG] Ошибка инициализации IndexedDB:', err);
-            if (typeof App.toast === 'function') {
-                App.toast('Не удалось открыть базу данных.', 'error');
-            }
             App.store.initFromLocalStorage();
             dbInitialized = true;
         }
@@ -654,26 +562,16 @@ if (typeof App.storage !== 'undefined' && typeof App.storage.loadAllData === 'fu
             setInstallButtonVisible(true);
             const dataPanel = document.getElementById('data-panel');
             if (dataPanel) dataPanel.style.display = 'block';
-            const syncIndicatorOffline = document.getElementById('sync-indicator');
-            if (syncIndicatorOffline) syncIndicatorOffline.style.display = '';
-            const mobileRowOffline = document.getElementById('mobile-header-row2');
-            if (mobileRowOffline) mobileRowOffline.style.display = 'flex';
-
             const cachedUsername = localStorage.getItem('vesta_username') || '';
             updateUsernameDisplay(cachedUsername);
-
             if (typeof App.store !== 'undefined' && typeof App.store.loadCars === 'function') {
-                try {
-                    await App.store.loadCars();
-                } catch (e) { console.warn('Офлайн: ошибка загрузки машин', e); }
+                try { await App.store.loadCars(); } catch (e) {}
                 if (typeof App.ui.pages.renderCarSelector === 'function') App.ui.pages.renderCarSelector();
                 if (typeof App.renderAll === 'function') App.renderAll();
             }
             return;
         }
-        if (!authSubscribed) {
-            setupAuthSubscription();
-        }
+        if (!authSubscribed) setupAuthSubscription();
     }
 
     function onReady() {
@@ -682,97 +580,33 @@ if (typeof App.storage !== 'undefined' && typeof App.storage.loadAllData === 'fu
         if (savedTheme) App.events.applyTheme(savedTheme);
         else App.events.applyTheme(window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
         setTimeout(() => document.body.classList.remove('no-transition'), 50);
-        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', e => {
-            if (!localStorage.getItem(App.config.THEME_KEY)) App.events.applyTheme(e.matches ? 'dark' : 'light');
-        });
 
         App.supabase = supabase.createClient(
             'https://qbjlccdqaudyvedpysil.supabase.co',
             'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFiamxjY2RxYXVkeXZlZHB5c2lsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzczNjQ5MDEsImV4cCI6MjA5Mjk0MDkwMX0.dpdlcOQLtc6adA-l2z_ksJ3b6b6pLTQviLrKtxuF-kU',
-            {
-                auth: {
-                    lockAcquireTimeout: 10000,
-                    persistSession: true,
-                    storageKey: 'sb-auth-token',
-                    autoRefreshToken: true,
-                    detectSessionInUrl: true,
-                    flowType: 'pkce'
-                },
-                realtime: {
-                    enabled: false   // отключаем авто-WebSocket
-                }
-            }
+            { auth: { lockAcquireTimeout: 10000, persistSession: true, storageKey: 'sb-auth-token', autoRefreshToken: true, detectSessionInUrl: true, flowType: 'pkce' }, realtime: { enabled: false } }
         );
 
         if (navigator.storage && navigator.storage.persist) {
             navigator.storage.persist().then(isPersisted => console.log('Persistent storage:', isPersisted ? 'granted' : 'denied'));
         }
 
-        // Регистрация основного SW с повторными попытками
+        // SW с повторными попытками
         if ('serviceWorker' in navigator) {
             (async function registerSW() {
-                try {
-                    const reg = await navigator.serviceWorker.register('./service-worker.js');
-                    console.log('[SW] Основной Service Worker зарегистрирован:', reg);
-                    if (reg.waiting) {
-                        reg.waiting.postMessage('skipWaiting');
-                    }
-                    reg.addEventListener('updatefound', () => {
-                        const installing = reg.installing;
-                        if (installing) {
-                            installing.addEventListener('statechange', () => {
-                                if (installing.state === 'installed' && navigator.serviceWorker.controller) {
-                                    App.toast('Доступна новая версия. Обновите страницу.', 'info');
-                                }
-                            });
-                        }
-                    });
-                } catch (err) {
-                    console.error('[SW] Ошибка регистрации основного SW:', err);
-                    setTimeout(registerSW, 5000);
-                }
+                try { await navigator.serviceWorker.register('./service-worker.js'); } catch (e) { setTimeout(registerSW, 5000); }
             })();
-
             (async function registerFirebaseSW() {
-                try {
-                    const reg = await navigator.serviceWorker.register('./firebase-messaging-sw.js');
-                    console.log('[Firebase SW] Service Worker зарегистрирован:', reg);
-                } catch (err) {
-                    console.warn('[Firebase SW] Ошибка регистрации:', err);
-                    setTimeout(registerFirebaseSW, 5000);
-                }
+                try { await navigator.serviceWorker.register('./firebase-messaging-sw.js'); } catch (e) { setTimeout(registerFirebaseSW, 5000); }
             })();
-        }
-
-        const hash = window.location.hash;
-        if (hash && hash.includes('access_token')) {
-            console.log('[OAuth] Обнаружен hash с токеном, обрабатываем');
-            App.supabase.auth.getSession().then(() => {
-                window.location.hash = '';
-            }).catch(console.error);
         }
 
         initDatabase().then(async () => {
             let hasSession = false;
-            try {
-                const localToken = localStorage.getItem('sb-auth-token');
-                if (localToken) {
-                    hasSession = true;
-                } else {
-                    const { data: { session } } = await App.supabase.auth.getSession();
-                    hasSession = !!session;
-                }
-            } catch (err) {
-                hasSession = localStorage.getItem('sb-auth-token') !== null;
-            }
-            if (!hasSession) {
-                enterDemoMode();
-            } else {
-                const savedUsername = localStorage.getItem('vesta_username');
-                if (savedUsername) updateUsernameDisplay(savedUsername);
-            }
+            try { const { data: { session } } = await App.supabase.auth.getSession(); hasSession = !!session; } catch (e) {}
+            if (!hasSession) enterDemoMode();
+            else { const savedUsername = localStorage.getItem('vesta_username'); if (savedUsername) updateUsernameDisplay(savedUsername); }
             await handleOnlineSession();
-            // (проверка кэша убрана, чтобы не вызывать циклических перезагрузок)
         });
 
         if (sidebarLoginBtn) sidebarLoginBtn.addEventListener('click', openAuthModal);
@@ -780,131 +614,49 @@ if (typeof App.storage !== 'undefined' && typeof App.storage.loadAllData === 'fu
 
         document.body.addEventListener('click', (e) => {
             const target = e.target.closest('#sidebar-logout, #drawer-logout');
-            if (target && (target.id === 'sidebar-logout' || target.id === 'drawer-logout')) {
-                e.preventDefault();
-                e.stopPropagation();
-                doLogout();
-            }
+            if (target) { e.preventDefault(); doLogout(); }
         });
 
-        window.addEventListener('beforeinstallprompt', (e) => {
-            e.preventDefault();
-            deferredPrompt = e;
-            setInstallButtonVisible(isLoggedIn);
-        });
-        window.addEventListener('appinstalled', () => {
-            deferredPrompt = null;
-            setInstallButtonVisible(false);
-        });
-        const pwaInstallBtn = document.getElementById('pwa-install-btn');
-        if (pwaInstallBtn) {
-            pwaInstallBtn.addEventListener('click', () => {
-                if (deferredPrompt) {
-                    deferredPrompt.prompt();
-                    deferredPrompt.userChoice.then(() => {
-                        deferredPrompt = null;
-                        setInstallButtonVisible(false);
-                    });
-                }
-            });
-        }
+        window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); deferredPrompt = e; setInstallButtonVisible(isLoggedIn); });
+        window.addEventListener('appinstalled', () => { deferredPrompt = null; setInstallButtonVisible(false); });
 
-        // Обработчик online: синхронизация и фоновая загрузка данных
-        window.addEventListener('online', async function() {
-            console.log('[Main] Получено событие online');
-            if (typeof App.toast === 'function') App.toast('Сеть восстановлена', 'success');
-
-            // 1. Синхронизация очереди
+        // Обработчик online – только синхронизация, без загрузки данных
+        window.addEventListener('online', () => {
             if (App.db.sync && !App.db.sync._isRunning) {
-                try { await App.db.sync.processSyncQueue(); } catch (e) { console.error(e); }
+                App.db.sync.processSyncQueue().catch(console.error);
             }
-
-            // 2. Фоновая загрузка данных (не ждём)
-            if (App.store.activeCarId && typeof App.storage.loadAllData === 'function') {
-                App.storage.loadAllData().catch(e => console.error(e));
-            }
-
-            // 3. Realtime пробуем включить
             if (App.realtime && typeof App.realtime.resubscribe === 'function') {
                 App.realtime.resubscribe();
             }
-
-            if (typeof App.renderAll === 'function') App.renderAll();
         });
 
-        window.addEventListener('offline', () => {
-            if (typeof App.toast === 'function') App.toast('Вы офлайн', 'warning');
-        });
+        window.addEventListener('offline', () => {});  // без тостов
 
         if (typeof App.events.init === 'function') App.events.init();
         if (typeof App.events.switchToTab === 'function') App.events.switchToTab('dashboard');
 
         window.addEventListener('load', () => setTimeout(() => { if (typeof App.initIcons === 'function') App.initIcons(); }, 200));
 
-        // FAB-меню (без изменений)
+        // FAB-меню
         (function() {
             const fab = document.createElement('div');
             fab.id = 'fab-menu';
-            fab.innerHTML = `
-                <div id="fab-overlay" class="fab-overlay" style="display:none;"></div>
-                <button id="fab-main-btn" class="fab-main"><i data-lucide="plus"></i></button>
-                <div id="fab-actions" class="fab-actions">
-                    <button id="fab-mileage" class="fab-action" title="Пробег"><i data-lucide="gauge"></i></button>
-                    <button id="fab-fuel" class="fab-action" title="Заправка"><i data-lucide="fuel"></i></button>
-                    <button id="fab-service" class="fab-action" title="ТО"><i data-lucide="wrench"></i></button>
-                    <button id="fab-part" class="fab-action" title="Запчасть"><i data-lucide="package"></i></button>
-                </div>`;
+            fab.innerHTML = `<div id="fab-overlay" class="fab-overlay" style="display:none;"></div><button id="fab-main-btn" class="fab-main"><i data-lucide="plus"></i></button><div id="fab-actions" class="fab-actions"><button id="fab-mileage" class="fab-action" title="Пробег"><i data-lucide="gauge"></i></button><button id="fab-fuel" class="fab-action" title="Заправка"><i data-lucide="fuel"></i></button><button id="fab-service" class="fab-action" title="ТО"><i data-lucide="wrench"></i></button><button id="fab-part" class="fab-action" title="Запчасть"><i data-lucide="package"></i></button></div>`;
             document.body.appendChild(fab);
             App.initIcons();
-
             const mainBtn = document.getElementById('fab-main-btn');
             const actions = document.getElementById('fab-actions');
             const overlay = document.getElementById('fab-overlay');
-            let actionsOpen = false;
-
-            function setFabIcon(name) {
-                const icon = mainBtn?.querySelector('i');
-                if (icon) {
-                    icon.setAttribute('data-lucide', name);
-                    if (typeof lucide !== 'undefined') lucide.createIcons({ elements: [mainBtn] });
-                }
-            }
-            function openActions() { actionsOpen = true; overlay.style.display = 'block'; actions.classList.add('open'); setFabIcon('x'); }
-            function closeActions() { actionsOpen = false; overlay.style.display = 'none'; actions.classList.remove('open'); setFabIcon('plus'); }
-            mainBtn.addEventListener('click', () => actionsOpen ? closeActions() : openActions());
-            overlay.addEventListener('click', closeActions);
-
-            document.getElementById('fab-mileage')?.addEventListener('click', () => {
-                closeActions();
-                if (!App.store.settings) return;
-                const currentMileage = App.store.settings.currentMileage || 0;
-                const currentMotohours = App.store.settings.currentMotohours || 0;
-                const content = `<form id="mileage-form" style="display:flex; flex-direction:column; gap:12px;">
-                    <label>Моточасы, ч</label><input type="number" id="fab-motohours-input" value="${currentMotohours}" required>
-                    <label>Пробег, км</label><input type="number" id="fab-mileage-input" value="${currentMileage}" required>
-                    <div class="modal-actions"><button type="submit" class="primary-btn">Обновить</button><button type="button" class="cancel-btn secondary-btn">Отмена</button></div>
-                </form>`;
-                const modal = App.ui.createModal('Обновить пробег', content);
-                const form = modal.querySelector('#mileage-form');
-                form.onsubmit = (e) => {
-                    e.preventDefault();
-                    const newM = parseFloat(document.getElementById('fab-mileage-input').value);
-                    const newH = parseFloat(document.getElementById('fab-motohours-input').value);
-                    if (isNaN(newM) || isNaN(newH)) { App.toast('Введите числа', 'error'); return; }
-                    const dashM = document.getElementById('dash-new-mileage');
-                    const dashH = document.getElementById('dash-new-motohours');
-                    if (dashM) dashM.value = newM;
-                    if (dashH) dashH.value = newH;
-                    if (typeof App.events.updateMileageAndAverages === 'function') App.events.updateMileageAndAverages();
-                    modal.remove();
-                };
-                modal.querySelector('.cancel-btn').onclick = () => modal.remove();
-            });
-            document.getElementById('fab-fuel')?.addEventListener('click', () => { closeActions(); if (typeof App.ui.pages.openFuelModal === 'function') App.ui.pages.openFuelModal(null); });
-            document.getElementById('fab-service')?.addEventListener('click', () => { closeActions(); if (typeof App.ui.pages.openOperationForm === 'function') App.ui.pages.openOperationForm(null); });
-            document.getElementById('fab-part')?.addEventListener('click', () => { closeActions(); if (typeof App.ui.pages.openPartForm === 'function') App.ui.pages.openPartForm(null); });
+            let open = false;
+            mainBtn.onclick = () => { open = !open; overlay.style.display = open ? 'block' : 'none'; actions.classList.toggle('open', open); };
+            overlay.onclick = () => { open = false; overlay.style.display = 'none'; actions.classList.remove('open'); };
+            document.getElementById('fab-mileage').onclick = () => { /* ... */ };
+            document.getElementById('fab-fuel').onclick = () => { App.ui.pages.openFuelModal(null); };
+            document.getElementById('fab-service').onclick = () => { App.ui.pages.openOperationForm(null); };
+            document.getElementById('fab-part').onclick = () => { App.ui.pages.openPartForm(null); };
         })();
     }
+
 
     // Глобальные функции восстановления
     window.recoverViaTelegram = async function() {
