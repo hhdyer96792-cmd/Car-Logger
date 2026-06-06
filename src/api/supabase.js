@@ -78,9 +78,20 @@ App.supa.fetchTablePaginated = function(tableName, page, pageSize, orderBy, asce
     return query.order(orderBy, { ascending }).range(from, to);
 };
 
-App.supa.insertRow = function(tableName, record) { /* ... без изменений */ };
-App.supa.updateRow = function(tableName, id, record) { /* ... без изменений */ };
-App.supa.deleteRow = function(tableName, id) { /* ... без изменений */ };
+App.supa.insertRow = function(tableName, record) {
+    ensureSupabase();
+    return App.supabase.from(tableName).insert(record).select();
+};
+
+App.supa.updateRow = function(tableName, id, record) {
+    ensureSupabase();
+    return App.supabase.from(tableName).update(record).eq('id', id).select();
+};
+
+App.supa.deleteRow = function(tableName, id) {
+    ensureSupabase();
+    return App.supabase.from(tableName).delete().eq('id', id).select();
+};
 
 App.supa.getCurrentUserId = async function() {
     if (cachedUserId) return cachedUserId;
@@ -95,7 +106,9 @@ App.supa.getCurrentUserId = async function() {
     }
 };
 
-App.supa.clearUserIdCache = function() { cachedUserId = null; };
+App.supa.clearUserIdCache = function() {
+    cachedUserId = null;
+};
 
 // ========== ПАГИНИРОВАННАЯ ЗАГРУЗКА ==========
 App.supa.loadOperations = function(page = 1, pageSize = 30) {
@@ -148,8 +161,8 @@ App.supa.loadMileageHistory = function(page = 1, pageSize = 100) {
     return App.supa.fetchTablePaginated('mileage_log', page, pageSize, 'date', false);
 };
 
-// ========== СОХРАНЕНИЕ (без таймаутов) ==========
-App.supa.saveOperation = async function(op) {
+// ========== СОХРАНЕНИЕ (с опциональным signal для прерывания) ==========
+App.supa.saveOperation = async function(op, signal) {
     const userId = await App.supa.getCurrentUserId();
     const carId = op.car_id || App.store.activeCarId;
     const record = {
@@ -165,12 +178,12 @@ App.supa.saveOperation = async function(op) {
         user_id: userId,
         car_id: carId
     };
-    const { data, error } = await App.supabase.from('operations').upsert(record, { onConflict: 'id' }).select().single();
+    const { data, error } = await App.supabase.from('operations').upsert(record, { onConflict: 'id' }).select().single().abortSignal(signal);
     if (error) throw error;
     return { data: [data], error: null };
 };
 
-App.supa.saveFuelRecord = async function(record) {
+App.supa.saveFuelRecord = async function(record, signal) {
     const userId = await App.supa.getCurrentUserId();
     const carId = record.car_id || App.store.activeCarId;
     const data = {
@@ -185,12 +198,12 @@ App.supa.saveFuelRecord = async function(record) {
         user_id: userId,
         car_id: carId
     };
-    const { data: result, error } = await App.supabase.from('fuel_log').upsert(data, { onConflict: 'id' }).select().single();
+    const { data: result, error } = await App.supabase.from('fuel_log').upsert(data, { onConflict: 'id' }).select().single().abortSignal(signal);
     if (error) throw error;
     return { data: [result], error: null };
 };
 
-App.supa.saveTireRecord = async function(record) {
+App.supa.saveTireRecord = async function(record, signal) {
     const userId = await App.supa.getCurrentUserId();
     const carId = record.car_id || App.store.activeCarId;
     const data = {
@@ -208,12 +221,12 @@ App.supa.saveTireRecord = async function(record) {
         user_id: userId,
         car_id: carId
     };
-    const { data: result, error } = await App.supabase.from('tires').upsert(data, { onConflict: 'id' }).select().single();
+    const { data: result, error } = await App.supabase.from('tires').upsert(data, { onConflict: 'id' }).select().single().abortSignal(signal);
     if (error) throw error;
     return { data: [result], error: null };
 };
 
-App.supa.savePart = async function(part) {
+App.supa.savePart = async function(part, signal) {
     const userId = await App.supa.getCurrentUserId();
     const carId = part.car_id || App.store.activeCarId;
     const data = {
@@ -231,12 +244,12 @@ App.supa.savePart = async function(part) {
         user_id: userId,
         car_id: carId
     };
-    const { data: result, error } = await App.supabase.from('parts').upsert(data, { onConflict: 'id' }).select().single();
+    const { data: result, error } = await App.supabase.from('parts').upsert(data, { onConflict: 'id' }).select().single().abortSignal(signal);
     if (error) throw error;
     return { data: [result], error: null };
 };
 
-App.supa.saveHistoryRecord = async function(record) {
+App.supa.saveHistoryRecord = async function(record, signal) {
     const userId = await App.supa.getCurrentUserId();
     const carId = record.car_id || App.store.activeCarId;
     const data = {
@@ -253,12 +266,12 @@ App.supa.saveHistoryRecord = async function(record) {
         user_id: userId,
         car_id: carId
     };
-    const { data: result, error } = await App.supabase.from('history').upsert(data, { onConflict: 'id' }).select().single();
+    const { data: result, error } = await App.supabase.from('history').upsert(data, { onConflict: 'id' }).select().single().abortSignal(signal);
     if (error) throw error;
     return { data: [result], error: null };
 };
 
-App.supa.addMileageRecord = async function(date, mileage, motohours, carId) {
+App.supa.addMileageRecord = async function(date, mileage, motohours, carId, signal) {
     const userId = await App.supa.getCurrentUserId();
     const effectiveCarId = carId || App.store.activeCarId;
     const record = {
@@ -269,7 +282,7 @@ App.supa.addMileageRecord = async function(date, mileage, motohours, carId) {
         user_id: userId,
         car_id: effectiveCarId
     };
-    const { data: result, error } = await App.supabase.from('mileage_log').upsert(record, { onConflict: 'id' }).select().single();
+    const { data: result, error } = await App.supabase.from('mileage_log').upsert(record, { onConflict: 'id' }).select().single().abortSignal(signal);
     if (error) throw error;
     return { data: [result], error: null };
 };
