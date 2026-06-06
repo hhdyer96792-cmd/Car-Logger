@@ -286,86 +286,51 @@ App.storage.loadSettingsForCar = async function(carId) {
     }
 };
 
-// ========== ПАГИНИРОВАННАЯ ЗАГРУЗКА ==========
+// ========== ФОНОВАЯ ЗАГРУЗКА ПЕРВЫХ СТРАНИЦ ==========
 const methodMap = {
     operations: 'loadOperations',
     fuel_log: 'loadFuelLog',
     tires: 'loadTires',
     parts: 'loadParts',
     history: 'loadHistory',
-    mileage: 'loadMileageHistory',
-    car_documents: 'loadCarDocuments'
-    // settings исключён – загружается отдельно через loadSettingsForCar
+    mileage: 'loadMileageHistory'
 };
 
-App.storage.loadFirstPage = async function(table, pageSize = 30) {
-    if (!navigator.onLine) return App.store[table] || [];
+App.storage.loadFirstPage = async function(table, pageSize = 50) {
+    if (!navigator.onLine) return;
     const methodName = methodMap[table];
-    if (!methodName) return [];
+    if (!methodName) return;
     try {
         const { data, error } = await App.supa[methodName](1, pageSize);
         if (error) throw error;
         const carId = App.store.activeCarId;
         const items = (data || []).map(item => ({ ...item, car_id: carId }));
-        // Удаляем старые записи и вставляем новые в одной транзакции
-        const tx = App.db._db.transaction(table, 'readwrite');
-        const store = tx.objectStore(table);
-        store.clear();
-        for (const item of items) store.put(item);
-        await new Promise((resolve, reject) => { tx.oncomplete = resolve; tx.onerror = reject; });
-        App.store[table] = items;
-        return items;
+        await App.db.putMany(table, items);
+        // Обновляем Store, заменяя старые элементы новыми
+        const newMap = new Map(items.map(i => [i.id, i]));
+        App.store[table] = App.store[table].filter(old => !newMap.has(old.id)).concat(items);
     } catch (err) {
         console.warn(`[Storage] Не удалось загрузить ${table}:`, err.message);
-        return App.store[table] || [];
-    }
-};
-
-App.storage.loadNextPage = async function(table, page, pageSize = 30) {
-    if (!navigator.onLine) return;
-    const methodName = methodMap[table];
-    if (!methodName) return;
-    try {
-        const { data, error } = await App.supa[methodName](page, pageSize);
-        if (error) throw error;
-        const carId = App.store.activeCarId;
-        const existingIds = new Set((App.store[table] || []).map(i => i.id));
-        const newItems = (data || []).filter(item => !existingIds.has(item.id)).map(item => ({ ...item, car_id: carId }));
-        if (newItems.length > 0) {
-            await App.db.putMany(table, newItems);
-            App.store[table] = (App.store[table] || []).concat(newItems);
-        }
-    } catch (err) {
-        console.warn(`[Storage] Не удалось загрузить страницу ${page} таблицы ${table}:`, err.message);
     }
 };
 
 App.storage.loadAllData = async function() {
-    // 1. Мгновенно показываем локальные данные
+    // Мгновенно загружаем локальные данные и отображаем
     await App.store.loadFromIndexedDB();
     document.getElementById('data-panel').style.display = 'block';
     if (typeof App.renderAll === 'function') App.renderAll();
-    // Обновляем индикатор синхронизации
     const syncIndicator = document.getElementById('sync-indicator');
     if (syncIndicator) syncIndicator.className = 'pending';
 
     if (!navigator.onLine) return;
 
-    // 2. Последовательная загрузка первых страниц (щадящий режим)
-    const tables = [
-        ['operations', 50],
-        ['fuel_log', 50],
-        ['tires', 50],
-        ['parts', 50],
-        ['history', 50],
-        ['mileage', 100]
-    ];
-    for (const [table, size] of tables) {
-        await App.storage.loadFirstPage(table, size);
-        await new Promise(r => setTimeout(r, 200)); // пауза
+    // Последовательно загружаем первые страницы таблиц
+    const tables = ['operations', 'fuel_log', 'tires', 'parts', 'history', 'mileage'];
+    for (const table of tables) {
+        await App.storage.loadFirstPage(table, 50).catch(()=>{});
+        await new Promise(r => setTimeout(r, 200));
     }
-    // Настройки
-    await App.storage.loadSettingsForCar(App.store.activeCarId);
+    await App.storage.loadSettingsForCar(App.store.activeCarId).catch(()=>{});
 
     if (typeof App.renderAll === 'function') App.renderAll();
     if (syncIndicator) syncIndicator.className = 'synced';
