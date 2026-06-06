@@ -501,11 +501,13 @@
         initDatabase().then(async () => {
             let hasSession = false;
             try { const { data: { session } } = await App.supabase.auth.getSession(); hasSession = !!session; } catch (e) {}
+            // Всегда подписываемся на события авторизации
+            if (!authSubscribed) setupAuthSubscription();
             if (!hasSession) enterDemoMode();
             else {
                 const savedUsername = localStorage.getItem('vesta_username');
                 if (savedUsername) updateUsernameDisplay(savedUsername);
-                if (!authSubscribed) setupAuthSubscription();
+                // setupAuthSubscription уже вызвана
             }
         });
 
