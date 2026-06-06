@@ -45,7 +45,7 @@
         App.initIcons();
     }
 
-    function clearDemoArtefacts() {
+    async function clearDemoArtefacts() {
         App.store.operations = [];
         App.store.fuelLog = [];
         App.store.tireLog = [];
@@ -57,7 +57,8 @@
         localStorage.removeItem('vesta_active_car_id');
         localStorage.removeItem('vesta_username');
         if (App.db && App.db._db) {
-            ['operations','fuel_log','tires','parts','service_records','mileage_log','cars','settings'].forEach(s => App.db.clear(s).catch(()=>{}));
+            const stores = ['operations','fuel_log','tires','parts','service_records','mileage_log','cars','settings'];
+            await Promise.all(stores.map(s => App.db.clear(s).catch(()=>{})));
         }
         demoModeInitialized = false;
         isDemoMode = false;
@@ -67,28 +68,29 @@
         if (demoModeInitialized) return;
         demoModeInitialized = true;
         isDemoMode = true;
-        clearDemoArtefacts();
-        const demoCarId = crypto.randomUUID();
-        App.store.cars = [{ id: demoCarId, name: 'Мой автомобиль', user_id: 'demo' }];
-        App.store.activeCarId = demoCarId;
-        localStorage.setItem('vesta_active_car_id', demoCarId);
-        App.store.operations = [
-            { id: 'demo1', category: 'ДВС', name: 'Масло', intervalKm: 10000, intervalMonths: 12 },
-            { id: 'demo2', category: 'Тормозная система', name: 'Тормозные колодки', intervalKm: 30000 }
-        ];
-        App.store.fuelLog = [{ date: new Date().toISOString().split('T')[0], mileage: 1000, liters: 45, pricePerLiter: 50, fuelType: 'Бензин' }];
-        App.store.settings = { currentMileage: 5000, currentMotohours: 100, avgDailyMileage: 45, avgDailyMotohours: 1.8, telegramToken:'', telegramChatId:'', notificationMethod:'telegram', reminderDays:'7,2', carBrand:'', carModel:'', carYear:null, plateNumber:'', vin:'' };
-        if (App.realtime && typeof App.realtime.unsubscribeAll === 'function') App.realtime.unsubscribeAll();
-        App.store.saveToLocalStorage();
-        if (App.db && App.db._db) App.store.saveSettingsToDB().catch(()=>{});
-        const dataPanel = document.getElementById('data-panel');
-        if (dataPanel) dataPanel.style.display = 'block';
-        if (typeof App.ui.pages.renderDashboard === 'function') App.ui.pages.renderDashboard();
-        if (typeof App.ui.pages.renderCarSelector === 'function') App.ui.pages.renderCarSelector();
-        if (typeof App.ui.pages.renderCarTab === 'function') App.ui.pages.renderCarTab();
-        if (typeof App.ui.pages.populateSettingsFields === 'function') App.ui.pages.populateSettingsFields();
-        if (typeof App.renderAll === 'function') App.renderAll();
-        if (typeof App.toast === 'function') App.toast('Демо-режим. Войдите, чтобы сохранить данные.', 'info');
+        clearDemoArtefacts().then(() => {
+            const demoCarId = crypto.randomUUID();
+            App.store.cars = [{ id: demoCarId, name: 'Мой автомобиль', user_id: 'demo' }];
+            App.store.activeCarId = demoCarId;
+            localStorage.setItem('vesta_active_car_id', demoCarId);
+            App.store.operations = [
+                { id: 'demo1', category: 'ДВС', name: 'Масло', intervalKm: 10000, intervalMonths: 12 },
+                { id: 'demo2', category: 'Тормозная система', name: 'Тормозные колодки', intervalKm: 30000 }
+            ];
+            App.store.fuelLog = [{ date: new Date().toISOString().split('T')[0], mileage: 1000, liters: 45, pricePerLiter: 50, fuelType: 'Бензин' }];
+            App.store.settings = { currentMileage: 5000, currentMotohours: 100, avgDailyMileage: 45, avgDailyMotohours: 1.8, telegramToken:'', telegramChatId:'', notificationMethod:'telegram', reminderDays:'7,2', carBrand:'', carModel:'', carYear:null, plateNumber:'', vin:'' };
+            if (App.realtime && typeof App.realtime.unsubscribeAll === 'function') App.realtime.unsubscribeAll();
+            App.store.saveToLocalStorage();
+            if (App.db && App.db._db) App.store.saveSettingsToDB().catch(()=>{});
+            const dataPanel = document.getElementById('data-panel');
+            if (dataPanel) dataPanel.style.display = 'block';
+            if (typeof App.ui.pages.renderDashboard === 'function') App.ui.pages.renderDashboard();
+            if (typeof App.ui.pages.renderCarSelector === 'function') App.ui.pages.renderCarSelector();
+            if (typeof App.ui.pages.renderCarTab === 'function') App.ui.pages.renderCarTab();
+            if (typeof App.ui.pages.populateSettingsFields === 'function') App.ui.pages.populateSettingsFields();
+            if (typeof App.renderAll === 'function') App.renderAll();
+            if (typeof App.toast === 'function') App.toast('Демо-режим. Войдите, чтобы сохранить данные.', 'info');
+        });
     }
 
     function initAuthFormEvents(container) {
@@ -295,7 +297,8 @@
                 if (window._processingAuth) return;
                 window._processingAuth = true;
                 try {
-                    if (isDemoMode) clearDemoArtefacts();
+                    // Дожидаемся полной очистки демо-данных
+                    if (isDemoMode) await clearDemoArtefacts();
                     isLoggedIn = true; setInstallButtonVisible(true); isDemoMode = false; demoModeInitialized = false;
                     if (sidebarLoginBtn) sidebarLoginBtn.style.display = 'none';
                     if (drawerLoginBtn) drawerLoginBtn.style.display = 'none';
@@ -428,7 +431,7 @@
                 if (mobileRowOff) mobileRowOff.style.display = 'none';
                 updateUsernameDisplay('');
                 if (App.realtime?.unsubscribeAll) App.realtime.unsubscribeAll();
-                clearDemoArtefacts();
+                await clearDemoArtefacts();
                 if (typeof App.renderAll === 'function') App.renderAll();
                 enterDemoMode();
             }
