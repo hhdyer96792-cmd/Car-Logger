@@ -876,15 +876,7 @@ App.ui.pages.renderDocuments = function() {
     container.innerHTML = html;
     App.initIcons();
 
-    // Загружаем документы с сервера в фоне и обновляем UI
-    App.ui.pages.loadCarDocuments().then(function(updatedDocs) {
-        if (updatedDocs !== docs) {
-            App.ui.pages._carDocuments = updatedDocs;
-            App.ui.pages.renderDocuments(); // перерисовка
-        }
-    }).catch(function() {});
-};
-
+    // Навешиваем обработчики на заголовки аккордеонов
     container.querySelectorAll('.accordion-header').forEach(function(header) {
         header.addEventListener('click', function() {
             var body = header.nextElementSibling;
@@ -896,12 +888,14 @@ App.ui.pages.renderDocuments = function() {
         });
     });
 
+    // Кнопка "Фото"
     var addDocBtn = document.getElementById('add-document-btn');
     if (addDocBtn) addDocBtn.onclick = function() {
         var fileInput = document.getElementById('doc-file-input');
         if (fileInput) fileInput.click();
     };
 
+    // Кнопка "Загрузить"
     var uploadDocBtn = document.getElementById('upload-document-btn');
     if (uploadDocBtn) {
         uploadDocBtn.onclick = function() {
@@ -961,6 +955,78 @@ App.ui.pages.renderDocuments = function() {
         };
     }
 
+    // Загружаем документы с сервера в фоне и обновляем UI
+    App.ui.pages.loadCarDocuments().then(function(updatedDocs) {
+        if (updatedDocs !== docs) {
+            App.ui.pages._carDocuments = updatedDocs;
+            App.ui.pages.renderDocuments(); // перерисовка
+        }
+    }).catch(function() {});
+
+    // Обработчики для кнопок внутри документов
+    container.addEventListener('click', async function(e) {
+        var target = e.target.closest('.edit-doc-btn');
+        if (target) {
+            var docId = target.dataset.id;
+            var doc = App.ui.pages._carDocuments.find(d => d.id == docId);
+            if (!doc) return;
+
+            var content =
+                '<form id="edit-doc-form">' +
+                    '<label>Тип</label>' +
+                    '<select name="type">' +
+                        '<option value="ОСАГО" ' + (doc.type === 'ОСАГО' ? 'selected' : '') + '>ОСАГО</option>' +
+                        '<option value="Чек" ' + (doc.type === 'Чек' ? 'selected' : '') + '>Чек</option>' +
+                        '<option value="Заказ-наряд" ' + (doc.type === 'Заказ-наряд' ? 'selected' : '') + '>Заказ-наряд</option>' +
+                        '<option value="PDF" ' + (doc.type === 'PDF' ? 'selected' : '') + '>PDF</option>' +
+                        '<option value="Прочее" ' + (doc.type === 'Прочее' ? 'selected' : '') + '>Прочее</option>' +
+                    '</select>' +
+                    '<label>Сумма</label>' +
+                    '<input type="number" name="amount" step="0.01" value="' + (doc.amount || '') + '">' +
+                    '<label>Примечание</label>' +
+                    '<textarea name="notes" rows="2">' + App.utils.escapeHtml(doc.notes || '') + '</textarea>' +
+                    '<div class="modal-actions" style="display:flex; gap:8px; justify-content:flex-end;">' +
+                        '<button type="submit" class="primary-btn">Сохранить</button>' +
+                        '<button type="button" class="cancel-btn secondary-btn">Отмена</button>' +
+                    '</div>' +
+                '</form>';
+
+            var modal = App.ui.createModal('Редактировать документ', content);
+            var form = modal.querySelector('#edit-doc-form');
+
+            form.onsubmit = async function(ev) {
+                ev.preventDefault();
+                var data = new FormData(form);
+                doc.type = data.get('type') || 'Прочее';
+                doc.amount = parseFloat(data.get('amount')) || 0;
+                doc.notes = data.get('notes') || '';
+                await App.ui.pages.updateCarDocument(doc.id, {
+                    type: doc.type,
+                    date: doc.date,
+                    amount: doc.amount,
+                    notes: doc.notes
+                });
+                modal.remove();
+                App.ui.pages.renderDocuments();
+            };
+
+            modal.querySelector('.cancel-btn').onclick = function() { modal.remove(); };
+            return;
+        }
+
+        target = e.target.closest('.delete-doc-btn');
+        if (target) {
+            var docId = target.dataset.id;
+            var doc = App.ui.pages._carDocuments.find(d => d.id == docId);
+            if (!doc) return;
+            App.ui.confirmModal('Удалить документ?', async function() {
+                await App.ui.pages.deleteCarDocument(doc.id);
+                App.ui.pages.renderDocuments();
+            });
+        }
+    });
+
+    // Вспомогательные функции OCR
     async function recognizeWithTesseract(imageUrl) {
         try {
             const TesseractLib = await import('https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js');
@@ -1025,68 +1091,6 @@ App.ui.pages.renderDocuments = function() {
             e.target.value = '';
         };
     }
-
-    container.addEventListener('click', async function(e) {
-        var target = e.target.closest('.edit-doc-btn');
-        if (target) {
-            var docId = target.dataset.id;
-            var doc = App.ui.pages._carDocuments.find(d => d.id == docId);
-            if (!doc) return;
-
-            var content =
-                '<form id="edit-doc-form">' +
-                    '<label>Тип</label>' +
-                    '<select name="type">' +
-                        '<option value="ОСАГО" ' + (doc.type === 'ОСАГО' ? 'selected' : '') + '>ОСАГО</option>' +
-                        '<option value="Чек" ' + (doc.type === 'Чек' ? 'selected' : '') + '>Чек</option>' +
-                        '<option value="Заказ-наряд" ' + (doc.type === 'Заказ-наряд' ? 'selected' : '') + '>Заказ-наряд</option>' +
-                        '<option value="PDF" ' + (doc.type === 'PDF' ? 'selected' : '') + '>PDF</option>' +
-                        '<option value="Прочее" ' + (doc.type === 'Прочее' ? 'selected' : '') + '>Прочее</option>' +
-                    '</select>' +
-                    '<label>Сумма</label>' +
-                    '<input type="number" name="amount" step="0.01" value="' + (doc.amount || '') + '">' +
-                    '<label>Примечание</label>' +
-                    '<textarea name="notes" rows="2">' + App.utils.escapeHtml(doc.notes || '') + '</textarea>' +
-                    '<div class="modal-actions" style="display:flex; gap:8px; justify-content:flex-end;">' +
-                        '<button type="submit" class="primary-btn">Сохранить</button>' +
-                        '<button type="button" class="cancel-btn secondary-btn">Отмена</button>' +
-                    '</div>' +
-                '</form>';
-
-            var modal = App.ui.createModal('Редактировать документ', content);
-            var form = modal.querySelector('#edit-doc-form');
-
-            form.onsubmit = async function(ev) {
-                ev.preventDefault();
-                var data = new FormData(form);
-                doc.type = data.get('type') || 'Прочее';
-                doc.amount = parseFloat(data.get('amount')) || 0;
-                doc.notes = data.get('notes') || '';
-                await App.ui.pages.updateCarDocument(doc.id, {
-                    type: doc.type,
-                    date: doc.date,
-                    amount: doc.amount,
-                    notes: doc.notes
-                });
-                modal.remove();
-                App.ui.pages.renderDocuments();
-            };
-
-            modal.querySelector('.cancel-btn').onclick = function() { modal.remove(); };
-            return;
-        }
-
-        target = e.target.closest('.delete-doc-btn');
-        if (target) {
-            var docId = target.dataset.id;
-            var doc = App.ui.pages._carDocuments.find(d => d.id == docId);
-            if (!doc) return;
-            App.ui.confirmModal('Удалить документ?', async function() {
-                await App.ui.pages.deleteCarDocument(doc.id);
-                App.ui.pages.renderDocuments();
-            });
-        }
-    });
 };
 
 /* ========== МОДАЛЬНОЕ ОКНО НАЧАЛЬНЫХ ПАРАМЕТРОВ ========== */
