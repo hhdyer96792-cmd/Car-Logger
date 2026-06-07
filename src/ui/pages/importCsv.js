@@ -3,23 +3,86 @@ window.App = window.App || {};
 App.ui = App.ui || {};
 App.ui.pages = App.ui.pages || {};
 
+// Вспомогательная функция для проверки существования записи (поиск дубликатов)
+async function checkDuplicate(type, record) {
+    switch (type) {
+        case 'to':
+            // Проверка по имени операции и интервалам (не строгая, чтобы не блокировать импорт)
+            return App.store.operations.some(op => 
+                op.name === record.name && 
+                op.category === record.category &&
+                Math.abs((op.intervalKm || 0) - (record.intervalKm || 0)) < 100
+            );
+        case 'fuel':
+            // Проверка по дате и пробегу
+            return App.store.fuelLog.some(f => 
+                f.date === record.date && 
+                Math.abs((f.mileage || 0) - (record.mileage || 0)) < 10
+            );
+        case 'tires':
+            // Проверка по дате и типу
+            return App.store.tireLog.some(t => 
+                t.date === record.date && 
+                t.type === record.type
+            );
+        case 'parts':
+            // Проверка по OEM или аналогу
+            return App.store.parts.some(p => 
+                (p.oem && record.oem && p.oem === record.oem) ||
+                (p.analog && record.analog && p.analog === record.analog)
+            );
+        default:
+            return false;
+    }
+}
+
+// Валидация даты в формате YYYY-MM-DD
+function isValidDate(dateStr) {
+    if (!dateStr) return false;
+    const regex = /^\d{4}-\d{2}-\d{2}$/;
+    if (!regex.test(dateStr)) return false;
+    const d = new Date(dateStr);
+    return !isNaN(d.getTime());
+}
+
+// Нормализация даты (попытка преобразовать из разных форматов)
+function normalizeDate(dateStr) {
+    if (!dateStr) return null;
+    // Уже YYYY-MM-DD
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+        return isValidDate(dateStr) ? dateStr : null;
+    }
+    // DD.MM.YYYY или DD/MM/YYYY
+    const parts = dateStr.split(/[.\/]/);
+    if (parts.length === 3) {
+        const day = parseInt(parts[0], 10);
+        const month = parseInt(parts[1], 10);
+        const year = parseInt(parts[2], 10);
+        if (!isNaN(day) && !isNaN(month) && !isNaN(year) && year > 1900 && year < 2100) {
+            const iso = `${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+            return isValidDate(iso) ? iso : null;
+        }
+    }
+    return null;
+}
+
 App.ui.pages.initCsvImport = function() {
     var container = document.getElementById('csv-import-container');
     if (!container) return;
 
-     var html = '<p class="hint">Выберите тип данных и загрузите CSV‑файл. Первая строка должна содержать заголовки.</p>';
- html += '<div style="display:flex; gap:8px; margin-bottom:12px;">';
- html += '<select id="csv-import-type" style="flex:1;">';
- html += '<option value="to">Журнал ТО</option>';
-html += '<option value="fuel">Топливо</option>';
-html += '<option value="tires">Шины</option>';
-html += '<option value="parts">Запчасти</option>';
- html += '</select>';
- html += '<button id="csv-download-template" class="secondary-btn">Шаблон</button>';
- html += '</div>';
- html += '<input type="file" id="csv-file-input" accept=".csv" style="display:none;">';
- html += '<button id="csv-import-btn" class="primary-btn">Загрузить и импортировать</button>';
- html += '<div id="csv-import-message" class="hint" style="margin-top:8px;"></div>';
+    var html = '<p class="hint">Выберите тип данных и загрузите CSV‑файл. Первая строка должна содержать заголовки.</p>';
+    html += '<div style="display:flex; gap:8px; margin-bottom:12px;">';
+    html += '<select id="csv-import-type" style="flex:1;">';
+    html += '<option value="to">Журнал ТО</option>';
+    html += '<option value="fuel">Топливо</option>';
+    html += '<option value="tires">Шины</option>';
+    html += '<option value="parts">Запчасти</option>';
+    html += '</select>';
+    html += '<button id="csv-download-template" class="secondary-btn">Шаблон</button>';
+    html += '</div>';
+    html += '<input type="file" id="csv-file-input" accept=".csv" style="display:none;">';
+    html += '<button id="csv-import-btn" class="primary-btn">Загрузить и импортировать</button>';
+    html += '<div id="csv-import-message" class="hint" style="margin-top:8px;"></div>';
 
     container.innerHTML = html;
     App.initIcons();
@@ -81,6 +144,7 @@ html += '<option value="parts">Запчасти</option>';
             // Первая строка – заголовки
             var headers = lines[0].split(';').map(function(h) { return h.trim(); });
             var records = [];
+            var errors = [];
             for (var i = 1; i < lines.length; i++) {
                 var values = lines[i].split(';');
                 var obj = {};
@@ -89,53 +153,99 @@ html += '<option value="parts">Запчасти</option>';
                 });
                 records.push(obj);
             }
-            msgDiv.textContent = 'Импортируем ' + records.length + ' записей...';
-            importRecords(typeSelect.value, records, msgDiv);
+            msgDiv.textContent = 'Обработка ' + records.length + ' записей...';
+            importRecordsWithValidation(typeSelect.value, records, msgDiv, headers);
         };
         reader.readAsText(file, 'UTF-8');
     });
 };
 
-// Функция, сохраняющая записи в Supabase
-async function importRecords(type, records, msgDiv) {
+// Функция импорта с валидацией и проверкой дубликатов
+async function importRecordsWithValidation(type, records, msgDiv, headers) {
     var carId = App.store.activeCarId;
     if (!carId) {
         msgDiv.textContent = 'Сначала выберите автомобиль';
         return;
     }
+    
     var success = 0;
     var errors = 0;
-
+    var duplicates = 0;
+    var invalidDates = 0;
+    
     for (var i = 0; i < records.length; i++) {
         try {
             var rec = records[i];
+            var isValid = true;
+            
             switch (type) {
                 case 'to':
-                    await App.supa.saveOperation({
+                    // Валидация даты
+                    if (rec['Последняя дата'] && !isValidDate(rec['Последняя дата']) && !normalizeDate(rec['Последняя дата'])) {
+                        invalidDates++;
+                        console.warn(`[Import] Неверный формат даты в строке ${i+2}: ${rec['Последняя дата']}`);
+                        isValid = false;
+                    }
+                    if (!isValid) {
+                        errors++;
+                        continue;
+                    }
+                    // Проверка дубликата
+                    var toRecord = {
                         category: rec['Категория'] || '',
                         name: rec['Операция'] || '',
-                        lastDate: rec['Последняя дата'] || null,
-                        lastMileage: rec['Последний пробег'] || 0,
-                        lastMotohours: rec['Последние моточасы'] || 0,
-                        intervalKm: rec['Интервал км'] || 0,
-                        intervalMonths: rec['Интервал мес'] || 0,
-                        intervalMotohours: rec['Интервал м/ч'] || null
-                    });
+                        lastDate: rec['Последняя дата'] ? (isValidDate(rec['Последняя дата']) ? rec['Последняя дата'] : normalizeDate(rec['Последняя дата'])) : null,
+                        lastMileage: parseFloat(rec['Последний пробег']) || 0,
+                        lastMotohours: parseFloat(rec['Последние моточасы']) || 0,
+                        intervalKm: parseFloat(rec['Интервал км']) || 0,
+                        intervalMonths: parseFloat(rec['Интервал мес']) || 0,
+                        intervalMotohours: rec['Интервал м/ч'] ? parseFloat(rec['Интервал м/ч']) : null
+                    };
+                    if (await checkDuplicate('to', toRecord)) {
+                        duplicates++;
+                        console.warn(`[Import] Дубликат операции ${toRecord.name}, пропуск`);
+                        continue;
+                    }
+                    await App.supa.saveOperation(toRecord);
+                    success++;
                     break;
+                    
                 case 'fuel':
-                    await App.supa.saveFuelRecord({
-                        date: rec['Дата'] || '',
+                    var fuelDate = normalizeDate(rec['Дата']);
+                    if (!fuelDate) {
+                        invalidDates++;
+                        console.warn(`[Import] Неверный формат даты в строке ${i+2}: ${rec['Дата']}`);
+                        errors++;
+                        continue;
+                    }
+                    var fuelRecord = {
+                        date: fuelDate,
                         mileage: parseFloat(rec['Пробег']) || 0,
                         liters: parseFloat(rec['Литры']) || 0,
                         pricePerLiter: parseFloat(rec['Цена/л']) || 0,
                         fullTank: rec['Полный бак'] === 'Да' ? 'TRUE' : '',
                         fuelType: rec['Тип топлива'] || 'Бензин',
                         notes: rec['Примечание'] || ''
-                    });
+                    };
+                    if (await checkDuplicate('fuel', fuelRecord)) {
+                        duplicates++;
+                        console.warn(`[Import] Дубликат заправки от ${fuelDate}, пропуск`);
+                        continue;
+                    }
+                    await App.supa.saveFuelRecord(null, fuelRecord);
+                    success++;
                     break;
+                    
                 case 'tires':
-                    await App.supa.saveTireRecord({
-                        date: rec['Дата'] || '',
+                    var tireDate = normalizeDate(rec['Дата']);
+                    if (!tireDate) {
+                        invalidDates++;
+                        console.warn(`[Import] Неверный формат даты в строке ${i+2}: ${rec['Дата']}`);
+                        errors++;
+                        continue;
+                    }
+                    var tireRecord = {
+                        date: tireDate,
                         type: rec['Тип'] || '',
                         mileage: parseFloat(rec['Пробег']) || 0,
                         model: rec['Модель'] || '',
@@ -145,10 +255,18 @@ async function importRecords(type, records, msgDiv) {
                         purchaseCost: parseFloat(rec['Стоимость покупки']) || 0,
                         mountCost: parseFloat(rec['Стоимость монтажа']) || 0,
                         isDIY: rec['DIY'] === 'Да' ? true : false
-                    });
+                    };
+                    if (await checkDuplicate('tires', tireRecord)) {
+                        duplicates++;
+                        console.warn(`[Import] Дубликат шин от ${tireDate}, пропуск`);
+                        continue;
+                    }
+                    await App.supa.saveTireRecord(null, tireRecord);
+                    success++;
                     break;
+                    
                 case 'parts':
-                    await App.supa.savePart({
+                    var partsRecord = {
                         operation: rec['Операция'] || '',
                         oem: rec['OEM'] || '',
                         analog: rec['Аналог'] || '',
@@ -158,15 +276,33 @@ async function importRecords(type, records, msgDiv) {
                         comment: rec['Комментарий'] || '',
                         inStock: parseFloat(rec['В наличии (шт.)']) || 0,
                         location: rec['Место хранения'] || ''
-                    });
+                    };
+                    if (await checkDuplicate('parts', partsRecord)) {
+                        duplicates++;
+                        console.warn(`[Import] Дубликат запчасти ${partsRecord.oem || partsRecord.analog}, пропуск`);
+                        continue;
+                    }
+                    await App.supa.savePart(partsRecord);
+                    success++;
                     break;
             }
-            success++;
         } catch (e) {
             errors++;
-            console.error('Import error:', e);
+            console.error('Import error:', e, records[i]);
         }
     }
-    msgDiv.textContent = 'Готово: импортировано ' + success + ' записей' + (errors > 0 ? ', ошибок: ' + errors : '');
-    App.storage.loadAllData(); // обновим данные
+    
+    var message = `Готово: импортировано ${success} записей`;
+    if (duplicates > 0) message += `, пропущено дубликатов: ${duplicates}`;
+    if (invalidDates > 0) message += `, ошибок формата даты: ${invalidDates}`;
+    if (errors > 0) message += `, ошибок: ${errors}`;
+    msgDiv.textContent = message;
+    
+    // Обновляем данные в хранилище
+    await App.storage.loadAllData();
+    if (typeof App.ui.pages.renderHistoryCards === 'function') App.ui.pages.renderHistoryCards();
+    if (typeof App.ui.pages.renderFuelTab === 'function') App.ui.pages.renderFuelTab();
+    if (typeof App.ui.pages.renderTiresTab === 'function') App.ui.pages.renderTiresTab();
+    if (typeof App.ui.pages.renderPartsTab === 'function') App.ui.pages.renderPartsTab();
+    if (typeof App.ui.pages.renderTOTable === 'function') App.ui.pages.renderTOTable();
 }
