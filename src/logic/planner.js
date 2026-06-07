@@ -37,10 +37,12 @@ App.logic.calculatePlan = function(op) {
     // Пробег
     var recMileage = op.lastMileage ? op.lastMileage + op.intervalKm : op.intervalKm;
 
-    // Средняя скорость
+    // Средняя скорость (защита от деления на ноль)
     var avgSpeed = 30;
-    if (App.store.settings.avgDailyMotohours > 0) {
-        avgSpeed = App.store.settings.avgDailyMileage / App.store.settings.avgDailyMotohours;
+    var avgDailyMotohours = App.store.settings.avgDailyMotohours || 1.8;
+    var avgDailyMileage = App.store.settings.avgDailyMileage || 45;
+    if (avgDailyMotohours > 0) {
+        avgSpeed = avgDailyMileage / avgDailyMotohours;
     }
 
     // Интервал моточасов
@@ -66,16 +68,16 @@ App.logic.calculatePlan = function(op) {
 
     // Дата по пробегу
     var dateByMileage = new Date(8640000000000000);
-    if (recMileage > App.store.settings.currentMileage && App.store.settings.avgDailyMileage > 0) {
-        var days = Math.ceil((recMileage - App.store.settings.currentMileage) / App.store.settings.avgDailyMileage);
+    if (recMileage > App.store.settings.currentMileage && avgDailyMileage > 0) {
+        var days = Math.ceil((recMileage - App.store.settings.currentMileage) / avgDailyMileage);
         dateByMileage = new Date(today);
         dateByMileage.setDate(today.getDate() + days);
     }
 
     // Дата по моточасам
     var dateByMoto = new Date(8640000000000000);
-    if (recMotohours && recMotohours > App.store.settings.currentMotohours && App.store.settings.avgDailyMotohours > 0) {
-        var daysMoto = Math.ceil((recMotohours - App.store.settings.currentMotohours) / App.store.settings.avgDailyMotohours);
+    if (recMotohours && recMotohours > App.store.settings.currentMotohours && avgDailyMotohours > 0) {
+        var daysMoto = Math.ceil((recMotohours - App.store.settings.currentMotohours) / avgDailyMotohours);
         dateByMoto = new Date(today);
         dateByMoto.setDate(today.getDate() + daysMoto);
     }
