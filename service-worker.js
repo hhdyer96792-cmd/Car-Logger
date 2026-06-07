@@ -69,6 +69,15 @@ self.addEventListener('message', e => {
     if (e.data?.type === 'CLEAR_CACHE') {
         caches.delete(CACHE_NAME).then(() => console.log('[SW] Кэш очищен'));
     }
+    
+    // Обработка сообщения о запуске синхронизации от клиента
+    if (e.data?.type === 'SYNC_TRIGGER') {
+        e.waitUntil(
+            self.clients.matchAll().then(clients => {
+                clients.forEach(client => client.postMessage({ type: 'SYNC_TRIGGERED' }));
+            })
+        );
+    }
 });
 
 // Background Sync
