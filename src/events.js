@@ -12,10 +12,54 @@ App.events.init = function() {
     App.events.initHistoryFilters();
     App.events.initStatsListeners();
     
+    // Глобальный перехват необработанных ошибок
+    window.addEventListener('unhandledrejection', function(event) {
+        console.error('Unhandled rejection:', event.reason);
+        if (App.db && App.db.put) {
+            App.db.put('error_log', {
+                id: crypto.randomUUID(),
+                type: 'unhandled_rejection',
+                message: event.reason?.message || String(event.reason),
+                stack: event.reason?.stack,
+                timestamp: Date.now()
+            }).catch(e => console.error('Failed to log error:', e));
+        }
+        if (typeof App.toast === 'function') {
+            App.toast('Произошла ошибка. Пожалуйста, перезагрузите страницу.', 'error');
+        }
+    });
+    
+    window.onerror = function(message, source, lineno, colno, error) {
+        console.error('Runtime error:', message, source, lineno, colno, error);
+        if (App.db && App.db.put) {
+            App.db.put('error_log', {
+                id: crypto.randomUUID(),
+                type: 'runtime_error',
+                message: String(message),
+                source: source || '',
+                lineno: lineno || 0,
+                colno: colno || 0,
+                stack: error?.stack,
+                timestamp: Date.now()
+            }).catch(e => console.error('Failed to log error:', e));
+        }
+        // Не возвращаем true, чтобы ошибка также попала в консоль
+        return false;
+    };
 };
 
 App.events.setupDelegation = function() {
     document.body.addEventListener('click', async function(e) {
+        // Обработка глобальной кнопки приглашения (invite-btn)
+        const inviteBtn = e.target.closest('#invite-btn');
+        if (inviteBtn && inviteBtn.id === 'invite-btn') {
+            e.preventDefault();
+            if (typeof App.ui.pages.inviteUser === 'function') {
+                await App.ui.pages.inviteUser();
+            }
+            return;
+        }
+        
         const target = e.target.closest('[data-action]');
         if (!target) return;
         const action = target.dataset.action;
