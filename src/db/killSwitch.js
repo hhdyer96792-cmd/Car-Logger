@@ -1,7 +1,9 @@
-// src/db/killSwitch.js
+// src/db/killSwitch.js (удаляем дубликат, оставляем один исправленный файл)
 window.App = window.App || {};
 App.db = App.db || {};
 App.db.killSwitch = App.db.killSwitch || {};
+
+const DB_NAME = 'CarLoggerDB';
 
 // Проверка, не активирован ли kill-переключатель для текущего пользователя
 App.db.killSwitch.check = async function() {
@@ -48,7 +50,7 @@ App.db.killSwitch.destroyLocalDB = async function() {
         });
         
         // Очищаем localStorage (только данные приложения)
-        const keysToKeep = ['theme', 'vesta_active_car_id']; // сохраняем настройки темы и ID авто
+        const keysToKeep = ['vesta_theme', 'vesta_active_car_id']; // сохраняем настройки темы и ID авто
         for (let i = 0; i < localStorage.length; i++) {
             const key = localStorage.key(i);
             if (key && !keysToKeep.includes(key)) {
@@ -90,4 +92,12 @@ App.db.killSwitch.startPeriodicCheck = function() {
             App.db.killSwitch._interval = null;
         }
     }, 5 * 60 * 1000); // каждые 5 минут
+};
+
+// Функция для остановки периодической проверки (при выходе из системы)
+App.db.killSwitch.stopPeriodicCheck = function() {
+    if (App.db.killSwitch._interval) {
+        clearInterval(App.db.killSwitch._interval);
+        App.db.killSwitch._interval = null;
+    }
 };
