@@ -160,6 +160,17 @@ App.logic.addDependentOperations = function(mainOpName, opId, date, mileage, mot
     });
 };
 
+/**
+ * Проверяет корректность записи ТО на соответствие истории и точке отсчёта.
+ * @param {string} date - Дата в формате YYYY-MM-DD
+ * @param {number|null} mileage - Пробег (может быть null)
+ * @param {number|null} motohours - Моточасы (может быть null)
+ * @param {Object} refPoint - Точка отсчёта (purchaseDate, baseMileage, baseMotohours)
+ * @param {Array} historyRecords - История ТО
+ * @param {string} opName - Название операции
+ * @param {string} opCategory - Категория операции
+ * @returns {string|null} - Текст ошибки или null, если всё корректно
+ */
 App.logic.validateMaintenanceRecord = function(date, mileage, motohours, refPoint, historyRecords, opName, opCategory) {
     var newMileage = (mileage !== null && mileage !== undefined && mileage !== '') ? Number(mileage) : null;
     var newMotohours = (motohours !== null && motohours !== undefined && motohours !== '') ? Number(motohours) : null;
@@ -198,7 +209,13 @@ App.logic.validateMaintenanceRecord = function(date, mileage, motohours, refPoin
         return null;
     }
 
-    // Проверка целостности истории (как раньше, но с учётом строгого неравенства дат)
+    // Если оба значения (пробег и моточасы) не указаны – пропускаем проверку истории, но предупреждаем
+    if (newMileage === null && newMotohours === null) {
+        console.warn('[validateMaintenanceRecord] Пробег и моточасы не указаны, проверка истории пропущена');
+        return null;
+    }
+
+    // Проверка целостности истории
     if (!historyRecords || historyRecords.length === 0) {
         return null;
     }
