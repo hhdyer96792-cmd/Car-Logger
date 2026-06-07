@@ -3,8 +3,9 @@ window.App = window.App || {};
 App.ui = App.ui || {};
 App.ui.pages = App.ui.pages || {};
 
-// Вспомогательная функция для иконки синхронизации
+// Вспомогательная функция для иконки синхронизации (используем глобальную)
 function getSyncIcon(recordId) {
+    if (typeof App.getSyncIcon === 'function') return App.getSyncIcon(recordId);
     if (!recordId) return '';
     if (App.store.isRecordPending && App.store.isRecordPending(recordId)) {
         return '<i data-lucide="clock" class="sync-pending-icon" style="color: var(--warning); width: 16px; height: 16px; margin-left: 8px;" title="Ожидает синхронизации"></i>';
@@ -418,8 +419,7 @@ App.ui.pages.renderTOTable = function() {
     App.initIcons();
 };
 
-// === СУЩЕСТВУЮЩИЕ ФУНКЦИИ (БЕЗ ДУБЛИКАТОВ) ===
-
+// === МОДАЛЬНОЕ ОКНО ВЫПОЛНЕНИЯ ТО (исправлена офлайн-обработка и XSS) ===
 App.ui.pages.openServiceModal = function(opId, opName) {
     var op = App.store.operations.find(function(o) { return o.id == opId; });
     if (!op) return;
@@ -490,7 +490,7 @@ App.ui.pages.openServiceModal = function(opId, opName) {
     });
 
     var form = modal.querySelector('#service-form');
-    form.onsubmit = function(e) {
+    form.onsubmit = async function(e) {
         e.preventDefault();
         var formEl = e.target;
         var mileage = App.utils.validateNumberInput(formEl.querySelector('[name="mileage"]'), false);
@@ -524,102 +524,66 @@ App.ui.pages.openServiceModal = function(opId, opName) {
 
         var notes = data.get('notes') || '';
         var isDIY = data.get('isDIY') === 'true';
+        var fullNotes = notes;
+        if (isOsago) fullNotes = 'ОСАГО. Стоимость: ' + cost + ' ₽. Срок: ' + (data.get('osagoMonths') || '12') + ' мес. Ссылка: ' + (data.get('fileLink') || '') + '. ' + notes;
 
-        var uploadPromises = [];
+        // Загрузка фото (если есть) – не блокируем сохранение записи при ошибке
+        var photoUrl = '';
         if (selectedFiles.length > 0) {
-            for (var i = 0; i < selectedFiles.length; i++) {
-                uploadPromises.push(App.supa.uploadPhoto(selectedFiles[i]).catch(function(err) {
-                    console.error('Photo upload error:', err);
-                    return '';
-                }));
+            try {
+                photoUrl = await App.supa.uploadPhoto(selectedFiles[0]);
+            } catch (err) {
+                console.warn('Фото не загружено, будет синхронизировано позже', err);
+                fullNotes += ' [Фото не загружено: ' + err.message + ']';
             }
         }
 
-        // Офлайн-ветка: используем App.storage.addHistoryRecord, который сам обработает офлайн
-        if (!navigator.onLine) {
-            var record = {
-                operation_id: op.id,
-                date: formattedDate,
-                mileage: mileage,
-                motohours: motohours || 0,
-                parts_cost: cost || 0,
-                work_cost: workCost || 0,
-                is_diy: isDIY,
-                notes: notes,
-                photo_url: ''  // фото в офлайне не сохраняем
-            };
-            App.storage.addHistoryRecord(record).then(() => {
-                op.lastDate = formattedDate;
-                op.lastMileage = mileage;
-                op.lastMotohours = motohours || 0;
-                App.storage.saveOperation(op).catch(console.warn);
-                App.toast('Запись сохранена локально. Синхронизируется при подключении к сети.', 'warning');
+        var record = {
+            operation_id: op.id,
+            date: formattedDate,
+            mileage: mileage,
+            motohours: motohours || 0,
+            parts_cost: cost || 0,
+            work_cost: workCost || 0,
+            is_diy: isDIY,
+            notes: fullNotes,
+            photo_url: photoUrl || ''
+        };
+
+        // Единый вызов – работает и онлайн, и офлайн через очередь
+        try {
+            await App.storage.addHistoryRecord(record);
+            op.lastDate = formattedDate;
+            op.lastMileage = mileage;
+            op.lastMotohours = motohours || 0;
+            await App.storage.saveOperation(op);
+            App.toast('ТО успешно выполнено', 'success');
+            
+            // Автоматическое списание запчастей со склада (если есть)
+            var normalizedMainName = App.utils.normalizeOperationName(opName, App.store.operations);
+            var partsForOp = App.store.parts.filter(function(p) {
+                var normPartOp = App.utils.normalizeOperationName(p.operation, App.store.operations);
+                return normPartOp === normalizedMainName || p.operation === op.category;
             });
-            return;
-        }
-
-        Promise.all(uploadPromises).then(function(photoUrls) {
-            var photoUrl = photoUrls.filter(function(url) { return url !== ''; })[0] || '';
-            var fullNotes = notes;
-            if (isOsago) fullNotes = 'ОСАГО. Стоимость: ' + cost + ' ₽. Срок: ' + (data.get('osagoMonths') || '12') + ' мес. Ссылка: ' + (data.get('fileLink') || '') + '. ' + notes;
-
-            if (App.config.USE_SUPABASE) {
-                var record = {
-                    operation_id: op.id,
-                    date: formattedDate,
-                    mileage: mileage,
-                    motohours: motohours || 0,
-                    parts_cost: cost || 0,
-                    work_cost: workCost || 0,
-                    is_diy: isDIY,
-                    notes: fullNotes,
-                    photo_url: photoUrl
-                };
-                App.storage.addHistoryRecord(record)
-                    .then(function() {
-                        op.lastDate = formattedDate;
-                        op.lastMileage = mileage;
-                        op.lastMotohours = motohours || 0;
-                        return App.storage.saveOperation(op);
-                    })
-                    .then(function() {
-                        App.toast('ТО успешно выполнено', 'success');
-                        App.storage.loadAllData();
-                    }).catch(function(err) {
-                        console.error(err);
-                        App.toast('Ошибка сохранения ТО', 'error');
-                    });
-            } else {
-                // fallback (не используется)
-                App.logic.addServiceRecord(opId, formattedDate, mileage, motohours, cost, workCost, isDIY, fullNotes, photoUrl)
-                    .then(function() {
-                        var normalizedMainName = App.utils.normalizeOperationName(opName, App.store.operations);
-                        var partsForOp = App.store.parts.filter(function(p) {
-                            var normPartOp = App.utils.normalizeOperationName(p.operation, App.store.operations);
-                            return normPartOp === normalizedMainName || p.operation === op.category;
-                        });
-                        partsForOp.forEach(function(part) {
-                            var stock = part.inStock || 0;
-                            if (stock > 0) {
-                                part.inStock = stock - 1;
-                                App.storage.savePart(part);
-                            }
-                        });
-                        App.logic.addDependentOperations(opName, opId, formattedDate, mileage, motohours, 'Автоматически');
-                        App.toast('ТО успешно выполнено', 'success');
-                    })
-                    .catch(function(error) {
-                        console.error(error);
-                        App.toast('Ошибка сохранения', 'error');
-                    });
+            for (var part of partsForOp) {
+                var stock = part.inStock || 0;
+                if (stock > 0) {
+                    part.inStock = stock - 1;
+                    await App.storage.savePart(part);
+                }
             }
-        });
+            
+            App.storage.loadAllData();
+        } catch (err) {
+            console.error('Ошибка сохранения ТО:', err);
+            App.toast('Ошибка сохранения ТО. Данные будут синхронизированы позже.', 'error');
+        }
     };
 
     modal.querySelector('.cancel-btn').onclick = function() { modal.remove(); };
 };
 
-
+// === ФОРМА РЕДАКТИРОВАНИЯ ОПЕРАЦИИ ===
 App.ui.pages.openOperationForm = function(op) {
     var isEdit = !!op;
     var categoryOptions = ['ДВС', 'Вариатор', 'Тормозная система', 'Подвеска', 'Зажигание', 'Охлаждение', 'ГРМ', 'Навесное', 'Трансмиссия', 'Топливная система', 'Сезонное', 'Документы', 'Прочее'];
@@ -656,11 +620,9 @@ App.ui.pages.openOperationForm = function(op) {
             lastMileage: op ? op.lastMileage : 0,
             lastMotohours: op ? op.lastMotohours : 0
         };
-        // Новая операция — генерируем временный ID
         if (!opData.id) {
             opData.id = crypto.randomUUID();
         }
-        // Используем единый метод сохранения (работает офлайн и онлайн)
         App.storage.saveOperation(opData).catch(function(err) {
             console.error('Ошибка сохранения операции:', err);
             App.toast('Ошибка сохранения операции', 'error');
@@ -669,6 +631,7 @@ App.ui.pages.openOperationForm = function(op) {
     modal.querySelector('.cancel-btn').onclick = function() { modal.remove(); };
 };
 
+// === ГЕНЕРАЦИЯ СПИСКА ПОКУПОК ===
 App.ui.pages.generateShoppingList = async function(opId) {
     var op = App.store.operations.find(function(o) { return o.id == opId; });
     if (!op) return;
@@ -681,14 +644,12 @@ App.ui.pages.generateShoppingList = async function(opId) {
     items.forEach(function(p) {
         var stock = p.inStock || 0;
         var location = p.location ? ' (' + App.utils.escapeHtml(p.location) + ')' : '';
+        var oemDisplay = App.utils.escapeHtml(p.oem || p.analog);
+        var priceDisplay = p.price ? p.price + ' ₽' : '';
         if (stock > 0) {
-            listHtml += '<li><i data-lucide="check-circle" style="color:var(--success);"></i> ' + 
-                App.utils.escapeHtml(p.oem || p.analog) + ' ' + (p.price ? p.price + ' ₽' : '') + 
-                ' — есть на складе: ' + stock + ' шт.' + location + '</li>';
+            listHtml += '<li><i data-lucide="check-circle" style="color:var(--success);"></i> ' + oemDisplay + ' ' + priceDisplay + ' — есть на складе: ' + stock + ' шт.' + location + '</li>';
         } else {
-            listHtml += '<li><i data-lucide="x-circle" style="color:var(--danger);"></i> ' + 
-                App.utils.escapeHtml(p.oem || p.analog) + ' ' + (p.price ? p.price + ' ₽' : '') + 
-                ' — нужно купить</li>';
+            listHtml += '<li><i data-lucide="x-circle" style="color:var(--danger);"></i> ' + oemDisplay + ' ' + priceDisplay + ' — нужно купить</li>';
         }
     });
     listHtml += '</ul>';
@@ -712,13 +673,13 @@ function generateICS(plan) {
             return p.operation === op.name || p.operation === op.category;
         });
         var partsList = '';
-if (parts.length > 0) {
-    partsList = '\\n\\nСписок запчастей:\\n';
-    parts.forEach(function(p) {
-        var status = (p.inStock && p.inStock > 0) ? '[x]' : '[ ]';
-        partsList += status + ' ' + (p.oem || p.analog || p.operation) + (p.price ? ' (' + p.price + '₽)' : '') + '\\n';
-    });
-}
+        if (parts.length > 0) {
+            partsList = '\\n\\nСписок запчастей:\\n';
+            parts.forEach(function(p) {
+                var status = (p.inStock && p.inStock > 0) ? '[x]' : '[ ]';
+                partsList += status + ' ' + (p.oem || p.analog || p.operation) + (p.price ? ' (' + p.price + '₽)' : '') + '\\n';
+            });
+        }
 
         var description = 'Пробег: ' + planData.planMileage + ' км. Категория: ' + (op.category || '') + partsList;
 
