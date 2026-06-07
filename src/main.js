@@ -94,7 +94,37 @@
 
     function showLoadingSpinner() {
         const panel = document.getElementById('data-panel');
-        if (panel) panel.innerHTML = '<div class="spinner"></div><p class="hint">Загрузка данных...</p>';
+        if (panel) {
+            // Не перезаписываем весь контент, а показываем спиннер поверх или внутри
+            const existingSpinner = panel.querySelector('.loading-overlay');
+            if (!existingSpinner) {
+                const overlay = document.createElement('div');
+                overlay.className = 'loading-overlay';
+                overlay.innerHTML = '<div class="spinner"></div><p class="hint">Загрузка данных...</p>';
+                overlay.style.position = 'absolute';
+                overlay.style.top = '0';
+                overlay.style.left = '0';
+                overlay.style.right = '0';
+                overlay.style.bottom = '0';
+                overlay.style.backgroundColor = 'rgba(0,0,0,0.5)';
+                overlay.style.display = 'flex';
+                overlay.style.flexDirection = 'column';
+                overlay.style.alignItems = 'center';
+                overlay.style.justifyContent = 'center';
+                overlay.style.zIndex = '100';
+                panel.style.position = 'relative';
+                panel.appendChild(overlay);
+            }
+        }
+    }
+
+    function hideLoadingSpinner() {
+        const panel = document.getElementById('data-panel');
+        if (panel) {
+            const overlay = panel.querySelector('.loading-overlay');
+            if (overlay) overlay.remove();
+            panel.style.position = '';
+        }
     }
 
     function initAuthFormEvents(container) {
@@ -408,18 +438,22 @@
                         if (typeof App.ui.pages.renderCarTab === 'function') App.ui.pages.renderCarTab();
                     }
 
-                  // Загружаем данные
-showLoadingSpinner();
-try {
-    if (typeof App.storage.loadAllData === 'function') {
-        await App.storage.loadAllData();
-    }
-} catch (err) {
-    console.warn('Ошибка начальной загрузки:', err);
-} finally {
-    // В любом случае восстанавливаем интерфейс
-    if (typeof App.renderAll === 'function') App.renderAll();
-} else {
+                    // Загружаем данные
+                    showLoadingSpinner();
+                    try {
+                        if (typeof App.storage.loadAllData === 'function') {
+                            await App.storage.loadAllData();
+                        }
+                    } catch (err) {
+                        console.warn('Ошибка начальной загрузки:', err);
+                    } finally {
+                        hideLoadingSpinner();
+                        if (typeof App.renderAll === 'function') App.renderAll();
+                    }
+                } finally {
+                    window._processingAuth = false;
+                }
+            } else {
                 isLoggedIn = false; setInstallButtonVisible(false);
                 if (sidebarLoginBtn) sidebarLoginBtn.style.display = ''; if (drawerLoginBtn) drawerLoginBtn.style.display = '';
                 const dataPanel = document.getElementById('data-panel');
@@ -488,9 +522,7 @@ try {
             (async function registerSW() {
                 try { await navigator.serviceWorker.register('./service-worker.js'); } catch (e) { setTimeout(registerSW, 5000); }
             })();
-            (async function registerFirebaseSW() {
-                try { await navigator.serviceWorker.register('./firebase-messaging-sw.js'); } catch (e) { setTimeout(registerFirebaseSW, 5000); }
-            })();
+            // Firebase SW уже включён в основной service-worker.js, дублируемую регистрацию убираем
         }
 
         initDatabase().then(async () => {
@@ -521,6 +553,18 @@ try {
             if (App.realtime?.resubscribe) App.realtime.resubscribe();
         });
         window.addEventListener('offline', () => {});
+
+        // Обработчик сообщений от Service Worker
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.addEventListener('message', event => {
+                if (event.data?.type === 'SYNC_TRIGGERED') {
+                    console.log('[Main] Получен сигнал синхронизации от SW');
+                    if (App.db.sync && !App.db.sync._isRunning) {
+                        App.db.sync.processSyncQueue().catch(console.error);
+                    }
+                }
+            });
+        }
 
         if (typeof App.events.init === 'function') App.events.init();
         if (typeof App.events.switchToTab === 'function') App.events.switchToTab('dashboard');
