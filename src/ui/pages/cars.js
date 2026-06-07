@@ -390,9 +390,7 @@ App.ui.pages.renderCarTab = function() {
                     App.ui.pages.updateCurrentCarName();
                     App.ui.pages.renderSharingListForCarTab();
                     App.ui.pages.renderBasicParams();
-                    App.ui.pages.loadCarDocuments().then(function() {
-                        App.ui.pages.renderDocuments();
-                    });
+                    App.ui.pages.refreshDocuments(); // было: loadCarDocuments -> renderDocuments, теперь единый метод
                 });
             }
         };
@@ -402,24 +400,24 @@ App.ui.pages.renderCarTab = function() {
     document.getElementById('rename-car-btn').onclick = App.ui.pages.renameCar;
     document.getElementById('delete-car-btn').onclick = App.ui.pages.deleteCar;
     document.getElementById('save-car-details-btn').onclick = async function() {
-    const brand = document.getElementById('car-brand')?.value?.trim() || '';
-    const model = document.getElementById('car-model')?.value?.trim() || '';
-    const year = parseInt(document.getElementById('car-year')?.value) || null;
-    const plate = document.getElementById('car-plate')?.value?.trim() || '';
-    const vin = document.getElementById('car-vin')?.value?.trim() || '';
-    
-    App.store.settings.carBrand = brand;
-    App.store.settings.carModel = model;
-    App.store.settings.carYear = year;
-    App.store.settings.plateNumber = plate;
-    App.store.settings.vin = vin;
-    
-    await App.storage.saveVehicleStateAndSettings(
-        { carBrand: brand, carModel: model, carYear: year, plateNumber: plate, vin: vin },
-        {}
-    );
-    App.toast('Данные автомобиля сохранены', 'success');
-};
+        const brand = document.getElementById('car-brand')?.value?.trim() || '';
+        const model = document.getElementById('car-model')?.value?.trim() || '';
+        const year = parseInt(document.getElementById('car-year')?.value) || null;
+        const plate = document.getElementById('car-plate')?.value?.trim() || '';
+        const vin = document.getElementById('car-vin')?.value?.trim() || '';
+        
+        App.store.settings.carBrand = brand;
+        App.store.settings.carModel = model;
+        App.store.settings.carYear = year;
+        App.store.settings.plateNumber = plate;
+        App.store.settings.vin = vin;
+        
+        await App.storage.saveVehicleStateAndSettings(
+            { carBrand: brand, carModel: model, carYear: year, plateNumber: plate, vin: vin },
+            {}
+        );
+        App.toast('Данные автомобиля сохранены', 'success');
+    };
 
     if (App.store.activeCarId) {
         App.ui.pages.loadCarDetailsWithRetry(App.store.activeCarId);
@@ -439,9 +437,7 @@ App.ui.pages.renderCarTab = function() {
     App.ui.pages.renderBasicParams();
     App.ui.pages.renderSharingListForCarTab();
 
-    App.ui.pages.loadCarDocuments().then(function() {
-        App.ui.pages.renderDocuments();
-    });
+    App.ui.pages.refreshDocuments(); // вместо loadCarDocuments.then(renderDocuments)
 
     App.ui.pages.renderExportBlock();
 
@@ -468,93 +464,98 @@ App.ui.pages.renderCarTab = function() {
             oldVinInput = newVinInput;
         }
         if (oldVinInput) {
-            var wrapper = document.createElement('div');
-            wrapper.id = 'vin-buttons-wrapper';
-            wrapper.style.display = 'flex';
-            wrapper.style.flexDirection = 'column';
-            wrapper.style.gap = '8px';
-            oldVinInput.parentNode.insertBefore(wrapper, oldVinInput);
-            wrapper.appendChild(oldVinInput);
-            
-            var btnContainer = document.createElement('div');
-            btnContainer.style.display = 'flex';
-            btnContainer.style.gap = '8px';
-            btnContainer.style.flexWrap = 'wrap';
-            
-            if (App.store.isPremium) {
-                var vinBtn = document.createElement('button');
-                vinBtn.id = 'vin-info-btn';
-                vinBtn.className = 'secondary-btn';
-                vinBtn.innerHTML = '<i data-lucide="info"></i> Инфо по VIN';
-                btnContainer.appendChild(vinBtn);
-                
-                var plateBtn = document.createElement('button');
-                plateBtn.id = 'plate-info-btn';
-                plateBtn.className = 'secondary-btn';
-                plateBtn.innerHTML = '<i data-lucide="flag"></i> Инфо по номеру';
-                btnContainer.appendChild(plateBtn);
-            } else {
-                var hintSpan = document.createElement('span');
-                hintSpan.className = 'hint';
-                hintSpan.id = 'premium-hint-vin';
-                hintSpan.innerHTML = '<i data-lucide="lock"></i> Поиск по VIN/номеру доступен в Premium';
-                btnContainer.appendChild(hintSpan);
-            }
-            
-            wrapper.appendChild(btnContainer);
-            
-            var vinInfoBtn = document.getElementById('vin-info-btn');
-            if (vinInfoBtn) {
-                vinInfoBtn.addEventListener('click', async () => {
-                    if (!App.store.isPremium) {
-                        App.modules.showUpgradeModal();
-                        return;
-                    }
-                    const vin = document.getElementById('car-vin')?.value?.trim();
-                    if (!vin || vin.length !== 17) {
-                        App.toast('Введите корректный VIN (17 символов)', 'warning');
-                        return;
-                    }
-                    try {
-                        const module = await App.modules.load('premium/partsSearch', true);
-                        if (module && module.showVehicleInfoModal) {
-                            await module.showVehicleInfoModal(vin, 'vin');
-                        }
-                    } catch (err) {
-                        console.error(err);
-                        App.toast('Не удалось загрузить модуль поиска', 'error');
-                    }
-                });
-            }
-            
-            var plateInfoBtn = document.getElementById('plate-info-btn');
-            if (plateInfoBtn) {
-                plateInfoBtn.addEventListener('click', async () => {
-                    if (!App.store.isPremium) {
-                        App.modules.showUpgradeModal();
-                        return;
-                    }
-                    const country = await App.ui.promptModalAsync('Введите страну', 'uk - Великобритания, nl - Нидерланды');
-                    if (!country || !['uk', 'nl'].includes(country.toLowerCase())) {
-                        App.toast('Поддерживаемые страны: uk, nl', 'warning');
-                        return;
-                    }
-                    const plate = await App.ui.promptModalAsync('Регистрационный номер', '');
-                    if (!plate) return;
-                    try {
-                        const module = await App.modules.load('premium/partsSearch', true);
-                        if (module && module.showVehicleInfoModal) {
-                            await module.showVehicleInfoModal(`${country}:${plate.toUpperCase()}`, 'plate');
-                        }
-                    } catch (err) {
-                        console.error(err);
-                        App.toast('Не удалось загрузить модуль поиска', 'error');
-                    }
-                });
-            }
+            App.ui.pages._renderVinButtons(oldVinInput);
         }
     }
     App.initIcons();
+};
+
+// Вспомогательная функция отрисовки кнопок VIN/Plate
+App.ui.pages._renderVinButtons = function(vinInputElement) {
+    var wrapper = document.createElement('div');
+    wrapper.id = 'vin-buttons-wrapper';
+    wrapper.style.display = 'flex';
+    wrapper.style.flexDirection = 'column';
+    wrapper.style.gap = '8px';
+    vinInputElement.parentNode.insertBefore(wrapper, vinInputElement);
+    wrapper.appendChild(vinInputElement);
+    
+    var btnContainer = document.createElement('div');
+    btnContainer.style.display = 'flex';
+    btnContainer.style.gap = '8px';
+    btnContainer.style.flexWrap = 'wrap';
+    
+    if (App.store.isPremium) {
+        var vinBtn = document.createElement('button');
+        vinBtn.id = 'vin-info-btn';
+        vinBtn.className = 'secondary-btn';
+        vinBtn.innerHTML = '<i data-lucide="info"></i> Инфо по VIN';
+        btnContainer.appendChild(vinBtn);
+        
+        var plateBtn = document.createElement('button');
+        plateBtn.id = 'plate-info-btn';
+        plateBtn.className = 'secondary-btn';
+        plateBtn.innerHTML = '<i data-lucide="flag"></i> Инфо по номеру';
+        btnContainer.appendChild(plateBtn);
+    } else {
+        var hintSpan = document.createElement('span');
+        hintSpan.className = 'hint';
+        hintSpan.id = 'premium-hint-vin';
+        hintSpan.innerHTML = '<i data-lucide="lock"></i> Поиск по VIN/номеру доступен в Premium';
+        btnContainer.appendChild(hintSpan);
+    }
+    
+    wrapper.appendChild(btnContainer);
+    
+    var vinInfoBtn = document.getElementById('vin-info-btn');
+    if (vinInfoBtn) {
+        vinInfoBtn.addEventListener('click', async () => {
+            if (!App.store.isPremium) {
+                App.modules.showUpgradeModal();
+                return;
+            }
+            const vin = document.getElementById('car-vin')?.value?.trim();
+            if (!vin || vin.length !== 17) {
+                App.toast('Введите корректный VIN (17 символов)', 'warning');
+                return;
+            }
+            try {
+                const module = await App.modules.load('premium/partsSearch', true);
+                if (module && module.showVehicleInfoModal) {
+                    await module.showVehicleInfoModal(vin, 'vin');
+                }
+            } catch (err) {
+                console.error(err);
+                App.toast('Не удалось загрузить модуль поиска', 'error');
+            }
+        });
+    }
+    
+    var plateInfoBtn = document.getElementById('plate-info-btn');
+    if (plateInfoBtn) {
+        plateInfoBtn.addEventListener('click', async () => {
+            if (!App.store.isPremium) {
+                App.modules.showUpgradeModal();
+                return;
+            }
+            const country = await App.ui.promptModalAsync('Введите страну', 'uk - Великобритания, nl - Нидерланды');
+            if (!country || !['uk', 'nl'].includes(country.toLowerCase())) {
+                App.toast('Поддерживаемые страны: uk, nl', 'warning');
+                return;
+            }
+            const plate = await App.ui.promptModalAsync('Регистрационный номер', '');
+            if (!plate) return;
+            try {
+                const module = await App.modules.load('premium/partsSearch', true);
+                if (module && module.showVehicleInfoModal) {
+                    await module.showVehicleInfoModal(`${country}:${plate.toUpperCase()}`, 'plate');
+                }
+            } catch (err) {
+                console.error(err);
+                App.toast('Не удалось загрузить модуль поиска', 'error');
+            }
+        });
+    }
 };
 
 /* ========== УЛУЧШЕННАЯ ЗАГРУЗКА ДЕТАЛЕЙ АВТОМОБИЛЯ ========== */
@@ -597,22 +598,7 @@ App.ui.pages.loadCarDetails = function(carId) {
     if (vinField) vinField.value = s.vin || '';
 };
 
-/* ========== ДЕЛЕГИРОВАНИЕ КНОПКИ ПРИГЛАШЕНИЯ ========== */
-function setupInviteDelegation() {
-    document.body.addEventListener('click', function(e) {
-        var target = e.target.closest('#invite-btn');
-        if (target && target.id === 'invite-btn') {
-            e.preventDefault();
-            e.stopPropagation();
-            App.ui.pages.inviteUser();
-        }
-    });
-    console.log('[Cars] Делегирование для кнопки приглашения настроено');
-}
-if (!window._inviteDelegationSet) {
-    setupInviteDelegation();
-    window._inviteDelegationSet = true;
-}
+/* ========== ДЕЛЕГИРОВАНИЕ КНОПКИ ПРИГЛАШЕНИЯ УДАЛЕНО – ОБРАБОТКА В EVENTS.JS ========== */
 
 /* ========== ОСНОВНЫЕ ПАРАМЕТРЫ (с защитой от null) ========== */
 App.ui.pages.renderBasicParams = async function() {
@@ -828,7 +814,7 @@ App.ui.pages.renderDocuments = function() {
         App.ui.pages._carDocuments = [];
     }
 
-    // Сначала показываем локальные документы, затем в фоне обновляем
+    // Группировка и генерация HTML
     var grouped = {};
     docs.forEach(function(doc) {
         var type = doc.type || 'Прочее';
@@ -842,7 +828,7 @@ App.ui.pages.renderDocuments = function() {
         var items = grouped[type] || [];
         html += '<div class="accordion-group">';
         html += '<div class="accordion-header">';
-        html += '<i data-lucide="file-text"></i> ' + type + ' (' + items.length + ')';
+        html += '<i data-lucide="file-text"></i> ' + App.utils.escapeHtml(type) + ' (' + items.length + ')';
         html += '<i data-lucide="chevron-down" class="accordion-arrow" style="margin-left:auto;"></i>';
         html += '</div>';
         html += '<div class="accordion-body">';
@@ -852,7 +838,7 @@ App.ui.pages.renderDocuments = function() {
             items.forEach(function(doc) {
                 html += '<div class="card-item">';
                 html += '<div class="card-header">';
-                html += '<span>' + (doc.date || '') + '</span>';
+                html += '<span>' + App.utils.escapeHtml(doc.date || '') + '</span>';
                 html += '<div class="card-actions">';
                 html += '<button class="icon-btn edit-doc-btn" data-id="' + doc.id + '"><i data-lucide="pencil"></i></button>';
                 html += '<button class="icon-btn delete-doc-btn" data-id="' + doc.id + '"><i data-lucide="trash-2"></i></button>';
@@ -866,7 +852,7 @@ App.ui.pages.renderDocuments = function() {
                         html += '<a href="' + doc.photoUrl + '" target="_blank"><img src="' + doc.photoUrl + '" class="doc-preview" /></a>';
                     }
                 }
-                if (doc.amount) html += '<div class="card-meta">Сумма: ' + doc.amount + ' ₽</div>';
+                if (doc.amount) html += '<div class="card-meta">Сумма: ' + App.utils.escapeHtml(String(doc.amount)) + ' ₽</div>';
                 if (doc.notes) html += '<div class="card-meta">' + App.utils.escapeHtml(doc.notes) + '</div>';
                 html += '</div>';
             });
@@ -876,7 +862,7 @@ App.ui.pages.renderDocuments = function() {
     container.innerHTML = html;
     App.initIcons();
 
-    // Навешиваем обработчики на заголовки аккордеонов
+    // Обработчики на заголовки аккордеонов
     container.querySelectorAll('.accordion-header').forEach(function(header) {
         header.addEventListener('click', function() {
             var body = header.nextElementSibling;
@@ -955,15 +941,7 @@ App.ui.pages.renderDocuments = function() {
         };
     }
 
-    // Загружаем документы с сервера в фоне и обновляем UI
-    App.ui.pages.loadCarDocuments().then(function(updatedDocs) {
-        if (updatedDocs !== docs) {
-            App.ui.pages._carDocuments = updatedDocs;
-            App.ui.pages.renderDocuments(); // перерисовка
-        }
-    }).catch(function() {});
-
-    // Обработчики для кнопок внутри документов
+    // Обработчики для кнопок внутри документов (редактирование, удаление)
     container.addEventListener('click', async function(e) {
         var target = e.target.closest('.edit-doc-btn');
         if (target) {
@@ -1093,6 +1071,12 @@ App.ui.pages.renderDocuments = function() {
     }
 };
 
+/* ========== НОВАЯ ФУНКЦИЯ ОБНОВЛЕНИЯ ДОКУМЕНТОВ ========== */
+App.ui.pages.refreshDocuments = async function() {
+    await App.ui.pages.loadCarDocuments();
+    App.ui.pages.renderDocuments();
+};
+
 /* ========== МОДАЛЬНОЕ ОКНО НАЧАЛЬНЫХ ПАРАМЕТРОВ ========== */
 App.ui.pages.showInitialParamsModal = function() {
     var todayStr = App.utils.isoToDDMMYYYY(new Date().toISOString().split('T')[0]);
@@ -1183,7 +1167,7 @@ App.ui.pages.checkAndShowInitialParamsModal = async function() {
     }
 };
 
-/* ========== СОВМЕСТНЫЙ ДОСТУП (экспортные функции оставлены для совместимости) ========== */
+/* ========== СОВМЕСТНЫЙ ДОСТУП ========== */
 App.ui.pages.renderSharingListForCarTab = function() {
     var container = document.getElementById('sharing-container');
     if (!container) return;
@@ -1243,7 +1227,7 @@ App.ui.pages.renderSharingListForCarTab = function() {
     });
 };
 
-// ==================== ЭКСПОРТ И ПРОЧИЕ ФУНКЦИИ ====================
+// ==================== ЭКСПОРТ И ПРОЧИЕ ФУНКЦИИ (без изменений, кроме экранирования) ====================
 App.ui.pages.subscribeToPush = function() {};
 App.ui.pages.openPhotoFolder = function() { App.toast('Фотографии теперь хранятся в Supabase Storage', 'info'); };
 App.ui.pages.shareTable = function() { window.open('https://docs.google.com/spreadsheets/d/' + App.store.spreadsheetId + '/edit', '_blank'); };
@@ -1420,10 +1404,10 @@ App.ui.pages.generateServiceReport = function() {
     var totalCost = totalMaintenance + totalFuel;
     var avgCostPerKm = App.store.settings.currentMileage ? totalCost / App.store.settings.currentMileage : 0;
     var reportHtml = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Сервисная история</title><style>body{font-family:sans-serif;margin:20px}h1{color:#3498db}h2{border-bottom:1px solid #ccc}table{width:100%;border-collapse:collapse;margin-bottom:20px}td,th{border:1px solid #ddd;padding:8px}th{background:#f2f2f2}.stat-card{display:inline-block;background:#f9f9f9;padding:10px;margin:5px;border-radius:8px}</style></head><body><h1>Сервисная история</h1><p><strong>Дата:</strong>' + new Date().toLocaleDateString('ru-RU') + '</p><p><strong>Пробег:</strong>' + App.store.settings.currentMileage.toLocaleString() + ' км</p><h2>Расходы</h2><div>' +
-        '<div class="stat-card">ТО: ' + totalMaintenance.toFixed(2) + ' ₽</div><div class="stat-card">Топливо: ' + totalFuel.toFixed(2) + ' ₽</div><div class="stat-card">Всего: ' + totalCost.toFixed(2) + ' ₽</div><div class="stat-card">1 км: ' + avgCostPerKm.toFixed(2) + ' ₽</div></div><h2>Операции</h2><tr><thead><tr><th>Категория</th><th>Операция</th><th>Интервал км</th><th>Интервал мес</th><th>Последнее ТО</th><th>Последний пробег</th></tr></thead><tbody>';
-    App.store.operations.forEach(function(op) { reportHtml += '<tr><td>' + App.utils.escapeHtml(op.category) + '</td><td>' + App.utils.escapeHtml(op.name) + '</td><td>' + (op.intervalKm || '—') + '</td><td>' + (op.intervalMonths || '—') + '</td><td>' + (op.lastDate || '—') + '</td><td>' + (op.lastMileage || '—') + '</td></tr>'; });
+        '<div class="stat-card">ТО: ' + totalMaintenance.toFixed(2) + ' ₽</div><div class="stat-card">Топливо: ' + totalFuel.toFixed(2) + ' ₽</div><div class="stat-card">Всего: ' + totalCost.toFixed(2) + ' ₽</div><div class="stat-card">1 км: ' + avgCostPerKm.toFixed(2) + ' ₽</div></div><h2>Операции</h2><table><thead><tr><th>Категория</th><th>Операция</th><th>Интервал км</th><th>Интервал мес</th><th>Последнее ТО</th><th>Последний пробег</th></tr></thead><tbody>';
+    App.store.operations.forEach(function(op) { reportHtml += '<tr><td>' + App.utils.escapeHtml(op.category) + '</td><td>' + App.utils.escapeHtml(op.name) + '</td><td>' + (op.intervalKm || '—') + '</td><td>' + (op.intervalMonths || '—') + '</td><td>' + (op.lastDate || '—') + '</td><td>' + (op.lastMileage || '—') + '</td>'; });
     reportHtml += '</tbody></table><h2>История ТО</h2><table><thead><tr><th>Дата</th><th>Операция</th><th>Пробег</th><th>Запчасти</th><th>Работа</th><th>DIY</th><th>Прим.</th></tr></thead><tbody>';
-    App.store.serviceRecords.sort(function(a,b){return new Date(b.date)-new Date(a.date);}).forEach(function(rec){ var op=App.store.operations.find(function(o){return o.id==rec.operation_id;}); reportHtml+='<tr><td>'+ (rec.date||'')+'</td><td>'+ App.utils.escapeHtml(op?op.name:'Неизвестно')+'</td><td>'+ (rec.mileage||'')+'</td><td>'+ (rec.parts_cost||'0')+'</td><td>'+ (rec.work_cost||'0')+'</td><td>'+ (rec.is_diy===true?'Да':'Нет')+'<tr><td>'+ (rec.notes||'')+'</td></tr>'; });
+    App.store.serviceRecords.sort(function(a,b){return new Date(b.date)-new Date(a.date);}).forEach(function(rec){ var op=App.store.operations.find(function(o){return o.id==rec.operation_id;}); reportHtml+='<tr><td>'+ (rec.date||'')+'</td><td>'+ App.utils.escapeHtml(op?op.name:'Неизвестно')+'</td><td>'+ (rec.mileage||'')+'</td><td>'+ (rec.parts_cost||'0')+'</td><td>'+ (rec.work_cost||'0')+'</td><td>'+ (rec.is_diy===true?'Да':'Нет')+'</td><td>'+ (rec.notes||'')+'</td>'; });
     reportHtml += '</tbody></table></body></html>';
     var element = document.createElement('div');
     element.innerHTML = reportHtml;
