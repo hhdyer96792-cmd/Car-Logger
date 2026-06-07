@@ -361,15 +361,21 @@ App.ui.pages.renderPremiumBlock = function() {
     App.initIcons();
 };
 
-// ==================== ОСНОВНАЯ ФУНКЦИЯ ЗАПОЛНЕНИЯ НАСТРОЕК ====================
+// ==================== ОСНОВНАЯ ФУНКЦИЯ ЗАПОЛНЕНИЯ НАСТРОЕК (с проверкой DOM) ====================
 App.ui.pages.populateSettingsFields = async function() {
+    // Проверка готовности DOM и наличия контейнеров
+    if (document.readyState !== 'complete') {
+        await new Promise(resolve => window.addEventListener('load', resolve));
+    }
+    
     const premiumContainer = document.getElementById('premium-settings-container');
     const notificationsContainer = document.getElementById('notifications-card-container');
     const pinContainer = document.getElementById('pin-settings-container');
     const accordionContainer = document.getElementById('settings-accordion-container');
 
     if (!premiumContainer || !notificationsContainer || !pinContainer || !accordionContainer) {
-        console.warn('[Settings] Missing containers in index.html');
+        console.warn('[Settings] Missing containers, retrying...');
+        setTimeout(() => App.ui.pages.populateSettingsFields(), 100);
         return;
     }
 
@@ -635,7 +641,7 @@ App.ui.pages.initRecoveryCodesUI = function() {
     });
 };
 
-/// ==================== PIN-код ====================
+// ==================== PIN-код ====================
 App.ui.pages.renderPinSettings = async function() {
     const container = document.getElementById('pin-settings-container');
     if (!container) return;
@@ -771,11 +777,7 @@ App.ui.pages.subscribeToPush = async function() {
             
             if (typeof firebase !== 'undefined' && firebase.messaging) {
                 const messaging = firebase.messaging();
-                
-                // ⚠️ ВАЖНО: замените этот ключ на реальный VAPID-ключ из вашего проекта Firebase!
-                // Ключ можно получить в настройках проекта -> Cloud Messaging -> Web configuration
                 const vapidKey = 'BEUVrsWau5E4NvAwwAKmkjfK8yoDVntppWmZ2IdqseLVxuNNy47bV7eOLVYDmZ1b2P3F27eRqJLoAjW58Fh0tyY';
-                
                 const token = await messaging.getToken({ vapidKey });
                 
                 if (token) {
@@ -805,6 +807,7 @@ App.ui.pages.subscribeToPush = async function() {
     }
 };
 
+// Инициализация при загрузке вкладки
 if (document.getElementById('tab-settings')) {
     App.ui.pages.populateSettingsFields();
 }
