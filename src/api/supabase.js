@@ -143,10 +143,11 @@ App.supa.loadTires = function(page = 1, pageSize = 30) {
         ), 3, 500, 'loadTires');
 };
 
+// ИСПРАВЛЕНО: заменён order на существующее поле purchase_date
 App.supa.loadParts = function(page = 1, pageSize = 30) {
     return withRetry(() =>
         withTimeout(
-            App.supa.fetchTablePaginated('parts', page, pageSize, 'date_added', false),
+            App.supa.fetchTablePaginated('parts', page, pageSize, 'purchase_date', false),
             20000, 'loadParts'
         ), 3, 500, 'loadParts');
 };
