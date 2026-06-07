@@ -296,17 +296,28 @@ const methodMap = {
     mileage: 'loadMileageHistory'
 };
 
+// ИСПРАВЛЕНО: добавлена проверка существования метода и нормализация ответа
 App.storage.loadFirstPage = async function(table, pageSize = 50) {
     if (!navigator.onLine) return;
     const methodName = methodMap[table];
-    if (!methodName) return;
+    if (!methodName || typeof App.supa[methodName] !== 'function') {
+        console.warn(`[Storage] Метод ${methodName} не найден для таблицы ${table}`);
+        return;
+    }
     try {
-        const { data, error } = await App.supa[methodName](1, pageSize);
+        const result = await App.supa[methodName](1, pageSize);
+        let data, error;
+        if (result && typeof result === 'object' && 'data' in result && 'error' in result) {
+            data = result.data;
+            error = result.error;
+        } else {
+            data = result;
+            error = null;
+        }
         if (error) throw error;
         const carId = App.store.activeCarId;
         const items = (data || []).map(item => ({ ...item, car_id: carId }));
         await App.db.putMany(table, items);
-        // Обновляем Store, заменяя старые элементы новыми
         const newMap = new Map(items.map(i => [i.id, i]));
         App.store[table] = App.store[table].filter(old => !newMap.has(old.id)).concat(items);
     } catch (err) {
@@ -314,24 +325,36 @@ App.storage.loadFirstPage = async function(table, pageSize = 50) {
     }
 };
 
+// ИСПРАВЛЕНО: параллельная загрузка с ограничением параллельности
 App.storage.loadAllData = async function() {
     // Мгновенно загружаем локальные данные и отображаем
     await App.store.loadFromIndexedDB();
     document.getElementById('data-panel').style.display = 'block';
     if (typeof App.renderAll === 'function') App.renderAll();
     const syncIndicator = document.getElementById('sync-indicator');
-    if (syncIndicator) syncIndicator.className = 'pending';
+    if (syncIndicator) {
+        syncIndicator.className = 'pending';
+        if (typeof App.setSyncStatus === 'function') App.setSyncStatus('pending');
+    }
 
     if (!navigator.onLine) return;
 
-    // Последовательно загружаем первые страницы таблиц
+    // Параллельная загрузка первых страниц таблиц (ограничение 3 одновременно)
     const tables = ['operations', 'fuel_log', 'tires', 'parts', 'history', 'mileage'];
-    for (const table of tables) {
-        await App.storage.loadFirstPage(table, 50).catch(()=>{});
-        await new Promise(r => setTimeout(r, 200));
+    const chunkSize = 3;
+    for (let i = 0; i < tables.length; i += chunkSize) {
+        await Promise.all(
+            tables.slice(i, i + chunkSize).map(table =>
+                App.storage.loadFirstPage(table, 50).catch(() => {})
+            )
+        );
+        await new Promise(r => setTimeout(r, 100)); // небольшая пауза между чанками
     }
-    await App.storage.loadSettingsForCar(App.store.activeCarId).catch(()=>{});
+    await App.storage.loadSettingsForCar(App.store.activeCarId).catch(() => {});
 
     if (typeof App.renderAll === 'function') App.renderAll();
-    if (syncIndicator) syncIndicator.className = 'synced';
+    if (syncIndicator) {
+        syncIndicator.className = 'synced';
+        if (typeof App.setSyncStatus === 'function') App.setSyncStatus('synced');
+    }
 };
