@@ -5,36 +5,35 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes">
     <!-- Строгая политика безопасности – никаких inline-скриптов и eval -->
     <meta http-equiv="Content-Security-Policy" content="
-      default-src 'self';
-      connect-src 'self' 
-        https://qbjlccdqaudyvedpysil.supabase.co 
-        wss://qbjlccdqaudyvedpysil.supabase.co 
-        https://router.project-osrm.org 
-        https://nominatim.openstreetmap.org
-        https://unpkg.com
-        https://cdn.jsdelivr.net
-        https://fonts.googleapis.com
-        https://fonts.gstatic.com
-        https://www.google.com
-        https://www.gstatic.com
-        https://api.github.com
-        https://cdnjs.cloudflare.com
-        https://fonts.gstatic.com
-        https: wss:;
-      script-src 'self' 
-        https://cdn.jsdelivr.net 
-        https://unpkg.com 
-        https://cdnjs.cloudflare.com 
-        https://www.gstatic.com 
-        https://cdn.sheetjs.com;
-      style-src 'self' https://fonts.googleapis.com https://unpkg.com;
-      img-src 'self' data: blob: https://qbjlccdqaudyvedpysil.supabase.co https:;
-      worker-src 'self' blob:;
-      frame-src 'none';
-      object-src 'none';
-      base-uri 'self';
-      form-action 'self';
-    ">
+  default-src 'self';
+  connect-src 'self' 
+    https://qbjlccdqaudyvedpysil.supabase.co 
+    wss://qbjlccdqaudyvedpysil.supabase.co 
+    https://router.project-osrm.org 
+    https://nominatim.openstreetmap.org
+    https://unpkg.com
+    https://cdn.jsdelivr.net
+    https://fonts.googleapis.com
+    https://fonts.gstatic.com
+    https://www.google.com
+    https://www.gstatic.com
+    https://api.github.com
+    https://cdnjs.cloudflare.com
+    https: wss:;
+  script-src 'self' 'unsafe-inline' 'unsafe-eval'
+    https://cdn.jsdelivr.net 
+    https://unpkg.com 
+    https://cdnjs.cloudflare.com 
+    https://www.gstatic.com 
+    https://cdn.sheetjs.com;
+  style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://unpkg.com;
+  img-src 'self' data: blob: https://qbjlccdqaudyvedpysil.supabase.co https:;
+  worker-src 'self' blob:;
+  frame-src 'none';
+  object-src 'none';
+  base-uri 'self';
+  form-action 'self';
+">
     <title>Car Logger D&C</title>
     <link rel="stylesheet" href="style.css">
     <link rel="manifest" href="manifest.json">
