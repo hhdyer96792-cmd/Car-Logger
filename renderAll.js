@@ -1,11 +1,8 @@
-// src/renderAll.js (или добавить в main.js, но для чистоты вынесем)
-// Глобальная функция перерисовки всех вкладок в зависимости от текущей активной
 window.App = window.App || {};
 
 App.renderAll = function() {
     var activeTab = App.events.currentActiveTab;
     if (!activeTab) {
-        // Определяем активную вкладку по классу
         var activeTabElement = document.querySelector('.tab-content.active');
         if (activeTabElement) {
             activeTab = activeTabElement.id.replace('tab-', '');
@@ -13,8 +10,6 @@ App.renderAll = function() {
             activeTab = 'dashboard';
         }
     }
-    
-    // Вызываем соответствующий рендер в зависимости от вкладки
     switch (activeTab) {
         case 'dashboard':
             if (typeof App.ui.pages.renderDashboard === 'function') App.ui.pages.renderDashboard();
