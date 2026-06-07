@@ -408,19 +408,18 @@
                         if (typeof App.ui.pages.renderCarTab === 'function') App.ui.pages.renderCarTab();
                     }
 
-                    // Загружаем данные (с индикатором)
-                    showLoadingSpinner();
-                    if (typeof App.storage.loadAllData === 'function') {
-                        await App.storage.loadAllData().catch(err => console.warn('Ошибка начальной загрузки:', err));
-                    }
-                    if (typeof App.db.sync.processSyncQueue === 'function') {
-                        App.db.sync.processSyncQueue().catch(()=>{});
-                    }
-                    if (typeof App.ui.pages.checkPendingInvites === 'function') App.ui.pages.checkPendingInvites();
-                    if (App.store.activeCarId && App.realtime?.subscribeToCar) App.realtime.subscribeToCar(App.store.activeCarId);
-                    if (typeof App.renderAll === 'function') App.renderAll();
-                } finally { window._processingAuth = false; }
-            } else {
+                  // Загружаем данные
+showLoadingSpinner();
+try {
+    if (typeof App.storage.loadAllData === 'function') {
+        await App.storage.loadAllData();
+    }
+} catch (err) {
+    console.warn('Ошибка начальной загрузки:', err);
+} finally {
+    // В любом случае восстанавливаем интерфейс
+    if (typeof App.renderAll === 'function') App.renderAll();
+} else {
                 isLoggedIn = false; setInstallButtonVisible(false);
                 if (sidebarLoginBtn) sidebarLoginBtn.style.display = ''; if (drawerLoginBtn) drawerLoginBtn.style.display = '';
                 const dataPanel = document.getElementById('data-panel');
