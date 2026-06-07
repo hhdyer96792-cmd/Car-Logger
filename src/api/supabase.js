@@ -23,6 +23,14 @@ async function withRetry(fn, maxRetries = 3, delay = 500, context = 'unknown') {
     throw lastError;
 }
 
+function withTimeout(promise, timeoutMs, context) {
+    let timer;
+    const timeout = new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${context} timed out after ${timeoutMs}ms`)), timeoutMs);
+    });
+    return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
 function ensureSupabase() {
     if (!App.supabase) throw new Error('Supabase client not initialized');
     return App.supabase;
@@ -110,25 +118,45 @@ App.supa.clearUserIdCache = function() {
     cachedUserId = null;
 };
 
-// ========== ПАГИНИРОВАННАЯ ЗАГРУЗКА ==========
+// ========== ЗАГРУЗКА ДАННЫХ (таймаут 20 с) ==========
 App.supa.loadOperations = function(page = 1, pageSize = 30) {
-    return App.supa.fetchTablePaginated('operations', page, pageSize, 'updated_at', false);
+    return withRetry(() =>
+        withTimeout(
+            App.supa.fetchTablePaginated('operations', page, pageSize, 'updated_at', false),
+            20000, 'loadOperations'
+        ), 3, 500, 'loadOperations');
 };
 
 App.supa.loadFuelLog = function(page = 1, pageSize = 30) {
-    return App.supa.fetchTablePaginated('fuel_log', page, pageSize, 'date', false);
+    return withRetry(() =>
+        withTimeout(
+            App.supa.fetchTablePaginated('fuel_log', page, pageSize, 'date', false),
+            20000, 'loadFuelLog'
+        ), 3, 500, 'loadFuelLog');
 };
 
 App.supa.loadTires = function(page = 1, pageSize = 30) {
-    return App.supa.fetchTablePaginated('tires', page, pageSize, 'date', false);
+    return withRetry(() =>
+        withTimeout(
+            App.supa.fetchTablePaginated('tires', page, pageSize, 'date', false),
+            20000, 'loadTires'
+        ), 3, 500, 'loadTires');
 };
 
 App.supa.loadParts = function(page = 1, pageSize = 30) {
-    return App.supa.fetchTablePaginated('parts', page, pageSize, 'date_added', false);
+    return withRetry(() =>
+        withTimeout(
+            App.supa.fetchTablePaginated('parts', page, pageSize, 'date_added', false),
+            20000, 'loadParts'
+        ), 3, 500, 'loadParts');
 };
 
 App.supa.loadHistory = function(page = 1, pageSize = 30) {
-    return App.supa.fetchTablePaginated('history', page, pageSize, 'date', false);
+    return withRetry(() =>
+        withTimeout(
+            App.supa.fetchTablePaginated('history', page, pageSize, 'date', false),
+            20000, 'loadHistory'
+        ), 3, 500, 'loadHistory');
 };
 
 App.supa.loadSettings = async function() {
@@ -158,10 +186,14 @@ App.supa.loadSettings = async function() {
 };
 
 App.supa.loadMileageHistory = function(page = 1, pageSize = 100) {
-    return App.supa.fetchTablePaginated('mileage_log', page, pageSize, 'date', false);
+    return withRetry(() =>
+        withTimeout(
+            App.supa.fetchTablePaginated('mileage_log', page, pageSize, 'date', false),
+            20000, 'loadMileageHistory'
+        ), 3, 500, 'loadMileageHistory');
 };
 
-// ========== СОХРАНЕНИЕ (с опциональным signal для прерывания) ==========
+// ========== СОХРАНЕНИЕ (с поддержкой AbortSignal) ==========
 App.supa.saveOperation = async function(op, signal) {
     const userId = await App.supa.getCurrentUserId();
     const carId = op.car_id || App.store.activeCarId;
@@ -349,7 +381,11 @@ App.supa.uploadPhoto = async function(file) {
 
 // ---------- Документы автомобиля ----------
 App.supa.loadCarDocuments = function(page = 1, pageSize = 30) {
-    return App.supa.fetchTablePaginated('car_documents', page, pageSize, 'date', false);
+    return withRetry(() =>
+        withTimeout(
+            App.supa.fetchTablePaginated('car_documents', page, pageSize, 'date', false),
+            20000, 'loadCarDocuments'
+        ), 3, 500, 'loadCarDocuments');
 };
 
 App.supa.addCarDocument = async function(doc) {
@@ -390,10 +426,13 @@ App.supa.deleteCarDocument = async function(docId) {
 // ---------- Мульти-авто ----------
 App.supa.loadCars = function() {
     ensureSupabase();
-    return App.supabase.from('cars').select('*').then(({ data, error }) => {
-        if (error) throw error;
-        return data || [];
-    });
+    return withTimeout(
+        App.supabase.from('cars').select('*').then(({ data, error }) => {
+            if (error) throw error;
+            return data || [];
+        }),
+        20000, 'loadCars'
+    );
 };
 
 App.supa.createCar = function(name) {
@@ -401,32 +440,47 @@ App.supa.createCar = function(name) {
         if (!userId) throw new Error('Not authenticated');
         ensureSupabase();
         const record = { id: crypto.randomUUID(), user_id: userId, name };
-        return App.supabase.from('cars').insert(record).select().single();
+        return withTimeout(
+            App.supabase.from('cars').insert(record).select().single(),
+            20000, 'createCar'
+        );
     });
 };
 
 App.supa.deleteCar = function(carId) {
     ensureSupabase();
-    return App.supabase.from('cars').delete().eq('id', carId).select();
+    return withTimeout(
+        App.supabase.from('cars').delete().eq('id', carId).select(),
+        20000, 'deleteCar'
+    );
 };
 
 App.supa.renameCar = function(carId, newName) {
     ensureSupabase();
-    return App.supabase.from('cars').update({ name: newName }).eq('id', carId).select().single();
+    return withTimeout(
+        App.supabase.from('cars').update({ name: newName }).eq('id', carId).select().single(),
+        20000, 'renameCar'
+    );
 };
 
 App.supa.inviteUserToCar = function(carId, email) {
     ensureSupabase();
-    return App.supabase.from('car_shares').insert({ id: crypto.randomUUID(), car_id: carId, invited_email: email }).select().single();
+    return withTimeout(
+        App.supabase.from('car_shares').insert({ id: crypto.randomUUID(), car_id: carId, invited_email: email }).select().single(),
+        20000, 'inviteUserToCar'
+    );
 };
 
 App.supa.getPendingInvites = function() {
     return App.supa.getCurrentUserId().then(userId => {
         if (!userId) return { data: [], error: null };
-        return App.supabase.from('car_shares')
-            .select('*, cars(name)')
-            .eq('invited_user_id', userId)
-            .eq('accepted', false);
+        return withTimeout(
+            App.supabase.from('car_shares')
+                .select('*, cars(name)')
+                .eq('invited_user_id', userId)
+                .eq('accepted', false),
+            20000, 'getPendingInvites'
+        );
     });
 };
 
@@ -434,33 +488,48 @@ App.supa.acceptInvite = async function(inviteId) {
     const userId = await App.supa.getCurrentUserId();
     if (!userId) throw new Error('Not authenticated');
     ensureSupabase();
-    return App.supabase.from('car_shares')
-        .update({ accepted: true, invited_user_id: userId })
-        .eq('id', inviteId)
-        .select();
+    return withTimeout(
+        App.supabase.from('car_shares')
+            .update({ accepted: true, invited_user_id: userId })
+            .eq('id', inviteId)
+            .select(),
+        20000, 'acceptInvite'
+    );
 };
 
 App.supa.declineInvite = function(inviteId) {
     ensureSupabase();
-    return App.supabase.from('car_shares').delete().eq('id', inviteId).select();
+    return withTimeout(
+        App.supabase.from('car_shares').delete().eq('id', inviteId).select(),
+        20000, 'declineInvite'
+    );
 };
 
 App.supa.getInviteByCode = function(code) {
     ensureSupabase();
-    return App.supabase.from('car_shares')
-        .select('*, cars(name)')
-        .eq('invite_code', code)
-        .maybeSingle();
+    return withTimeout(
+        App.supabase.from('car_shares')
+            .select('*, cars(name)')
+            .eq('invite_code', code)
+            .maybeSingle(),
+        20000, 'getInviteByCode'
+    );
 };
 
 App.supa.getCarShares = function(carId) {
     ensureSupabase();
-    return App.supabase.from('car_shares').select('*').eq('car_id', carId);
+    return withTimeout(
+        App.supabase.from('car_shares').select('*').eq('car_id', carId),
+        20000, 'getCarShares'
+    );
 };
 
 App.supa.deleteCarShare = function(shareId) {
     ensureSupabase();
-    return App.supabase.from('car_shares').delete().eq('id', shareId).select();
+    return withTimeout(
+        App.supabase.from('car_shares').delete().eq('id', shareId).select(),
+        20000, 'deleteCarShare'
+    );
 };
 
 App.supa.getVehicleState = async function(carId) {
@@ -483,9 +552,10 @@ App.supa.updateVehicleState = async function(carId, updates) {
         purchase_date: updates.purchaseDate,
         purchase_cost: updates.purchaseCost
     };
-    const { error } = await App.supabase
-        .from('vehicle_state')
-        .upsert(record, { onConflict: 'car_id' });
+    const { error } = await withTimeout(
+        App.supabase.from('vehicle_state').upsert(record, { onConflict: 'car_id' }),
+        20000, 'updateVehicleState'
+    );
     if (error) throw error;
     return true;
 };
