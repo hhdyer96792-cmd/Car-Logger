@@ -1,66 +1,52 @@
-// src/init-masks.js
-// Инициализация масок ввода для дат (вынесено из inline-атрибутов для CSP)
-(function() {
-    // Маска для полей с датой в формате ДД-ММ-ГГГГ
-    function applyDateMaskDDMMYYYY(event) {
-        var input = event.target;
-        var value = input.value.replace(/\D/g, '');
-        if (value.length > 8) value = value.slice(0, 8);
-        var formatted = '';
-        if (value.length > 0) {
-            formatted = value.substring(0, 2);
-            if (value.length >= 3) formatted += '-' + value.substring(2, 4);
-            if (value.length >= 5) formatted += '-' + value.substring(4, 8);
+window.App = window.App || {};
+
+App.renderAll = function() {
+    var activeTab = App.events.currentActiveTab;
+    if (!activeTab) {
+        var activeTabElement = document.querySelector('.tab-content.active');
+        if (activeTabElement) {
+            activeTab = activeTabElement.id.replace('tab-', '');
+        } else {
+            activeTab = 'dashboard';
         }
-        input.value = formatted;
     }
-
-    // Маска для полей с датой в формате ГГГГ-ММ-ДД
-    function applyDateMaskISO(event) {
-        var input = event.target;
-        var value = input.value.replace(/\D/g, '');
-        if (value.length > 8) value = value.slice(0, 8);
-        var formatted = '';
-        if (value.length > 0) {
-            formatted = value.substring(0, 4);
-            if (value.length >= 5) formatted += '-' + value.substring(4, 6);
-            if (value.length >= 7) formatted += '-' + value.substring(6, 8);
-        }
-        input.value = formatted;
+    switch (activeTab) {
+        case 'dashboard':
+            if (typeof App.ui.pages.renderDashboard === 'function') App.ui.pages.renderDashboard();
+            break;
+        case 'to':
+            if (typeof App.ui.pages.renderTotalCost === 'function') App.ui.pages.renderTotalCost();
+            if (typeof App.ui.pages.renderTOStats === 'function') App.ui.pages.renderTOStats();
+            if (typeof App.ui.pages.renderOilResourceCard === 'function') App.ui.pages.renderOilResourceCard();
+            if (typeof App.ui.pages.renderResourceBars === 'function') App.ui.pages.renderResourceBars();
+            if (typeof App.ui.pages.renderTOCostChart === 'function') App.ui.pages.renderTOCostChart();
+            if (typeof App.ui.pages.renderTOCategoryPieChart === 'function') App.ui.pages.renderTOCategoryPieChart();
+            if (typeof App.ui.pages.renderTOTable === 'function') App.ui.pages.renderTOTable();
+            break;
+        case 'stats':
+            if (typeof App.ui.pages.renderFinanceTab === 'function') App.ui.pages.renderFinanceTab();
+            break;
+        case 'history':
+            if (typeof App.ui.pages.initHistoryFilters === 'function') App.ui.pages.initHistoryFilters();
+            if (typeof App.ui.pages.renderHistoryCards === 'function') App.ui.pages.renderHistoryCards();
+            break;
+        case 'fuel':
+            if (typeof App.ui.pages.renderFuelTab === 'function') App.ui.pages.renderFuelTab();
+            break;
+        case 'tires':
+            if (typeof App.ui.pages.renderTiresTab === 'function') App.ui.pages.renderTiresTab();
+            break;
+        case 'parts':
+            if (typeof App.ui.pages.renderPartsTab === 'function') App.ui.pages.renderPartsTab();
+            break;
+        case 'car':
+            if (typeof App.ui.pages.renderCarTab === 'function') App.ui.pages.renderCarTab();
+            break;
+        case 'settings':
+            if (typeof App.ui.pages.populateSettingsFields === 'function') App.ui.pages.populateSettingsFields();
+            if (typeof App.ui.pages.checkPushSubscriptionStatus === 'function') App.ui.pages.checkPushSubscriptionStatus();
+            break;
+        default:
+            if (typeof App.ui.pages.renderDashboard === 'function') App.ui.pages.renderDashboard();
     }
-
-    // Вешаем обработчики на все поля с датой (динамически, так как они могут появляться после рендера)
-    // Используем делегирование
-    document.body.addEventListener('input', function(e) {
-        var target = e.target;
-        // Поля с атрибутом pattern или классом, указывающим на формат даты
-        if (target.matches('input[pattern="\\d{2}-\\d{2}-\\d{4}"]') || 
-            target.matches('input[placeholder*="ДД-ММ-ГГГГ"]') ||
-            (target.id && (target.id.indexOf('date') !== -1 || target.id.indexOf('Date') !== -1))) {
-            applyDateMaskDDMMYYYY(e);
-        } else if (target.matches('input[pattern="\\d{4}-\\d{2}-\\d{2}"]') ||
-                   target.matches('input[placeholder*="ГГГГ-ММ-ДД"]')) {
-            applyDateMaskISO(e);
-        }
-    });
-
-    // Также инициализируем маски для уже существующих полей при загрузке (на всякий случай)
-    window.addEventListener('DOMContentLoaded', function() {
-        var ddmmyyFields = document.querySelectorAll('input[pattern="\\d{2}-\\d{2}-\\d{4}"], input[placeholder*="ДД-ММ-ГГГГ"]');
-        ddmmyyFields.forEach(function(field) {
-            if (field.value && !field._maskInitialized) {
-                var event = new Event('input', { bubbles: true });
-                field.dispatchEvent(event);
-                field._maskInitialized = true;
-            }
-        });
-        var isoFields = document.querySelectorAll('input[pattern="\\d{4}-\\d{2}-\\d{2}"], input[placeholder*="ГГГГ-ММ-ДД"]');
-        isoFields.forEach(function(field) {
-            if (field.value && !field._maskInitialized) {
-                var event = new Event('input', { bubbles: true });
-                field.dispatchEvent(event);
-                field._maskInitialized = true;
-            }
-        });
-    });
-})();
+};
