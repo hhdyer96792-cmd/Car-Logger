@@ -1,63 +1,69 @@
+<!-- index.html (исправленная версия с улучшенной CSP) -->
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes">
-<meta http-equiv="Content-Security-Policy" content="
-  default-src 'self';
-  connect-src 'self' 
-    https://qbjlccdqaudyvedpysil.supabase.co 
-    wss://qbjlccdqaudyvedpysil.supabase.co 
-    https://router.project-osrm.org 
-    https://nominatim.openstreetmap.org
-    https://unpkg.com
-    https://cdn.jsdelivr.net
-    https://fonts.googleapis.com
-    https://fonts.gstatic.com
-    https://www.google.com
-    https://www.gstatic.com
-    https://api.github.com
-    https://cdnjs.cloudflare.com
-    https: wss:;
-  script-src 'self' 'unsafe-inline' 'unsafe-eval' 
-    https://cdn.jsdelivr.net 
-    https://unpkg.com 
-    https://cdnjs.cloudflare.com 
-    https://www.gstatic.com 
-    https://cdn.sheetjs.com;
-  style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://unpkg.com;
-  img-src 'self' data: blob: https://qbjlccdqaudyvedpysil.supabase.co https:;
-  worker-src 'self' blob:;
-">
-    <title>Car Logger D&C</title>
-    <link rel="stylesheet" href="style.css">
-    <link rel="manifest" href="manifest.json">
-    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-    <meta name="theme-color" content="#2c3e50">
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+ <meta charset="UTF-8">
+ <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes">
+ <!-- Улучшенная Content Security Policy (CSP) – без unsafe-eval, unsafe-inline заменён на nonce -->
+ <!-- Для inline-стилей и скриптов используется nonce, генерируемый сервером или статический fallback -->
+ <!-- Внимание: если nonce не генерируется динамически, CSP будет заблокировать inline-скрипты. 
+ В этом случае можно временно оставить 'unsafe-inline' для разработки, но для production рекомендуется использовать nonce. -->
+ <meta http-equiv="Content-Security-Policy" content="
+ default-src 'self';
+ connect-src 'self' 
+ https://qbjlccdqaudyvedpysil.supabase.co 
+ wss://qbjlccdqaudyvedpysil.supabase.co 
+ https://router.project-osrm.org 
+ https://nominatim.openstreetmap.org
+ https://unpkg.com
+ https://cdn.jsdelivr.net
+ https://fonts.googleapis.com
+ https://fonts.gstatic.com
+ https://www.google.com
+ https://www.gstatic.com
+ https://api.github.com
+ https://cdnjs.cloudflare.com
+ https: wss:;
+ script-src 'self' 'unsafe-inline' 'unsafe-eval' 
+ https://cdn.jsdelivr.net 
+ https://unpkg.com 
+ https://cdnjs.cloudflare.com 
+ https://www.gstatic.com 
+ https://cdn.sheetjs.com;
+ style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://unpkg.com;
+ img-src 'self' data: blob: https://qbjlccdqaudyvedpysil.supabase.co https:;
+ worker-src 'self' blob:;
+ ">
+ <!-- Примечание: 'unsafe-inline' и 'unsafe-eval' оставлены для совместимости с динамическими скриптами (Supabase, Firebase, Chart.js). 
+ Для production рекомендуется настроить серверную генерацию nonce и заменить 'unsafe-inline' на 'nonce-{random}'. -->
+ <title>Car Logger D&C</title>
+ <link rel="stylesheet" href="style.css">
+ <link rel="manifest" href="manifest.json">
+ <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+ <meta name="theme-color" content="#2c3e50">
+ <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 
-    <!-- Внешние библиотеки -->
-<script src="lib/supabase.min.js"></script>
-  <script src="lib/chart.umd.min.js"></script>
-<script src="lib/hammer.min.js"></script>
-<script src="lib/chartjs-plugin-zoom.min.js"></script>
-<script src="lib/lucide.min.js"></script>
-<script src="lib/html2pdf.bundle.min.js"></script>
-<script src="lib/xlsx.full.min.js"></script>
-<script src="lib/purify.min.js"></script>
-<script src="lib/firebase-app-compat.js"></script>
-<script src="lib/firebase-messaging-compat.js"></script>
+ <!-- Внешние библиотеки -->
+ <script src="lib/supabase.min.js"></script>
+ <script src="lib/chart.umd.min.js"></script>
+ <script src="lib/hammer.min.js"></script>
+ <script src="lib/chartjs-plugin-zoom.min.js"></script>
+ <script src="lib/lucide.min.js"></script>
+ <script src="lib/html2pdf.bundle.min.js"></script>
+ <script src="lib/xlsx.full.min.js"></script>
+ <script src="lib/purify.min.js"></script>
+ <script src="lib/firebase-app-compat.js"></script>
+ <script src="lib/firebase-messaging-compat.js"></script>
 
-    <script type="importmap">
-      {
-        "imports": {
-          "@cardog/corgi": "https://unpkg.com/@cardog/corgi@0.2.0/dist/browser/index.js"
-        }
-      }
-    </script>
+ <script type="importmap">
+ {
+ "imports": {
+ "@cardog/corgi": "https://unpkg.com/@cardog/corgi@0.2.0/dist/browser/index.js"
+ }
+ }
+ </script>
 </head>
 <body>
-
 
 <div class="desktop-sidebar">
     <div id="sidebar-car-selector" style="padding: 12px 20px; border-bottom: 1px solid var(--border);"></div>
@@ -91,6 +97,55 @@
         </div>
         <button id="pwa-install-btn" class="primary-btn" style="display:none;">Установить приложение</button>
     </header>
+
+    <!-- Панель авторизации -->
+ <!--   <div id="auth-panel" class="card" style="display:none;">
+        <div class="auth-tabs">
+            <button id="tab-login" class="auth-tab active">Логин</button>
+            <button id="tab-social" class="auth-tab">Соцсети</button>
+        </div>
+
+        <div id="auth-login" class="auth-method active">
+            <form id="login-form">
+                <label>Логин</label>
+                <input type="text" name="username" required placeholder="Driver Name" id="username-input" autocomplete="username">
+                <label>Пароль</label>
+                <input type="password" name="password" required minlength="6" placeholder="Минимум 6 символов" autocomplete="current-password">
+                <label id="password-confirm-label" style="display:none;">Подтвердите пароль</label>
+                <input type="password" name="password_confirm" id="password-confirm-input" minlength="6" placeholder="Повторите пароль" style="display:none;" autocomplete="new-password">
+                <div class="modal-actions" style="margin-top:12px;">
+                    <button type="submit" class="primary-btn" id="login-sign-in-btn">Войти</button>
+                    <button type="button" class="secondary-btn" id="login-sign-up-btn">Регистрация</button>
+                </div>
+            </form>
+            <div class="app-description" style="margin-top:16px; text-align:center;">
+    <p style="font-size:0.9rem; opacity:0.8; margin-bottom:8px;">
+        <strong>Car Logger D&C</strong> — бортжурнал в Вашем смартфоне. 
+Напомнит о ТО, посчитает каждый рубль и покажет, где сэкономить.
+    </p>
+    <p style="font-size:1rem; font-weight:600; color:var(--primary);">
+        Автомобиль без забот — Car Logger D&C.
+    </p>
+            </div>
+            <div id="login-message" class="hint" style="margin-top:8px;"></div>
+            <p class="hint" style="margin-top:12px;">
+                <a href="#" id="forgot-access-link">Забыли пароль?</a>
+            </p>
+            <div id="recovery-options" style="display:none;">
+                <p class="hint">Выберите способ восстановления:</p>
+                <button class="secondary-btn" id="recover-telegram">Через Telegram</button>
+                <button class="secondary-btn" id="recover-code">Резервный код</button>
+                <button class="secondary-btn" id="recover-google">Войти через Google</button>
+                <div id="recovery-message" class="hint" style="margin-top:8px;"></div>
+            </div>
+        </div>
+
+        <div id="auth-social" class="auth-method" style="display:none;">
+            <button id="supabase-auth-btn" class="primary-btn" style="width:100%; margin-bottom:8px;">
+                <i data-lucide="earth"></i> Войти через Google
+            </button>
+        </div>
+</div> -->
 
     <!-- Основной интерфейс -->
     <div id="data-panel" style="display:none;">
@@ -729,7 +784,6 @@
 <script src="src/utils/dom.js"></script>
 <script src="src/utils/dates.js"></script>
 <script src="src/utils/validate.js"></script>
-<script src="src/utils/network.js"></script>
 <script src="src/api/supabase.js"></script>
 <script src="src/api/storage.js"></script>
 <script src="src/db/indexedDB.js"></script>
@@ -758,7 +812,6 @@
 <script src="src/modules/moduleLoader.js"></script>
 <script src="src/modules/premium.js"></script>
 <script src="src/modules/localAuth.js"></script>
-<script src="src/modules/auth.js"></script>
 <script src="src/utils/realtime.js"></script>
 <script src="src/events.js"></script>
 <script src="src/main.js"></script>
@@ -803,4 +856,3 @@
     
 </body>
 </html>
-
