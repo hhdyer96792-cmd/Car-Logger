@@ -3,8 +3,18 @@ window.App = window.App || {};
 App.ui = App.ui || {};
 App.ui.pages = App.ui.pages || {};
 
-// Вспомогательная функция для иконки синхронизации
+// Константа для пагинации/виртуализации
+const HISTORY_PAGE_SIZE = 50;
+
+// Состояние виртуализации
+let historyCurrentPage = 1;
+let historyTotalFiltered = 0;
+let historyAllFiltered = [];
+let historyIsLoadingMore = false;
+
+// Вспомогательная функция для иконки синхронизации (используем глобальную)
 function getSyncIcon(recordId) {
+    if (typeof App.getSyncIcon === 'function') return App.getSyncIcon(recordId);
     if (!recordId) return '';
     if (App.store.isRecordPending && App.store.isRecordPending(recordId)) {
         return '<i data-lucide="clock" class="sync-pending-icon" style="color: var(--warning); width: 16px; height: 16px; margin-left: 8px;" title="Ожидает синхронизации"></i>';
@@ -77,9 +87,12 @@ App.ui.pages.populateHistoryExecutorFilter = function() {
     if (current) select.value = current;
 };
 
-// Привязка событий фильтров (с debounce)
+// Привязка событий фильтров (с debounce и сбросом пагинации)
 App.ui.pages.bindHistoryFilterEvents = function() {
-    const debouncedRender = debounce(() => App.ui.pages.renderHistoryCards(), 300);
+    const debouncedRender = debounce(() => {
+        historyCurrentPage = 1;
+        App.ui.pages.renderHistoryCards();
+    }, 300);
 
     var filters = [
         'history-period-select', 'history-operation-filter', 'history-category-filter', 'history-executor-filter',
@@ -112,12 +125,13 @@ App.ui.pages.bindHistoryFilterEvents = function() {
                 }
             });
             document.getElementById('history-sort-order').value = 'date-desc';
+            historyCurrentPage = 1;
             App.ui.pages.renderHistoryCards();
         });
     }
 };
 
-// Получение отфильтрованных записей
+// Получение отфильтрованных записей (сохраняем в глобальную переменную для пагинации)
 App.ui.pages.getFilteredHistory = function() {
     var period = document.getElementById('history-period-select')?.value || 'all';
     var opFilter = document.getElementById('history-operation-filter')?.value || '';
@@ -191,24 +205,34 @@ App.ui.pages.getFilteredHistory = function() {
         default: filtered.sort(function(a,b) { return (b.date||'').localeCompare(a.date||''); }); break;
     }
 
+    historyAllFiltered = filtered;
+    historyTotalFiltered = filtered.length;
     return filtered;
 };
 
-// Рендер карточек с иконкой синхронизации
+// Рендер карточек с виртуализацией (постраничная загрузка)
 App.ui.pages.renderHistoryCards = function() {
     var container = document.getElementById('history-cards-container');
     if (!container) return;
 
+    // Получаем отфильтрованные записи (кэшируются в глобальной переменной)
     var filtered = App.ui.pages.getFilteredHistory();
+    
     if (filtered.length === 0) {
         container.innerHTML = '<p class="hint">Нет записей, соответствующих фильтрам.</p>';
         return;
     }
 
+    // Вычисляем диапазон для текущей страницы
+    var startIdx = (historyCurrentPage - 1) * HISTORY_PAGE_SIZE;
+    var endIdx = Math.min(startIdx + HISTORY_PAGE_SIZE, filtered.length);
+    var pageRecords = filtered.slice(startIdx, endIdx);
+    var hasMore = endIdx < filtered.length;
+
     var isMobile = window.innerWidth < 768;
     var html = '';
 
-    filtered.forEach(function(record) {
+    pageRecords.forEach(function(record) {
         var op = App.store.operations.find(function(o) { return o.id == record.operation_id; }) || { name: 'Неизвестно' };
         var diyFlag = record.is_diy === 'TRUE' || record.is_diy === true;
         var syncIcon = getSyncIcon(record.id);
@@ -259,9 +283,28 @@ App.ui.pages.renderHistoryCards = function() {
         }
     });
 
+    // Добавляем кнопку "Показать ещё", если есть ещё записи
+    if (hasMore) {
+        html += '<div class="load-more-container" style="text-align:center; margin-top:16px;">';
+        html += '<button id="history-load-more-btn" class="secondary-btn">Показать ещё (' + (filtered.length - endIdx) + ')</button>';
+        html += '</div>';
+    }
+
     container.innerHTML = html;
     if (typeof lucide !== 'undefined') {
         lucide.createIcons({ target: container });
+    }
+
+    // Навешиваем обработчик на кнопку "Показать ещё"
+    var loadMoreBtn = document.getElementById('history-load-more-btn');
+    if (loadMoreBtn) {
+        // Удаляем старый обработчик, чтобы не дублировать
+        var newLoadMoreBtn = loadMoreBtn.cloneNode(true);
+        loadMoreBtn.parentNode.replaceChild(newLoadMoreBtn, loadMoreBtn);
+        newLoadMoreBtn.addEventListener('click', function() {
+            historyCurrentPage++;
+            App.ui.pages.renderHistoryCards();
+        });
     }
 };
 
@@ -278,6 +321,8 @@ App.ui.pages.deleteHistoryEntry = async function(rowIndex) {
         }
         await App.storage.deleteHistoryRecord(rowIndex);
         await App.storage.loadAllData();
+        // Сбрасываем пагинацию при удалении
+        historyCurrentPage = 1;
         App.ui.pages.renderHistoryCards();
         App.toast('Запись удалена', 'success');
     } catch (err) {
@@ -334,6 +379,7 @@ App.ui.pages.openHistoryEdit = function(rowIndex) {
         App.storage.updateHistoryRecord(rowIndex, newValues).then(function() {
             return App.storage.loadAllData();
         }).then(function() {
+            historyCurrentPage = 1;
             App.toast('Запись истории обновлена', 'success');
         }).catch(function(e) {
             console.error('Ошибка сохранения:', e);
