@@ -1,4 +1,4 @@
-// src/db/indexedDB.js
+// src/db/indexedDB.js (исправленный)
 window.App = window.App || {};
 App.db = App.db || {};
 
@@ -43,7 +43,6 @@ App.db.init = function() {
         };
         request.onupgradeneeded = async (event) => {
             const db = event.target.result;
-            // Создаём все хранилища, если их нет (проверяем по именам)
             for (let [storeName, config] of Object.entries(STORES)) {
                 if (!db.objectStoreNames.contains(storeName)) {
                     const store = db.createObjectStore(storeName, {
