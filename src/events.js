@@ -1,4 +1,4 @@
-// src/events.js (исправленный полный файл)
+// src/events.js
 window.App = window.App || {};
 App.events = App.events || {};
 
