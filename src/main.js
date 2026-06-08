@@ -169,27 +169,37 @@
         const passwordConfirmInput = container.querySelector('#password-confirm-input');
         const modal = container.closest('.modal');
 
-        if (loginForm) {
-            loginForm.addEventListener('submit', async (e) => {
-                e.preventDefault();
-                const formData = new FormData(loginForm);
-                const username = (formData.get('username') || '').toString().trim();
-                const password = formData.get('password') || '';
-                if (!username || !password) {
-                    App.toast('Введите логин и пароль', 'error');
-                    return;
-                }
-                const email = username + '@vesta.internal';
-                const { error } = await App.supabase.auth.signInWithPassword({ email, password });
-                if (error) {
-                    if (loginMessage) loginMessage.textContent = 'Неверный логин или пароль.';
-                    App.toast('Ошибка входа: ' + error.message, 'error');
-                } else {
-                    if (modal) modal.remove();
-                    document.body.classList.remove('auth-modal-open');
-                    App.toast('Вход выполнен', 'success');
-                }
-            });
+       if (loginForm) {
+    loginForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const formData = new FormData(loginForm);
+        const username = (formData.get('username') || '').toString().trim();
+        const password = formData.get('password') || '';
+        if (!username || !password) {
+            App.toast('Введите логин и пароль', 'error');
+            return;
+        }
+        
+        // ========== ДОБАВИТЬ ПРОВЕРКУ СЕТИ ==========
+        // Проверяем наличие интернета и доступность Supabase
+        const isOnline = await App.network.isReallyOnline();
+        if (!isOnline) {
+            App.toast('Нет соединения с сервером. Проверьте интернет и попробуйте снова.', 'error');
+            return;
+        }
+        // ============================================
+        
+        const email = username + '@vesta.internal';
+        const { error } = await App.supabase.auth.signInWithPassword({ email, password });
+        if (error) {
+            if (loginMessage) loginMessage.textContent = 'Неверный логин или пароль.';
+            App.toast('Ошибка входа: ' + error.message, 'error');
+        } else {
+            if (modal) modal.remove();
+            document.body.classList.remove('auth-modal-open');
+            App.toast('Вход выполнен', 'success');
+        }
+    })
 
             const signUpBtn = container.querySelector('#login-sign-up-btn');
             if (signUpBtn) {
