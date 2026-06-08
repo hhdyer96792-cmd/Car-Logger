@@ -6,6 +6,7 @@ App.ui.createModal = function(title, content) {
     if (App.ui.currentModal) {
         App.ui.currentModal.remove();
         document.body.style.overflow = '';
+        document.body.classList.remove('auth-modal-open');
         App.ui.currentModal = null;
     }
 
@@ -26,11 +27,39 @@ App.ui.createModal = function(title, content) {
     document.body.style.overflow = 'hidden';
 
     var origRemove = modal.remove;
+    var modalRef = modal;
+    
     modal.remove = function() {
         document.body.style.overflow = '';
-        if (App.ui.currentModal === modal) {
+        document.body.classList.remove('auth-modal-open');
+        
+        // Убираем возможные блокировки pointer-events
+        var fabMenu = document.getElementById('fab-menu');
+        if (fabMenu) {
+            fabMenu.style.pointerEvents = '';
+        }
+        
+        // Восстанавливаем drawer, если он был скрыт
+        var drawer = document.getElementById('drawer-menu');
+        if (drawer) {
+            drawer.classList.remove('hidden');
+            document.body.classList.remove('drawer-open');
+        }
+        
+        // Убираем блокировку скролла на body
+        document.body.style.overflow = '';
+        
+        if (App.ui.currentModal === modalRef) {
             App.ui.currentModal = null;
         }
+        
+        // Пересоздаём обработчики навигации, чтобы восстановить кнопку "Ещё"
+        if (typeof App.events !== 'undefined' && App.events && typeof App.events.initNavigation === 'function') {
+            setTimeout(function() {
+                App.events.initNavigation();
+            }, 50);
+        }
+        
         origRemove.call(this);
     };
 
@@ -58,6 +87,7 @@ App.ui.createModal = function(title, content) {
     App.ui.currentModal = modal;
     if (typeof App.initIcons === 'function') App.initIcons();
 
+    // Адаптация для мобильных устройств (клавиатура)
     if (window.visualViewport && window.innerWidth < 768) {
         var contentEl = modal.querySelector('.modal-content');
         function adjustForKeyboard() {
@@ -92,13 +122,20 @@ App.ui.confirmModal = function(message, onConfirm) {
             '<button id="confirm-no-btn" class="secondary-btn">Нет</button>' +
         '</div>';
     var modal = App.ui.createModal('Подтверждение', content);
-    document.getElementById('confirm-yes-btn').addEventListener('click', function() {
-        modal.remove();
-        if (typeof onConfirm === 'function') onConfirm();
-    });
-    document.getElementById('confirm-no-btn').addEventListener('click', function() {
-        modal.remove();
-    });
+    var yesBtn = document.getElementById('confirm-yes-btn');
+    var noBtn = document.getElementById('confirm-no-btn');
+    
+    if (yesBtn) {
+        yesBtn.addEventListener('click', function() {
+            modal.remove();
+            if (typeof onConfirm === 'function') onConfirm();
+        });
+    }
+    if (noBtn) {
+        noBtn.addEventListener('click', function() {
+            modal.remove();
+        });
+    }
 };
 
 App.ui.confirmModalAsync = function(message) {
@@ -117,14 +154,20 @@ App.ui.confirmModalAsync = function(message) {
             if (!modal.parentNode) return;
             modal.remove();
         }
+        
         function onResult(result) {
             if (resolved) return;
             resolved = true;
             cleanup();
             resolve(result);
         }
-        if (yesBtn) yesBtn.onclick = function() { onResult(true); };
-        if (noBtn) noBtn.onclick = function() { onResult(false); };
+        
+        if (yesBtn) {
+            yesBtn.onclick = function() { onResult(true); };
+        }
+        if (noBtn) {
+            noBtn.onclick = function() { onResult(false); };
+        }
         
         var originalRemove = modal.remove;
         modal.remove = function() {
@@ -148,7 +191,8 @@ App.ui.promptModalAsync = function(title, placeholder, isPassword = false) {
         const input = modal.querySelector('#prompt-input');
         const okBtn = modal.querySelector('#prompt-ok-btn');
         const cancelBtn = modal.querySelector('#prompt-cancel-btn');
-        input.focus();
+        
+        if (input) input.focus();
         let resolved = false;
         
         function cleanup() {
@@ -160,7 +204,7 @@ App.ui.promptModalAsync = function(title, placeholder, isPassword = false) {
         const onOk = (e) => {
             if (e) e.stopPropagation();
             if (resolved) return;
-            const value = input.value;
+            const value = input ? input.value : null;
             cleanup();
             resolve(value);
         };
@@ -172,8 +216,8 @@ App.ui.promptModalAsync = function(title, placeholder, isPassword = false) {
             resolve(null);
         };
         
-        okBtn.onclick = onOk;
-        cancelBtn.onclick = onCancel;
+        if (okBtn) okBtn.onclick = onOk;
+        if (cancelBtn) cancelBtn.onclick = onCancel;
         
         const originalRemove = modal.remove;
         modal.remove = function() {
@@ -184,15 +228,16 @@ App.ui.promptModalAsync = function(title, placeholder, isPassword = false) {
             }
         };
         
-        input.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                onOk();
-            }
-        });
+        if (input) {
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    onOk();
+                }
+            });
+        }
     });
 };
-
 
 // Старая версия promptModal (с колбэком) для обратной совместимости
 App.ui.promptModal = function(title, defaultValue, onSubmit) {
@@ -206,27 +251,35 @@ App.ui.promptModal = function(title, defaultValue, onSubmit) {
     var okBtn = document.getElementById('prompt-ok-btn');
     var cancelBtn = document.getElementById('prompt-cancel-btn');
     var resolved = false;
+    
     function cleanup() {
         if (modal && modal.parentNode) modal.remove();
     }
-    okBtn.onclick = function() {
-        if (resolved) return;
-        resolved = true;
-        var val = input.value;
-        cleanup();
-        if (typeof onSubmit === 'function') onSubmit(val);
-    };
-    cancelBtn.onclick = function() {
-        if (resolved) return;
-        resolved = true;
-        cleanup();
-        if (typeof onSubmit === 'function') onSubmit(null);
-    };
-    input.addEventListener('keydown', function(e) {
-        if (e.key === 'Enter') okBtn.click();
-    });
+    
+    if (okBtn) {
+        okBtn.onclick = function() {
+            if (resolved) return;
+            resolved = true;
+            var val = input ? input.value : null;
+            cleanup();
+            if (typeof onSubmit === 'function') onSubmit(val);
+        };
+    }
+    if (cancelBtn) {
+        cancelBtn.onclick = function() {
+            if (resolved) return;
+            resolved = true;
+            cleanup();
+            if (typeof onSubmit === 'function') onSubmit(null);
+        };
+    }
+    if (input) {
+        input.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' && okBtn) okBtn.click();
+        });
+    }
     modal.addEventListener('click', function(e) {
-        if (e.target === modal) cancelBtn.click();
+        if (e.target === modal && cancelBtn) cancelBtn.click();
     });
 };
 
@@ -236,7 +289,10 @@ App.ui.alertModal = function(message) {
             '<button id="alert-ok-btn" class="primary-btn">ОК</button>' +
         '</div>';
     var modal = App.ui.createModal('Информация', content);
-    document.getElementById('alert-ok-btn').addEventListener('click', function() {
-        modal.remove();
-    });
+    var okBtn = document.getElementById('alert-ok-btn');
+    if (okBtn) {
+        okBtn.addEventListener('click', function() {
+            modal.remove();
+        });
+    }
 };
