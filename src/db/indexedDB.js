@@ -3,7 +3,7 @@ window.App = window.App || {};
 App.db = App.db || {};
 
 const DB_NAME = 'CarLoggerDB';
-const DB_VERSION = 4; // Увеличено до 4, чтобы гарантировать создание всех хранилищ
+const DB_VERSION = 5; // увеличиваем версию, чтобы пересоздать схему
 
 const STORES = {
     operations: { keyPath: 'id', indexes: ['car_id', 'category'] },
@@ -43,23 +43,29 @@ App.db.init = function() {
         };
         request.onupgradeneeded = async (event) => {
             const db = event.target.result;
-            // Создаём все хранилища, если их нет
+            // Удаляем старые хранилища, если они есть (чистый старт)
+            // Это гарантирует, что все хранилища будут созданы заново с правильной конфигурацией
+            for (let storeName of Object.keys(STORES)) {
+                if (db.objectStoreNames.contains(storeName)) {
+                    db.deleteObjectStore(storeName);
+                }
+            }
+            // Создаём все хранилища заново
             for (let [storeName, config] of Object.entries(STORES)) {
-                if (!db.objectStoreNames.contains(storeName)) {
-                    const store = db.createObjectStore(storeName, {
-                        keyPath: config.keyPath,
-                        autoIncrement: config.autoIncrement || false
+                const store = db.createObjectStore(storeName, {
+                    keyPath: config.keyPath,
+                    autoIncrement: config.autoIncrement || false
+                });
+                if (config.indexes) {
+                    config.indexes.forEach(indexName => {
+                        store.createIndex(indexName, indexName, { unique: false });
                     });
-                    if (config.indexes) {
-                        config.indexes.forEach(indexName => {
-                            store.createIndex(indexName, indexName, { unique: false });
-                        });
-                    }
                 }
             }
         };
     });
 };
+
 
 App.db._getStore = function(storeName, mode = 'readonly') {
     if (!App.db._db) throw new Error('Database not initialized. Call App.db.init() first.');
