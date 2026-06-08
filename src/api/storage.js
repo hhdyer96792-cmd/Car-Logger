@@ -329,14 +329,15 @@ App.storage.loadFirstPage = async function(table, pageSize = 50) {
         await App.db.putMany(table, items);
         
         // Обновляем Store с правильным ключом
-        const storeKey = storeKeyMap[table];
-        if (storeKey && App.store[storeKey]) {
-            const newMap = new Map(items.map(i => [i.id, i]));
-            App.store[storeKey] = App.store[storeKey].filter(old => !newMap.has(old.id)).concat(items);
-        }
-    } catch (err) {
-        console.warn(`[Storage] Не удалось загрузить ${table}:`, err.message);
-    }
+        const storeKey = storeMap[table];
+if (storeKey && App.store[storeKey] && Array.isArray(App.store[storeKey])) {
+    const newMap = new Map(items.map(i => [i.id, i]));
+    App.store[storeKey] = App.store[storeKey].filter(old => !newMap.has(old.id)).concat(items);
+} else if (storeKey && !App.store[storeKey]) {
+    App.store[storeKey] = items;
+} else {
+    console.warn(`[Storage] Неизвестное хранилище для таблицы ${table}, пропуск обновления Store`);
+}
 };
 
 App.storage.loadAllData = async function() {
