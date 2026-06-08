@@ -354,6 +354,8 @@ App.events.switchToTab = function(tabId) {
 };
 
 App.events.openDrawer = function() {
+    // Не открываем drawer, если открыта модалка
+    if (document.querySelector('.modal')) return;
     const drawer = document.getElementById('drawer-menu');
     if (drawer) {
         drawer.classList.remove('hidden');
