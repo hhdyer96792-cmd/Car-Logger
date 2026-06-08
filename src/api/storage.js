@@ -1,4 +1,3 @@
-// src/api/storage.js (исправленный)
 window.App = window.App || {};
 App.storage = App.storage || {};
 
@@ -296,8 +295,7 @@ const methodMap = {
     mileage: 'loadMileageHistory'
 };
 
-// Таблица соответствия имён таблиц и ключей в App.store
-const storeKeyMap = {
+const storeMap = {
     operations: 'operations',
     fuel_log: 'fuelLog',
     tires: 'tireLog',
@@ -328,20 +326,17 @@ App.storage.loadFirstPage = async function(table, pageSize = 50) {
         const items = (data || []).map(item => ({ ...item, car_id: carId }));
         await App.db.putMany(table, items);
         
-        // Обновляем Store с правильным ключом
         const storeKey = storeMap[table];
-if (storeKey && App.store[storeKey] && Array.isArray(App.store[storeKey])) {
-    const newMap = new Map(items.map(i => [i.id, i]));
-    App.store[storeKey] = App.store[storeKey].filter(old => !newMap.has(old.id)).concat(items);
-} else if (storeKey && !App.store[storeKey]) {
-    App.store[storeKey] = items;
-} else {
-    console.warn(`[Storage] Неизвестное хранилище для таблицы ${table}, пропуск обновления Store`);
-}
+        if (storeKey && App.store[storeKey]) {
+            const newMap = new Map(items.map(i => [i.id, i]));
+            App.store[storeKey] = App.store[storeKey].filter(old => !newMap.has(old.id)).concat(items);
+        }
+    } catch (err) {
+        console.warn(`[Storage] Не удалось загрузить ${table}:`, err.message);
+    }
 };
 
 App.storage.loadAllData = async function() {
-    // Мгновенно загружаем локальные данные и отображаем
     await App.store.loadFromIndexedDB();
     const dataPanel = document.getElementById('data-panel');
     if (dataPanel) dataPanel.style.display = 'block';
@@ -354,7 +349,6 @@ App.storage.loadAllData = async function() {
 
     if (!navigator.onLine) return;
 
-    // Параллельная загрузка первых страниц таблиц (ограничение 3 одновременно)
     const tables = ['operations', 'fuel_log', 'tires', 'parts', 'history', 'mileage'];
     const chunkSize = 3;
     for (let i = 0; i < tables.length; i += chunkSize) {
