@@ -1,8 +1,9 @@
+// src/db/indexedDB.js
 window.App = window.App || {};
 App.db = App.db || {};
 
 const DB_NAME = 'CarLoggerDB';
-const DB_VERSION = 6; // увеличиваем для принудительного пересоздания
+const DB_VERSION = 7; // Увеличено для принудительного пересоздания
 
 const STORES = {
     operations: { keyPath: 'id', indexes: ['car_id', 'category'] },
@@ -38,16 +39,21 @@ App.db.init = function() {
         };
         request.onsuccess = (event) => {
             App.db._db = event.target.result;
+            console.log('[IndexedDB] База данных открыта, версия:', DB_VERSION);
             resolve(App.db._db);
         };
         request.onupgradeneeded = (event) => {
             const db = event.target.result;
-            // Удаляем все старые хранилища, чтобы создать новые с правильной конфигурацией
+            console.log('[IndexedDB] Обновление схемы БД с версии', event.oldVersion, 'до', event.newVersion);
+            
+            // Удаляем все старые хранилища, если они есть (чистый старт)
             for (let storeName of Object.keys(STORES)) {
                 if (db.objectStoreNames.contains(storeName)) {
                     db.deleteObjectStore(storeName);
+                    console.log('[IndexedDB] Удалено хранилище:', storeName);
                 }
             }
+            
             // Создаём все хранилища заново
             for (let [storeName, config] of Object.entries(STORES)) {
                 const store = db.createObjectStore(storeName, {
@@ -59,11 +65,13 @@ App.db.init = function() {
                         store.createIndex(indexName, indexName, { unique: false });
                     });
                 }
+                console.log('[IndexedDB] Создано хранилище:', storeName);
             }
         };
     });
 };
 
+// Остальные методы без изменений...
 App.db._getStore = function(storeName, mode = 'readonly') {
     if (!App.db._db) throw new Error('Database not initialized. Call App.db.init() first.');
     const tx = App.db._db.transaction(storeName, mode);
