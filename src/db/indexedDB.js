@@ -1,9 +1,8 @@
-// src/db/indexedDB.js
 window.App = window.App || {};
 App.db = App.db || {};
 
 const DB_NAME = 'CarLoggerDB';
-const DB_VERSION = 5; // увеличиваем версию, чтобы пересоздать схему
+const DB_VERSION = 5;
 
 const STORES = {
     operations: { keyPath: 'id', indexes: ['car_id', 'category'] },
@@ -41,25 +40,19 @@ App.db.init = function() {
             App.db._db = event.target.result;
             resolve(App.db._db);
         };
-        request.onupgradeneeded = async (event) => {
+        request.onupgradeneeded = (event) => {
             const db = event.target.result;
-            // Удаляем старые хранилища, если они есть (чистый старт)
-            // Это гарантирует, что все хранилища будут созданы заново с правильной конфигурацией
-            for (let storeName of Object.keys(STORES)) {
-                if (db.objectStoreNames.contains(storeName)) {
-                    db.deleteObjectStore(storeName);
-                }
-            }
-            // Создаём все хранилища заново
             for (let [storeName, config] of Object.entries(STORES)) {
-                const store = db.createObjectStore(storeName, {
-                    keyPath: config.keyPath,
-                    autoIncrement: config.autoIncrement || false
-                });
-                if (config.indexes) {
-                    config.indexes.forEach(indexName => {
-                        store.createIndex(indexName, indexName, { unique: false });
+                if (!db.objectStoreNames.contains(storeName)) {
+                    const store = db.createObjectStore(storeName, {
+                        keyPath: config.keyPath,
+                        autoIncrement: config.autoIncrement || false
                     });
+                    if (config.indexes) {
+                        config.indexes.forEach(indexName => {
+                            store.createIndex(indexName, indexName, { unique: false });
+                        });
+                    }
                 }
             }
         };
