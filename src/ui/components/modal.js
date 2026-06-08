@@ -2,7 +2,23 @@
 window.App = window.App || {};
 App.ui = App.ui || {};
 
+// Функция для закрытия drawer при открытии модалки
+function closeDrawerIfOpen() {
+    var drawer = document.getElementById('drawer-menu');
+    if (drawer && !drawer.classList.contains('hidden')) {
+        if (typeof App.events !== 'undefined' && App.events && typeof App.events.closeDrawer === 'function') {
+            App.events.closeDrawer();
+        } else {
+            drawer.classList.add('hidden');
+            document.body.classList.remove('drawer-open');
+        }
+    }
+}
+
 App.ui.createModal = function(title, content) {
+    // Закрываем drawer при открытии модалки
+    closeDrawerIfOpen();
+    
     if (App.ui.currentModal) {
         App.ui.currentModal.remove();
         document.body.style.overflow = '';
@@ -39,12 +55,8 @@ App.ui.createModal = function(title, content) {
             fabMenu.style.pointerEvents = '';
         }
         
-        // Восстанавливаем drawer, если он был скрыт
-        var drawer = document.getElementById('drawer-menu');
-        if (drawer) {
-            drawer.classList.remove('hidden');
-            document.body.classList.remove('drawer-open');
-        }
+        // Восстанавливаем drawer, если он был скрыт (но не открываем его автоматически)
+        // Просто снимаем блокировки, drawer остаётся закрытым
         
         // Убираем блокировку скролла на body
         document.body.style.overflow = '';
