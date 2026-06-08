@@ -511,7 +511,7 @@
                 if (navigator.onLine && App.db.sync && !App.db.sync._isRunning) {
                     App.db.sync.processSyncQueue().catch(()=>{});
                 }
-            }, 60000);
+            }, 15000);
 
             dbInitialized = true;
         } catch (err) {
@@ -567,10 +567,17 @@
         window.addEventListener('appinstalled', () => { deferredPrompt = null; setInstallButtonVisible(false); });
 
         window.addEventListener('online', () => {
-            if (App.db.sync && !App.db.sync._isRunning) App.db.sync.processSyncQueue().catch(()=>{});
-            if (App.realtime?.resubscribe) App.realtime.resubscribe();
-        });
-        window.addEventListener('offline', () => {});
+    console.log('[Main] Сеть восстановлена');
+    if (App.db.sync && !App.db.sync._isRunning) {
+        App.db.sync.processSyncQueue().catch(()=>{});
+    }
+    if (App.realtime?.resubscribe) App.realtime.resubscribe();
+    // Дополнительно: перезагружаем данные для текущего автомобиля
+    if (App.store.activeCarId) {
+        App.storage.loadAllData().catch(console.warn);
+    }
+});
+window.addEventListener('offline', () => {});
 
         // Обработчик сообщений от Service Worker
         if ('serviceWorker' in navigator) {
