@@ -1,3 +1,4 @@
+// src/api/storage.js
 window.App = window.App || {};
 App.storage = App.storage || {};
 
@@ -324,7 +325,14 @@ App.storage.loadFirstPage = async function(table, pageSize = 50) {
         if (error) throw error;
         const carId = App.store.activeCarId;
         const items = (data || []).map(item => ({ ...item, car_id: carId }));
-        await App.db.putMany(table, items);
+        
+        // Определяем правильное имя хранилища в IndexedDB
+        let storeName = table;
+        if (table === 'mileage') {
+            storeName = 'mileage_log';
+        }
+        
+        await App.db.putMany(storeName, items);
         
         const storeKey = storeMap[table];
         if (storeKey && App.store[storeKey]) {
