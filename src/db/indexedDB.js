@@ -1,9 +1,9 @@
-// src/db/indexedDB.js (исправленный)
+// src/db/indexedDB.js
 window.App = window.App || {};
 App.db = App.db || {};
 
 const DB_NAME = 'CarLoggerDB';
-const DB_VERSION = 3; // увеличено для корректного добавления новых хранилищ
+const DB_VERSION = 4; // Увеличено до 4, чтобы гарантировать создание всех хранилищ
 
 const STORES = {
     operations: { keyPath: 'id', indexes: ['car_id', 'category'] },
@@ -43,6 +43,7 @@ App.db.init = function() {
         };
         request.onupgradeneeded = async (event) => {
             const db = event.target.result;
+            // Создаём все хранилища, если их нет
             for (let [storeName, config] of Object.entries(STORES)) {
                 if (!db.objectStoreNames.contains(storeName)) {
                     const store = db.createObjectStore(storeName, {
