@@ -15,6 +15,12 @@ App.store = {
     cars: [],
     activeCarId: null,
 
+    // Premium поля
+    isPremium: false,
+    premiumTier: 'free',
+    premiumFeatures: [],
+    premiumExpiresAt: null,
+
     settings: {
         currentMileage: 0,
         currentMotohours: 0,
@@ -380,36 +386,40 @@ App.store = {
     saveCalendarCache: function() {},
 
     setActiveCar: function(carId) {
-    if (this.activeCarId === carId) return;
-    this.activeCarId = carId;
-    localStorage.setItem('vesta_active_car_id', carId);
-    
-    // Сначала загружаем локальные данные (мгновенно)
-    this.loadFromIndexedDB().catch(console.error);
-    
-    // Затем пробуем загрузить с сервера с повторными попытками
-    const tryLoadWithRetry = async (retries = 3) => {
-        for (let i = 0; i < retries; i++) {
-            if (navigator.onLine) {
-                try {
-                    await App.storage.loadAllData();
-                    return;
-                } catch (err) {
-                    console.warn(`Попытка ${i + 1} загрузки данных не удалась:`, err);
-                    if (i === retries - 1) {
-                        App.toast('Не удалось загрузить свежие данные с сервера. Отображаются кэшированные данные.', 'warning');
-                    }
-                    await new Promise(r => setTimeout(r, 2000 * (i + 1)));
-                }
-            } else {
-                App.toast('Нет соединения. Отображаются сохранённые данные.', 'info');
-                return;
-            }
-        }
-    };
-    tryLoadWithRetry();
-}
+        if (this.activeCarId === carId) return;
+        this.activeCarId = carId;
+        localStorage.setItem('vesta_active_car_id', carId);
         
+        // Сначала загружаем локальные данные (мгновенно)
+        this.loadFromIndexedDB().catch(console.error);
+        
+        // Затем пробуем загрузить с сервера с повторными попытками
+        const tryLoadWithRetry = async (retries = 3) => {
+            for (let i = 0; i < retries; i++) {
+                if (navigator.onLine) {
+                    try {
+                        await App.storage.loadAllData();
+                        return;
+                    } catch (err) {
+                        console.warn(`Попытка ${i + 1} загрузки данных не удалась:`, err);
+                        if (i === retries - 1) {
+                            if (typeof App.toast === 'function') {
+                                App.toast('Не удалось загрузить свежие данные с сервера. Отображаются кэшированные данные.', 'warning');
+                            }
+                        }
+                        await new Promise(r => setTimeout(r, 2000 * (i + 1)));
+                    }
+                } else {
+                    if (typeof App.toast === 'function') {
+                        App.toast('Нет соединения. Отображаются сохранённые данные.', 'info');
+                    }
+                    return;
+                }
+            }
+        };
+        tryLoadWithRetry();
+    },
+
     loadCars: function() {
         const self = this;
         return App.supa.loadCars().then(cars => {
