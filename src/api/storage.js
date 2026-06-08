@@ -296,6 +296,49 @@ const methodMap = {
     mileage: 'loadMileageHistory'
 };
 
+// В начале файла, после methodMap, добавить:
+const storeMap = {
+    operations: 'operations',
+    fuel_log: 'fuelLog',
+    tires: 'tireLog',
+    parts: 'parts',
+    history: 'serviceRecords',
+    mileage: 'mileageHistory'
+};
+
+App.storage.loadFirstPage = async function(table, pageSize = 50) {
+    if (!navigator.onLine) return;
+    const methodName = methodMap[table];
+    if (!methodName || typeof App.supa[methodName] !== 'function') {
+        console.warn(`[Storage] Метод ${methodName} не найден для таблицы ${table}`);
+        return;
+    }
+    try {
+        const result = await App.supa[methodName](1, pageSize);
+        let data, error;
+        if (result && typeof result === 'object' && 'data' in result && 'error' in result) {
+            data = result.data;
+            error = result.error;
+        } else {
+            data = result;
+            error = null;
+        }
+        if (error) throw error;
+        const carId = App.store.activeCarId;
+        const items = (data || []).map(item => ({ ...item, car_id: carId }));
+        await App.db.putMany(table, items);
+        
+        // Обновляем Store с правильным ключом
+        const storeKey = storeMap[table];
+        if (storeKey && App.store[storeKey]) {
+            const newMap = new Map(items.map(i => [i.id, i]));
+            App.store[storeKey] = App.store[storeKey].filter(old => !newMap.has(old.id)).concat(items);
+        }
+    } catch (err) {
+        console.warn(`[Storage] Не удалось загрузить ${table}:`, err.message);
+    }
+};
+
 // ИСПРАВЛЕНО: добавлена проверка существования метода и нормализация ответа
 App.storage.loadFirstPage = async function(table, pageSize = 50) {
     if (!navigator.onLine) return;
