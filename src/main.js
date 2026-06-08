@@ -227,6 +227,14 @@
                         return;
                     }
 
+                    // Проверяем наличие интернета и доступность Supabase
+        const isOnline = await App.network.isReallyOnline();
+        if (!isOnline) {
+            App.toast('Нет соединения с сервером. Проверьте интернет и попробуйте снова.', 'error');
+            return;
+        }
+        // ============================================
+
                     const email = username + '@vesta.internal';
                     const { data, error } = await App.supabase.auth.signUp({
                         email,
