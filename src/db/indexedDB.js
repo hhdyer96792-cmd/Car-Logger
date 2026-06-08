@@ -3,7 +3,7 @@ window.App = window.App || {};
 App.db = App.db || {};
 
 const DB_NAME = 'CarLoggerDB';
-const DB_VERSION = 2;
+const DB_VERSION = 3; // увеличено для корректного добавления новых хранилищ
 
 const STORES = {
     operations: { keyPath: 'id', indexes: ['car_id', 'category'] },
@@ -13,7 +13,7 @@ const STORES = {
     service_records: { keyPath: 'id', indexes: ['car_id', 'operation_id', 'date'] },
     mileage_log: { keyPath: 'id', indexes: ['car_id', 'date'] },
     settings: { keyPath: 'id', autoIncrement: true },
-    car_settings: { keyPath: 'car_id' },  // НОВОЕ: настройки по car_id
+    car_settings: { keyPath: 'car_id' },
     cars: { keyPath: 'id', indexes: ['user_id'] },
     car_documents: { keyPath: 'id', indexes: ['car_id', 'type'] },
     pending_actions: { keyPath: 'id', autoIncrement: true, indexes: ['timestamp'] },
@@ -43,6 +43,7 @@ App.db.init = function() {
         };
         request.onupgradeneeded = async (event) => {
             const db = event.target.result;
+            // Создаём все хранилища, если их нет (проверяем по именам)
             for (let [storeName, config] of Object.entries(STORES)) {
                 if (!db.objectStoreNames.contains(storeName)) {
                     const store = db.createObjectStore(storeName, {
@@ -93,7 +94,6 @@ App.db.put = async function(storeName, item) {
     });
 };
 
-// Пакетная запись
 App.db.putMany = async function(storeName, items) {
     if (!items.length) return;
     const tx = App.db._db.transaction(storeName, 'readwrite');
