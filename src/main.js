@@ -127,198 +127,236 @@
         }
     }
 
-    function initAuthFormEvents(container) {
-        const tabLogin = container.querySelector('#tab-login');
-        const tabSocial = container.querySelector('#tab-social');
-        const authLoginDiv = container.querySelector('#auth-login');
-        const authSocialDiv = container.querySelector('#auth-social');
-        if (tabLogin) {
-            tabLogin.addEventListener('click', () => {
-                tabLogin.classList.add('active');
-                tabSocial.classList.remove('active');
-                authLoginDiv.style.display = 'block';
-                authSocialDiv.style.display = 'none';
-            });
-        }
-        if (tabSocial) {
-            tabSocial.addEventListener('click', () => {
-                tabSocial.classList.add('active');
-                tabLogin.classList.remove('active');
-                authSocialDiv.style.display = 'block';
-                authLoginDiv.style.display = 'none';
-            });
-        }
+    
+function initAuthFormEvents(container) {
+    const tabLogin = container.querySelector('#tab-login');
+    const tabSocial = container.querySelector('#tab-social');
+    const authLoginDiv = container.querySelector('#auth-login');
+    const authSocialDiv = container.querySelector('#auth-social');
+    if (tabLogin) {
+        tabLogin.addEventListener('click', () => {
+            tabLogin.classList.add('active');
+            tabSocial.classList.remove('active');
+            authLoginDiv.style.display = 'block';
+            authSocialDiv.style.display = 'none';
+        });
+    }
+    if (tabSocial) {
+        tabSocial.addEventListener('click', () => {
+            tabSocial.classList.add('active');
+            tabLogin.classList.remove('active');
+            authSocialDiv.style.display = 'block';
+            authLoginDiv.style.display = 'none';
+        });
+    }
 
-        const googleBtn = container.querySelector('#supabase-auth-btn');
-        if (googleBtn) {
-            googleBtn.addEventListener('click', () => {
-                const redirectUrl = window.location.origin + window.location.pathname;
-                App.supabase.auth.signInWithOAuth({
-                    provider: 'google',
-                    options: { redirectTo: redirectUrl }
-                }).catch(err => {
-                    console.error('Google OAuth error:', err);
-                    App.toast('Ошибка входа через Google: ' + err.message, 'error');
-                });
-            });
-        }
-
-        const loginForm = container.querySelector('#login-form');
-        const loginMessage = container.querySelector('#login-message');
-        const passwordConfirmLabel = container.querySelector('#password-confirm-label');
-        const passwordConfirmInput = container.querySelector('#password-confirm-input');
-        const modal = container.closest('.modal');
-
-       if (loginForm) {
-    loginForm.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const formData = new FormData(loginForm);
-        const username = (formData.get('username') || '').toString().trim();
-        const password = formData.get('password') || '';
-        if (!username || !password) {
-            App.toast('Введите логин и пароль', 'error');
-            return;
-        }
-        
-        // ========== ДОБАВИТЬ ПРОВЕРКУ СЕТИ ==========
-        // Проверяем наличие интернета и доступность Supabase
-        const isOnline = await App.network.isReallyOnline();
-        if (!isOnline) {
-            App.toast('Нет соединения с сервером. Проверьте интернет и попробуйте снова.', 'error');
-            return;
-        }
-        // ============================================
-        
-        const email = username + '@vesta.internal';
-        const { error } = await App.supabase.auth.signInWithPassword({ email, password });
-        if (error) {
-            if (loginMessage) loginMessage.textContent = 'Неверный логин или пароль.';
-            App.toast('Ошибка входа: ' + error.message, 'error');
-        } else {
-            if (modal) modal.remove();
-            document.body.classList.remove('auth-modal-open');
-            App.toast('Вход выполнен', 'success');
-        }
-    })
-
-            const signUpBtn = container.querySelector('#login-sign-up-btn');
-            if (signUpBtn) {
-                signUpBtn.addEventListener('click', async () => {
-                    if (passwordConfirmLabel) passwordConfirmLabel.style.display = 'block';
-                    if (passwordConfirmInput) {
-                        passwordConfirmInput.style.display = 'block';
-                        passwordConfirmInput.required = true;
-                    }
-
-                    const formData = new FormData(loginForm);
-                    const username = (formData.get('username') || '').toString().trim();
-                    const password = formData.get('password') || '';
-                    const passwordConfirm = formData.get('password_confirm') || '';
-                    if (!username || !password || !passwordConfirm) {
-                        App.toast('Все поля обязательны', 'error');
-                        return;
-                    }
-                    if (password !== passwordConfirm) {
-                        App.toast('Пароли не совпадают', 'error');
-                        return;
-                    }
-                    if (password.length < 6) {
-                        App.toast('Пароль должен содержать минимум 6 символов', 'error');
-                        return;
-                    }
-
-                    // Проверяем наличие интернета и доступность Supabase
-        const isOnline = await App.network.isReallyOnline();
-        if (!isOnline) {
-            App.toast('Нет соединения с сервером. Проверьте интернет и попробуйте снова.', 'error');
-            return;
-        }
-        // ============================================
-
-                    const email = username + '@vesta.internal';
-                    const { data, error } = await App.supabase.auth.signUp({
-                        email,
-                        password,
-                        options: { data: { username } }
-                    });
-                    if (error) {
-                        App.toast('Ошибка регистрации: ' + error.message, 'error');
-                        return;
-                    }
-                    if (data.session) {
-                        if (modal) modal.remove();
-                        document.body.classList.remove('auth-modal-open');
-                        App.toast('Регистрация успешна! Выполнен вход.', 'success');
-                        if (data.user && typeof window.generateAndShowRecoveryCodes === 'function') {
-                            await window.generateAndShowRecoveryCodes(data.user.id, username);
-                        }
-                    } else {
-                        App.toast('Регистрация успешна! Подтвердите email, чтобы войти.', 'info');
-                        if (modal) modal.remove();
-                        document.body.classList.remove('auth-modal-open');
-                    }
-                    loginForm.reset();
-                    if (passwordConfirmInput) {
-                        passwordConfirmInput.style.display = 'none';
-                        passwordConfirmInput.required = false;
-                    }
-                    if (passwordConfirmLabel) passwordConfirmLabel.style.display = 'none';
-                    if (loginMessage) loginMessage.textContent = '';
-                });
+    const googleBtn = container.querySelector('#supabase-auth-btn');
+    if (googleBtn) {
+        googleBtn.addEventListener('click', async () => {
+            // Проверяем наличие интернета и доступность Supabase
+            const isOnline = await App.network.isReallyOnline();
+            if (!isOnline) {
+                App.toast('Нет соединения с сервером. Проверьте интернет и попробуйте снова.', 'error');
+                return;
             }
-        }
-
-        const forgotLink = container.querySelector('#forgot-access-link');
-        const recoveryBlock = container.querySelector('#recovery-options');
-        if (forgotLink) {
-            forgotLink.addEventListener('click', (e) => {
-                e.preventDefault();
-                if (recoveryBlock) recoveryBlock.style.display = 'block';
+            const redirectUrl = window.location.origin + window.location.pathname;
+            App.supabase.auth.signInWithOAuth({
+                provider: 'google',
+                options: { redirectTo: redirectUrl }
+            }).catch(err => {
+                console.error('Google OAuth error:', err);
+                App.toast('Ошибка входа через Google: ' + err.message, 'error');
             });
-        }
+        });
+    }
 
-        const btnTelegram = container.querySelector('#recover-telegram');
-        if (btnTelegram) btnTelegram.addEventListener('click', () => window.recoverViaTelegram());
+    const loginForm = container.querySelector('#login-form');
+    const loginMessage = container.querySelector('#login-message');
+    const passwordConfirmLabel = container.querySelector('#password-confirm-label');
+    const passwordConfirmInput = container.querySelector('#password-confirm-input');
+    const modal = container.closest('.modal');
 
-        const btnCode = container.querySelector('#recover-code');
-        if (btnCode) btnCode.addEventListener('click', () => window.recoverViaRecoveryCode());
+    if (loginForm) {
+        loginForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            // Проверяем наличие интернета и доступность Supabase
+            const isOnline = await App.network.isReallyOnline();
+            if (!isOnline) {
+                App.toast('Нет соединения с сервером. Проверьте интернет и попробуйте снова.', 'error');
+                return;
+            }
+            // =========================================
+            
+            const formData = new FormData(loginForm);
+            const username = (formData.get('username') || '').toString().trim();
+            const password = formData.get('password') || '';
+            if (!username || !password) {
+                App.toast('Введите логин и пароль', 'error');
+                return;
+            }
+            const email = username + '@vesta.internal';
+            const { error } = await App.supabase.auth.signInWithPassword({ email, password });
+            if (error) {
+                if (loginMessage) loginMessage.textContent = 'Неверный логин или пароль.';
+                App.toast('Ошибка входа: ' + error.message, 'error');
+            } else {
+                // Закрываем модалку и пересоздаём кнопку "Ещё"
+                if (modal) modal.remove();
+                document.body.classList.remove('auth-modal-open');
+                // Пересоздаём обработчик кнопки "Ещё" после закрытия модалки
+                setTimeout(() => {
+                    if (typeof App.events.reinitMoreButton === 'function') {
+                        App.events.reinitMoreButton();
+                    }
+                }, 100);
+                App.toast('Вход выполнен', 'success');
+            }
+        });
 
-        const btnRecoverGoogle = container.querySelector('#recover-google');
-        if (btnRecoverGoogle) {
-            btnRecoverGoogle.addEventListener('click', () => {
-                const redirectUrl = window.location.origin + window.location.pathname;
-                App.supabase.auth.signInWithOAuth({
-                    provider: 'google',
-                    options: { redirectTo: redirectUrl }
+        const signUpBtn = container.querySelector('#login-sign-up-btn');
+        if (signUpBtn) {
+            signUpBtn.addEventListener('click', async () => {
+                // Проверяем наличие интернета и доступность Supabase
+                const isOnline = await App.network.isReallyOnline();
+                if (!isOnline) {
+                    App.toast('Нет соединения с сервером. Проверьте интернет и попробуйте снова.', 'error');
+                    return;
+                }
+                // =========================================
+                
+                if (passwordConfirmLabel) passwordConfirmLabel.style.display = 'block';
+                if (passwordConfirmInput) {
+                    passwordConfirmInput.style.display = 'block';
+                    passwordConfirmInput.required = true;
+                }
+
+                const formData = new FormData(loginForm);
+                const username = (formData.get('username') || '').toString().trim();
+                const password = formData.get('password') || '';
+                const passwordConfirm = formData.get('password_confirm') || '';
+                if (!username || !password || !passwordConfirm) {
+                    App.toast('Все поля обязательны', 'error');
+                    return;
+                }
+                if (password !== passwordConfirm) {
+                    App.toast('Пароли не совпадают', 'error');
+                    return;
+                }
+                if (password.length < 6) {
+                    App.toast('Пароль должен содержать минимум 6 символов', 'error');
+                    return;
+                }
+
+                const email = username + '@vesta.internal';
+                const { data, error } = await App.supabase.auth.signUp({
+                    email,
+                    password,
+                    options: { data: { username } }
                 });
+                if (error) {
+                    App.toast('Ошибка регистрации: ' + error.message, 'error');
+                    return;
+                }
+                if (data.session) {
+                    if (modal) modal.remove();
+                    document.body.classList.remove('auth-modal-open');
+                    App.toast('Регистрация успешна! Выполнен вход.', 'success');
+                    if (data.user && typeof window.generateAndShowRecoveryCodes === 'function') {
+                        await window.generateAndShowRecoveryCodes(data.user.id, username);
+                    }
+                } else {
+                    App.toast('Регистрация успешна! Подтвердите email, чтобы войти.', 'info');
+                    if (modal) modal.remove();
+                    document.body.classList.remove('auth-modal-open');
+                }
+                loginForm.reset();
+                if (passwordConfirmInput) {
+                    passwordConfirmInput.style.display = 'none';
+                    passwordConfirmInput.required = false;
+                }
+                if (passwordConfirmLabel) passwordConfirmLabel.style.display = 'none';
+                if (loginMessage) loginMessage.textContent = '';
             });
         }
     }
 
-    function openAuthModal() {
-        const template = document.getElementById('auth-template');
-        if (!template) {
-            console.error('Шаблон auth-template не найден');
-            return;
-        }
-        const content = template.content.cloneNode(true);
-        if (typeof App.ui.createModal !== 'function') {
-            console.error('App.ui.createModal не определён');
-            return;
-        }
-        const modal = App.ui.createModal('Аккаунт', '');
-        if (!modal) return;
-        const modalContent = modal.querySelector('.modal-content');
-        if (!modalContent) return;
-        modalContent.appendChild(content);
-        document.body.classList.add('auth-modal-open');
-        initAuthFormEvents(modalContent);
-        const closeBtn = modalContent.querySelector('.close');
-        if (closeBtn) closeBtn.onclick = () => modal.remove();
-        modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
-        modal.style.display = 'flex';
-        if (typeof App.initIcons === 'function') App.initIcons();
+    const forgotLink = container.querySelector('#forgot-access-link');
+    const recoveryBlock = container.querySelector('#recovery-options');
+    if (forgotLink) {
+        forgotLink.addEventListener('click', (e) => {
+            e.preventDefault();
+            if (recoveryBlock) recoveryBlock.style.display = 'block';
+        });
     }
+
+    const btnTelegram = container.querySelector('#recover-telegram');
+    if (btnTelegram) btnTelegram.addEventListener('click', () => window.recoverViaTelegram());
+
+    const btnCode = container.querySelector('#recover-code');
+    if (btnCode) btnCode.addEventListener('click', () => window.recoverViaRecoveryCode());
+
+    const btnRecoverGoogle = container.querySelector('#recover-google');
+    if (btnRecoverGoogle) {
+        btnRecoverGoogle.addEventListener('click', async () => {
+            // Проверяем наличие интернета и доступность Supabase
+            const isOnline = await App.network.isReallyOnline();
+            if (!isOnline) {
+                App.toast('Нет соединения с сервером. Проверьте интернет и попробуйте снова.', 'error');
+                return;
+            }
+            const redirectUrl = window.location.origin + window.location.pathname;
+            App.supabase.auth.signInWithOAuth({
+                provider: 'google',
+                options: { redirectTo: redirectUrl }
+            });
+        });
+    }
+}
+
+function openAuthModal() {
+    const template = document.getElementById('auth-template');
+    if (!template) {
+        console.error('Шаблон auth-template не найден');
+        return;
+    }
+    const content = template.content.cloneNode(true);
+    if (typeof App.ui.createModal !== 'function') {
+        console.error('App.ui.createModal не определён');
+        return;
+    }
+    const modal = App.ui.createModal('Аккаунт', '');
+    if (!modal) return;
+    const modalContent = modal.querySelector('.modal-content');
+    if (!modalContent) return;
+    modalContent.appendChild(content);
+    document.body.classList.add('auth-modal-open');
+    initAuthFormEvents(modalContent);
+    const closeBtn = modalContent.querySelector('.close');
+    if (closeBtn) {
+        closeBtn.onclick = function() {
+            modal.remove();
+            document.body.classList.remove('auth-modal-open');
+            document.body.style.overflow = '';
+            // Принудительно пересоздаём обработчик кнопки "Ещё"
+            setTimeout(() => {
+                App.events.initNavigation();
+            }, 100);
+        };
+    }
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+            modal.remove();
+            document.body.classList.remove('auth-modal-open');
+            document.body.style.overflow = '';
+            setTimeout(() => {
+                App.events.initNavigation();
+            }, 100);
+        }
+    });
+    modal.style.display = 'flex';
+    if (typeof App.initIcons === 'function') App.initIcons();
+}
 
     async function doLogout() {
         App.store.operations = []; App.store.fuelLog = []; App.store.tireLog = []; App.store.parts = []; App.store.serviceRecords = []; App.store.mileageHistory = []; App.store.cars = []; App.store.activeCarId = null;
