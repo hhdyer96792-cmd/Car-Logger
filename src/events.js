@@ -59,6 +59,15 @@ App.events.setupDelegation = function() {
             return;
         }
         
+        // Обработка кнопки "Ещё" (more-menu-btn) - открывает drawer
+        const moreBtn = e.target.closest('#more-menu-btn');
+        if (moreBtn && moreBtn.id === 'more-menu-btn') {
+            e.preventDefault();
+            e.stopPropagation();
+            App.events.openDrawer();
+            return;
+        }
+        
         const target = e.target.closest('[data-action]');
         if (!target) return;
         const action = target.dataset.action;
@@ -252,9 +261,22 @@ App.events.initNavigation = function() {
         });
     });
 
+    // Обработчик для кнопки "Ещё" – используем только делегирование, не вешаем напрямую
+    // Удаляем старые обработчики, если они были
+    const moreBtn = document.getElementById('more-menu-btn');
+    if (moreBtn) {
+        // Удаляем все обработчики через cloneNode
+        const newMoreBtn = moreBtn.cloneNode(true);
+        moreBtn.parentNode.replaceChild(newMoreBtn, moreBtn);
+        // Не вешаем обработчик напрямую – используем делегирование в setupDelegation
+    }
+
     const drawer = document.getElementById('drawer-menu');
     if (drawer) {
-        drawer.querySelector('.drawer-overlay').addEventListener('click', App.events.closeDrawer);
+        const overlay = drawer.querySelector('.drawer-overlay');
+        if (overlay) {
+            overlay.addEventListener('click', App.events.closeDrawer);
+        }
         drawer.querySelectorAll('.drawer-item[data-tab]').forEach(item => {
             item.addEventListener('click', () => {
                 App.events.switchToTab(item.dataset.tab);
@@ -266,29 +288,13 @@ App.events.initNavigation = function() {
     document.addEventListener('keydown', e => {
         if (e.key === 'Escape') {
             App.events.closeDrawer();
+            // Закрываем модалку, если она открыта
             const modal = document.querySelector('.modal');
             if (modal && modal.remove) modal.remove();
+            // Убираем блокировку body, если она осталась
+            document.body.classList.remove('auth-modal-open');
+            document.body.style.overflow = '';
         }
-    });
-    
-    // ПЕРЕСОЗДАЁМ ОБРАБОТЧИК КНОПКИ "ЕЩЁ" ПРИ КАЖДОЙ ИНИЦИАЛИЗАЦИИ
-    App.events.reinitMoreButton();
-};
-
-// ОТДЕЛЬНАЯ ФУНКЦИЯ ДЛЯ ПЕРЕСОЗДАНИЯ ОБРАБОТЧИКА КНОПКИ "ЕЩЁ"
-App.events.reinitMoreButton = function() {
-    const moreBtn = document.getElementById('more-menu-btn');
-    if (!moreBtn) return;
-    
-    // Удаляем все существующие обработчики (клонируем и заменяем)
-    const newMoreBtn = moreBtn.cloneNode(true);
-    moreBtn.parentNode.replaceChild(newMoreBtn, moreBtn);
-    
-    // Вешаем новый обработчик
-    newMoreBtn.addEventListener('click', function(e) {
-        e.preventDefault();
-        e.stopPropagation();
-        App.events.openDrawer();
     });
 };
 
@@ -372,8 +378,10 @@ App.events.switchToTab = function(tabId) {
 };
 
 App.events.openDrawer = function() {
-    // Не открываем drawer, если открыта модалка
-    if (document.querySelector('.modal')) {
+    // Проверяем, открыта ли модалка
+    const modal = document.querySelector('.modal');
+    if (modal && modal.style.display !== 'none') {
+        console.log('[Drawer] Не открываем drawer, так как открыта модалка');
         return;
     }
     const drawer = document.getElementById('drawer-menu');
@@ -537,11 +545,6 @@ App.events.initDirectListeners = function() {
             App.initIcons();
         });
     }
-    
-    // Пересоздаём обработчик кнопки "Ещё" после каждого рендера
-    setTimeout(() => {
-        App.events.reinitMoreButton();
-    }, 100);
 };
 
 App.events.initHistoryFilters = function() {
