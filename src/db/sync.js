@@ -149,7 +149,14 @@ App.db.sync.processSyncQueue = async function() {
         await new Promise(r => setTimeout(r, 100));
         let pending = await App.db.getAll('pending_actions');
         pending = pending.filter(action => !action.nextRetry || action.nextRetry <= Date.now());
-        if (!pending.length) return;
+        if (!pending.length) {
+            // Если очередь пуста, обновляем индикатор
+            if (typeof App.setSyncStatus === 'function') App.setSyncStatus('synced');
+            return;
+        }
+        
+        // Показываем индикатор синхронизации
+        if (typeof App.setSyncStatus === 'function') App.setSyncStatus('syncing');
 
         for (let i = 0; i < pending.length; i++) {
             const action = pending[i];
@@ -160,24 +167,26 @@ App.db.sync.processSyncQueue = async function() {
                 errorCount++;
                 const retry = (action.retryCount || 0) + 1;
                 await App.db.sync._updatePendingAction(action, retry, err.message);
-                if (err.message && (err.message.includes('fetch') || err.message.includes('network') || err.message.includes('timeout') || err.message.includes('abort'))) {
-                    break;
-                }
+                // Не прерываем весь цикл при ошибке одного действия
+                console.warn(`[Sync] Действие ${action.id} не удалось (${retry}/10):`, err.message);
             }
             await new Promise(r => setTimeout(r, 200));
         }
         await App.store.loadFromIndexedDB();
         if (typeof App.renderAll === 'function') App.renderAll();
-        const syncIndicator = document.getElementById('sync-indicator');
-        if (syncIndicator) {
-            syncIndicator.className = pending.length === 0 && errorCount === 0 ? 'synced' : 'pending';
+        
+        // Обновляем индикатор
+        const pendingRemaining = await App.db.getAll('pending_actions');
+        if (typeof App.setSyncStatus === 'function') {
+            App.setSyncStatus(pendingRemaining.length === 0 ? 'synced' : 'pending');
         }
     } catch (outerErr) {
         console.error('[Sync] Критическая ошибка:', outerErr);
+        if (typeof App.setSyncStatus === 'function') App.setSyncStatus('error');
     } finally {
         App.db.sync._isRunning = false;
         clearTimeout(App.db.sync._retryTimeout);
-        App.db.sync._retryTimeout = setTimeout(() => App.db.sync.processSyncQueue(), 60000);
+        App.db.sync._retryTimeout = setTimeout(() => App.db.sync.processSyncQueue(), 30000); // каждые 30 секунд
     }
 };
 
