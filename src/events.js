@@ -1,4 +1,4 @@
-// src/events.js
+// src/events.js (исправленный полный файл)
 window.App = window.App || {};
 App.events = App.events || {};
 
@@ -43,7 +43,6 @@ App.events.init = function() {
                 timestamp: Date.now()
             }).catch(e => console.error('Failed to log error:', e));
         }
-        // Не возвращаем true, чтобы ошибка также попала в консоль
         return false;
     };
 };
@@ -354,7 +353,7 @@ App.events.switchToTab = function(tabId) {
 };
 
 App.events.openDrawer = function() {
-    // Не открываем drawer, если открыта модалка
+    // Не открываем drawer, если открыта модалка (модалка авторизации и т.д.)
     if (document.querySelector('.modal')) return;
     const drawer = document.getElementById('drawer-menu');
     if (drawer) {
