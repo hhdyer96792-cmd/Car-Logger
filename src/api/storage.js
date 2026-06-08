@@ -1,4 +1,4 @@
-// src/api/storage.js
+// src/api/storage.js (исправленный)
 window.App = window.App || {};
 App.storage = App.storage || {};
 
@@ -296,8 +296,8 @@ const methodMap = {
     mileage: 'loadMileageHistory'
 };
 
-// В начале файла, после methodMap, добавить:
-const storeMap = {
+// Таблица соответствия имён таблиц и ключей в App.store
+const storeKeyMap = {
     operations: 'operations',
     fuel_log: 'fuelLog',
     tires: 'tireLog',
@@ -329,7 +329,7 @@ App.storage.loadFirstPage = async function(table, pageSize = 50) {
         await App.db.putMany(table, items);
         
         // Обновляем Store с правильным ключом
-        const storeKey = storeMap[table];
+        const storeKey = storeKeyMap[table];
         if (storeKey && App.store[storeKey]) {
             const newMap = new Map(items.map(i => [i.id, i]));
             App.store[storeKey] = App.store[storeKey].filter(old => !newMap.has(old.id)).concat(items);
@@ -339,40 +339,11 @@ App.storage.loadFirstPage = async function(table, pageSize = 50) {
     }
 };
 
-// ИСПРАВЛЕНО: добавлена проверка существования метода и нормализация ответа
-App.storage.loadFirstPage = async function(table, pageSize = 50) {
-    if (!navigator.onLine) return;
-    const methodName = methodMap[table];
-    if (!methodName || typeof App.supa[methodName] !== 'function') {
-        console.warn(`[Storage] Метод ${methodName} не найден для таблицы ${table}`);
-        return;
-    }
-    try {
-        const result = await App.supa[methodName](1, pageSize);
-        let data, error;
-        if (result && typeof result === 'object' && 'data' in result && 'error' in result) {
-            data = result.data;
-            error = result.error;
-        } else {
-            data = result;
-            error = null;
-        }
-        if (error) throw error;
-        const carId = App.store.activeCarId;
-        const items = (data || []).map(item => ({ ...item, car_id: carId }));
-        await App.db.putMany(table, items);
-        const newMap = new Map(items.map(i => [i.id, i]));
-        App.store[table] = App.store[table].filter(old => !newMap.has(old.id)).concat(items);
-    } catch (err) {
-        console.warn(`[Storage] Не удалось загрузить ${table}:`, err.message);
-    }
-};
-
-// ИСПРАВЛЕНО: параллельная загрузка с ограничением параллельности
 App.storage.loadAllData = async function() {
     // Мгновенно загружаем локальные данные и отображаем
     await App.store.loadFromIndexedDB();
-    document.getElementById('data-panel').style.display = 'block';
+    const dataPanel = document.getElementById('data-panel');
+    if (dataPanel) dataPanel.style.display = 'block';
     if (typeof App.renderAll === 'function') App.renderAll();
     const syncIndicator = document.getElementById('sync-indicator');
     if (syncIndicator) {
@@ -391,7 +362,7 @@ App.storage.loadAllData = async function() {
                 App.storage.loadFirstPage(table, 50).catch(() => {})
             )
         );
-        await new Promise(r => setTimeout(r, 100)); // небольшая пауза между чанками
+        await new Promise(r => setTimeout(r, 100));
     }
     await App.storage.loadSettingsForCar(App.store.activeCarId).catch(() => {});
 
