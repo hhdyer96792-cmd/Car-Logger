@@ -19,7 +19,7 @@ App.ui.pages.loadCarDocuments = async function() {
     }
     try {
         const data = await App.supa.loadCarDocuments();
-        App.ui.pages._carDocuments = data || [];
+        App.ui.pages._carDocuments = Array.isArray(data) ? data : [];
     } catch (e) {
         console.warn('Не удалось загрузить документы:', e);
         App.ui.pages._carDocuments = [];
