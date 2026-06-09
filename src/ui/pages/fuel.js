@@ -5,8 +5,9 @@ App.ui.pages = App.ui.pages || {};
 
 App.ui.pages._fuelPeriod = 'month';
 
-// Вспомогательная функция для иконки синхронизации
+// Вспомогательная функция для иконки синхронизации (используем глобальную)
 function getSyncIcon(recordId) {
+    if (typeof App.getSyncIcon === 'function') return App.getSyncIcon(recordId);
     if (!recordId) return '';
     if (App.store.isRecordPending && App.store.isRecordPending(recordId)) {
         return '<i data-lucide="clock" class="sync-pending-icon" style="color: var(--warning); width: 16px; height: 16px; margin-left: 8px;" title="Ожидает синхронизации"></i>';
@@ -546,6 +547,7 @@ App.ui.pages.checkFuelOrderConflicts = function(dateISO, mileage, excludeRowInde
     return { hasConflict: conflict, message: message, prevRecord: prev, nextRecord: next };
 };
 
+// ИСПРАВЛЕНА ФУНКЦИЯ openFuelModal: явно сохраняем выбранный тип топлива
 App.ui.pages.openFuelModal = function(record) {
     var isEdit = !!(record && record.id);
     var defaultDate = record && record.date
@@ -599,33 +601,34 @@ App.ui.pages.openFuelModal = function(record) {
 
         modal.remove();
 
-        var existingUuid = (record && record.uuid) ? record.uuid : crypto.randomUUID();
-        var existingUpdatedAt = (record && record.updated_at) ? record.updated_at : new Date().toISOString();
+        // Явное получение типа топлива из селектора
+        var fuelType = d.fuelType || 'Бензин';
+        if (!['Бензин', 'Дизель', 'Газ (ГБО)', 'Электричество'].includes(fuelType)) {
+            fuelType = 'Бензин';
+        }
 
         var recordData = {
             id: id,
-            uuid: existingUuid,
-            updated_at: existingUpdatedAt,
+            uuid: (record && record.uuid) ? record.uuid : crypto.randomUUID(),
+            updated_at: (record && record.updated_at) ? record.updated_at : new Date().toISOString(),
             date: dateISO,
             mileage: mileage,
             liters: liters,
             pricePerLiter: pricePerLiter,
             fullTank: false,
-            fuelType: d.fuelType,
+            fuelType: fuelType,
             notes: d.notes || ''
         };
 
         if (App.config.USE_SUPABASE) {
             try {
                 await App.storage.saveFuelRecord(id, recordData);
-                // storage.js сам обновит store и вызовет refreshUIToFuel()
                 App.toast(isEdit ? 'Заправка обновлена' : 'Заправка добавлена', 'success');
             } catch (err) {
                 console.error(err);
                 App.toast('Ошибка сохранения в Supabase', 'error');
             }
         } else {
-            // Fallback для режима без Supabase (не используется)
             if (isEdit) {
                 var idx = App.store.fuelLog.findIndex(function(f) { return f.id == id; });
                 if (idx !== -1) App.store.fuelLog[idx] = recordData;
