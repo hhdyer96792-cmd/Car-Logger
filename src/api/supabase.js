@@ -118,7 +118,7 @@ App.supa.clearUserIdCache = function() {
     cachedUserId = null;
 };
 
-// ========== ЗАГРУЗКА ДАННЫХ (таймаут 20 с) ==========
+// ========== ЗАГРУЗКА ДАННЫХ ==========
 App.supa.loadOperations = function(page = 1, pageSize = 30) {
     return withRetry(() =>
         withTimeout(
@@ -193,7 +193,7 @@ App.supa.loadMileageHistory = function(page = 1, pageSize = 100) {
         ), 3, 500, 'loadMileageHistory');
 };
 
-// ========== СОХРАНЕНИЕ (с поддержкой AbortSignal) ==========
+// ========== СОХРАНЕНИЕ ==========
 App.supa.saveOperation = async function(op, signal) {
     const userId = await App.supa.getCurrentUserId();
     const carId = op.car_id || App.store.activeCarId;
@@ -352,7 +352,7 @@ App.supa.saveUserSettings = async function(settingsObj) {
     return upsertWithRetry('user_settings', record, 'user_id, car_id');
 };
 
-// ========== СОХРАНЕНИЕ БАЗОВЫХ ПАРАМЕТРОВ (vehicle_state) ==========
+// ========== БАЗОВЫЕ ПАРАМЕТРЫ (vehicle_state) ==========
 App.supa.updateVehicleState = async function(carId, updates) {
     ensureSupabase();
     const record = {
@@ -364,7 +364,8 @@ App.supa.updateVehicleState = async function(carId, updates) {
     };
     const { data, error } = await withTimeout(
         App.supabase.from('vehicle_state').upsert(record, { onConflict: 'car_id' }).select(),
-        20000, 'updateVehicleState'
+        15000, // уменьшил таймаут до 15 секунд
+        'updateVehicleState'
     );
     if (error) throw error;
     return data;
@@ -377,7 +378,7 @@ App.supa.getVehicleState = async function(carId) {
             .select('base_mileage, base_motohours, purchase_date, purchase_cost')
             .eq('car_id', carId)
             .maybeSingle(),
-        20000, 'getVehicleState'
+        10000, 'getVehicleState'
     );
     if (error) throw error;
     return data || null;
