@@ -1,3 +1,4 @@
+//src/state/store.js
 window.App = window.App || {};
 
 App.store = {
