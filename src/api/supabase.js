@@ -1,4 +1,4 @@
-here// src/api/supabase.js
+// src/api/supabase.js
 window.App = window.App || {};
 App.supa = App.supa || {};
 
