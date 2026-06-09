@@ -3,7 +3,7 @@ window.App = window.App || {};
 App.db = App.db || {};
 
 const DB_NAME = 'CarLoggerDB';
-const DB_VERSION = 7; // Увеличено для принудительного пересоздания
+const DB_VERSION = 8; // увеличиваем для принудительного пересоздания
 
 const STORES = {
     operations: { keyPath: 'id', indexes: ['car_id', 'category'] },
@@ -34,7 +34,7 @@ App.db.init = function() {
         }
         const request = indexedDB.open(DB_NAME, DB_VERSION);
         request.onerror = (event) => {
-            console.error('IndexedDB error:', event.target.error);
+            console.error('[IndexedDB] Ошибка открытия:', event.target.error);
             reject(event.target.error);
         };
         request.onsuccess = (event) => {
@@ -44,16 +44,14 @@ App.db.init = function() {
         };
         request.onupgradeneeded = (event) => {
             const db = event.target.result;
-            console.log('[IndexedDB] Обновление схемы БД с версии', event.oldVersion, 'до', event.newVersion);
-            
-            // Удаляем все старые хранилища, если они есть (чистый старт)
+            // Удаляем все старые хранилища, чтобы создать новые с правильной конфигурацией
+            // Это гарантирует, что все хранилища будут созданы заново
             for (let storeName of Object.keys(STORES)) {
                 if (db.objectStoreNames.contains(storeName)) {
                     db.deleteObjectStore(storeName);
-                    console.log('[IndexedDB] Удалено хранилище:', storeName);
+                    console.log('[IndexedDB] Удалено старое хранилище:', storeName);
                 }
             }
-            
             // Создаём все хранилища заново
             for (let [storeName, config] of Object.entries(STORES)) {
                 const store = db.createObjectStore(storeName, {
@@ -71,9 +69,12 @@ App.db.init = function() {
     });
 };
 
-// Остальные методы без изменений...
 App.db._getStore = function(storeName, mode = 'readonly') {
     if (!App.db._db) throw new Error('Database not initialized. Call App.db.init() first.');
+    // Проверяем существование хранилища перед созданием транзакции
+    if (!App.db._db.objectStoreNames.contains(storeName)) {
+        throw new Error(`Object store "${storeName}" does not exist in database`);
+    }
     const tx = App.db._db.transaction(storeName, mode);
     return tx.objectStore(storeName);
 };
