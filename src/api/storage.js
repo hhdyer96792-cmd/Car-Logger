@@ -1,4 +1,4 @@
-// src/api/storage.js
+// src/api/storage.js (исправленная версия с сохранением базовых параметров)
 window.App = window.App || {};
 App.storage = App.storage || {};
 
@@ -91,7 +91,7 @@ App.storage.deleteCarDocument = async function(docId) {
     return true;
 };
 
-// ========== ОСНОВНЫЕ ПАРАМЕТРЫ ==========
+// ========== ОСНОВНЫЕ ПАРАМЕТРЫ (сохраняем и в vehicle_state и в car_settings) ==========
 App.storage.saveVehicleStateAndSettings = async function(state, settings) {
     const carId = App.store.activeCarId;
     if (!carId) return;
@@ -296,7 +296,6 @@ const methodMap = {
     mileage: 'loadMileageHistory'
 };
 
-// ИСПРАВЛЕНА: правильное сопоставление ключей хранилища
 const storeMap = {
     operations: 'operations',
     fuel_log: 'fuelLog',
@@ -313,42 +312,28 @@ App.storage.loadFirstPage = async function(table, pageSize = 50) {
         console.warn(`[Storage] Метод ${methodName} не найден для таблицы ${table}`);
         return;
     }
-    // Делаем до 3 попыток с увеличивающейся задержкой
-    for (let attempt = 1; attempt <= 3; attempt++) {
-        try {
-            const result = await App.supa[methodName](1, pageSize);
-            let data, error;
-            if (result && typeof result === 'object' && 'data' in result && 'error' in result) {
-                data = result.data;
-                error = result.error;
-            } else {
-                data = result;
-                error = null;
-            }
-            if (error) throw error;
-            const carId = App.store.activeCarId;
-            const items = (data || []).map(item => ({ ...item, car_id: carId }));
-            
-            // Сохраняем в IndexedDB
-            await App.db.putMany(table, items);
-            
-            // Обновляем Store с проверкой существования массива
-            const storeKey = storeMap[table];
-            if (storeKey && App.store[storeKey] && Array.isArray(App.store[storeKey])) {
-                const newMap = new Map(items.map(i => [i.id, i]));
-                App.store[storeKey] = App.store[storeKey].filter(old => !newMap.has(old.id)).concat(items);
-            } else if (storeKey && !App.store[storeKey]) {
-                App.store[storeKey] = items;
-            }
-            return; // успех
-        } catch (err) {
-            console.warn(`[Storage] Попытка ${attempt} загрузки ${table} не удалась:`, err.message);
-            if (attempt === 3) {
-                console.error(`[Storage] Не удалось загрузить ${table} после 3 попыток`);
-            } else {
-                await new Promise(r => setTimeout(r, 1000 * attempt));
-            }
+    try {
+        const result = await App.supa[methodName](1, pageSize);
+        let data, error;
+        if (result && typeof result === 'object' && 'data' in result && 'error' in result) {
+            data = result.data;
+            error = result.error;
+        } else {
+            data = result;
+            error = null;
         }
+        if (error) throw error;
+        const carId = App.store.activeCarId;
+        const items = (data || []).map(item => ({ ...item, car_id: carId }));
+        await App.db.putMany(table, items);
+        
+        const storeKey = storeMap[table];
+        if (storeKey && App.store[storeKey]) {
+            const newMap = new Map(items.map(i => [i.id, i]));
+            App.store[storeKey] = App.store[storeKey].filter(old => !newMap.has(old.id)).concat(items);
+        }
+    } catch (err) {
+        console.warn(`[Storage] Не удалось загрузить ${table}:`, err.message);
     }
 };
 
@@ -365,13 +350,15 @@ App.storage.loadAllData = async function() {
 
     if (!navigator.onLine) return;
 
-    // Загружаем таблицы последовательно, чтобы уменьшить нагрузку на сеть
     const tables = ['operations', 'fuel_log', 'tires', 'parts', 'history', 'mileage'];
-    for (const table of tables) {
-        await App.storage.loadFirstPage(table, 50).catch(err => {
-            console.warn(`[Storage] Не удалось загрузить ${table} даже после повторных попыток:`, err.message);
-        });
-        await new Promise(r => setTimeout(r, 500));
+    const chunkSize = 3;
+    for (let i = 0; i < tables.length; i += chunkSize) {
+        await Promise.all(
+            tables.slice(i, i + chunkSize).map(table =>
+                App.storage.loadFirstPage(table, 50).catch(() => {})
+            )
+        );
+        await new Promise(r => setTimeout(r, 100));
     }
     await App.storage.loadSettingsForCar(App.store.activeCarId).catch(() => {});
 
