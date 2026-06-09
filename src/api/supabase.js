@@ -4,8 +4,7 @@ App.supa = App.supa || {};
 
 let cachedUserId = null;
 
-// Увеличиваем максимальное количество повторных попыток до 5
-async function withRetry(fn, maxRetries = 5, delay = 500, context = 'unknown') {
+async function withRetry(fn, maxRetries = 3, delay = 500, context = 'unknown') {
     let lastError;
     for (let i = 0; i <= maxRetries; i++) {
         try {
@@ -13,10 +12,9 @@ async function withRetry(fn, maxRetries = 5, delay = 500, context = 'unknown') {
         } catch (err) {
             lastError = err;
             const isLockError = err.message && (err.message.includes('Lock') || err.message.includes('stole') || err.toString().includes('Lock'));
-            const isNetworkError = err.message && (err.message.includes('fetch') || err.message.includes('network') || err.message.includes('timeout') || err.message.includes('abort'));
-            if ((isLockError || isNetworkError) && i < maxRetries) {
-                console.warn(`[Supabase] ${context} failed, retry ${i+1}/${maxRetries}:`, err.message);
-                await new Promise(r => setTimeout(r, delay * Math.pow(2, i)));
+            if (isLockError && i < maxRetries) {
+                console.warn(`[Supabase] Lock conflict in ${context}, retry ${i+1}/${maxRetries}`);
+                await new Promise(r => setTimeout(r, delay * (i + 1)));
                 continue;
             }
             throw err;
@@ -120,45 +118,45 @@ App.supa.clearUserIdCache = function() {
     cachedUserId = null;
 };
 
-// ========== ЗАГРУЗКА ДАННЫХ (таймауты увеличены до 30 секунд) ==========
+// ========== ЗАГРУЗКА ДАННЫХ (таймаут 20 с) ==========
 App.supa.loadOperations = function(page = 1, pageSize = 30) {
     return withRetry(() =>
         withTimeout(
             App.supa.fetchTablePaginated('operations', page, pageSize, 'updated_at', false),
-            30000, 'loadOperations'
-        ), 5, 500, 'loadOperations');
+            20000, 'loadOperations'
+        ), 3, 500, 'loadOperations');
 };
 
 App.supa.loadFuelLog = function(page = 1, pageSize = 30) {
     return withRetry(() =>
         withTimeout(
             App.supa.fetchTablePaginated('fuel_log', page, pageSize, 'date', false),
-            30000, 'loadFuelLog'
-        ), 5, 500, 'loadFuelLog');
+            20000, 'loadFuelLog'
+        ), 3, 500, 'loadFuelLog');
 };
 
 App.supa.loadTires = function(page = 1, pageSize = 30) {
     return withRetry(() =>
         withTimeout(
             App.supa.fetchTablePaginated('tires', page, pageSize, 'date', false),
-            30000, 'loadTires'
-        ), 5, 500, 'loadTires');
+            20000, 'loadTires'
+        ), 3, 500, 'loadTires');
 };
 
 App.supa.loadParts = function(page = 1, pageSize = 30) {
     return withRetry(() =>
         withTimeout(
             App.supa.fetchTablePaginated('parts', page, pageSize, 'purchase_date', false),
-            30000, 'loadParts'
-        ), 5, 500, 'loadParts');
+            20000, 'loadParts'
+        ), 3, 500, 'loadParts');
 };
 
 App.supa.loadHistory = function(page = 1, pageSize = 30) {
     return withRetry(() =>
         withTimeout(
             App.supa.fetchTablePaginated('history', page, pageSize, 'date', false),
-            30000, 'loadHistory'
-        ), 5, 500, 'loadHistory');
+            20000, 'loadHistory'
+        ), 3, 500, 'loadHistory');
 };
 
 App.supa.loadSettings = async function() {
@@ -191,8 +189,8 @@ App.supa.loadMileageHistory = function(page = 1, pageSize = 100) {
     return withRetry(() =>
         withTimeout(
             App.supa.fetchTablePaginated('mileage_log', page, pageSize, 'date', false),
-            30000, 'loadMileageHistory'
-        ), 5, 500, 'loadMileageHistory');
+            20000, 'loadMileageHistory'
+        ), 3, 500, 'loadMileageHistory');
 };
 
 // ========== СОХРАНЕНИЕ (с поддержкой AbortSignal) ==========
@@ -354,6 +352,37 @@ App.supa.saveUserSettings = async function(settingsObj) {
     return upsertWithRetry('user_settings', record, 'user_id, car_id');
 };
 
+// ========== СОХРАНЕНИЕ БАЗОВЫХ ПАРАМЕТРОВ (vehicle_state) ==========
+App.supa.updateVehicleState = async function(carId, updates) {
+    ensureSupabase();
+    const record = {
+        car_id: carId,
+        base_mileage: updates.baseMileage !== undefined ? updates.baseMileage : null,
+        base_motohours: updates.baseMotohours !== undefined ? updates.baseMotohours : null,
+        purchase_date: updates.purchaseDate !== undefined ? updates.purchaseDate : null,
+        purchase_cost: updates.purchaseCost !== undefined ? updates.purchaseCost : null
+    };
+    const { data, error } = await withTimeout(
+        App.supabase.from('vehicle_state').upsert(record, { onConflict: 'car_id' }).select(),
+        20000, 'updateVehicleState'
+    );
+    if (error) throw error;
+    return data;
+};
+
+App.supa.getVehicleState = async function(carId) {
+    ensureSupabase();
+    const { data, error } = await withTimeout(
+        App.supabase.from('vehicle_state')
+            .select('base_mileage, base_motohours, purchase_date, purchase_cost')
+            .eq('car_id', carId)
+            .maybeSingle(),
+        20000, 'getVehicleState'
+    );
+    if (error) throw error;
+    return data || null;
+};
+
 // ========== ФОТО ==========
 App.supa.uploadPhoto = async function(file) {
     const MAX_SIZE = 5 * 1024 * 1024;
@@ -386,8 +415,8 @@ App.supa.loadCarDocuments = function(page = 1, pageSize = 30) {
     return withRetry(() =>
         withTimeout(
             App.supa.fetchTablePaginated('car_documents', page, pageSize, 'date', false),
-            30000, 'loadCarDocuments'
-        ), 5, 500, 'loadCarDocuments');
+            20000, 'loadCarDocuments'
+        ), 3, 500, 'loadCarDocuments');
 };
 
 App.supa.addCarDocument = async function(doc) {
@@ -433,7 +462,7 @@ App.supa.loadCars = function() {
             if (error) throw error;
             return data || [];
         }),
-        30000, 'loadCars'
+        20000, 'loadCars'
     );
 };
 
@@ -444,7 +473,7 @@ App.supa.createCar = function(name) {
         const record = { id: crypto.randomUUID(), user_id: userId, name };
         return withTimeout(
             App.supabase.from('cars').insert(record).select().single(),
-            30000, 'createCar'
+            20000, 'createCar'
         );
     });
 };
@@ -453,7 +482,7 @@ App.supa.deleteCar = function(carId) {
     ensureSupabase();
     return withTimeout(
         App.supabase.from('cars').delete().eq('id', carId).select(),
-        30000, 'deleteCar'
+        20000, 'deleteCar'
     );
 };
 
@@ -461,7 +490,7 @@ App.supa.renameCar = function(carId, newName) {
     ensureSupabase();
     return withTimeout(
         App.supabase.from('cars').update({ name: newName }).eq('id', carId).select().single(),
-        30000, 'renameCar'
+        20000, 'renameCar'
     );
 };
 
@@ -469,7 +498,7 @@ App.supa.inviteUserToCar = function(carId, email) {
     ensureSupabase();
     return withTimeout(
         App.supabase.from('car_shares').insert({ id: crypto.randomUUID(), car_id: carId, invited_email: email }).select().single(),
-        30000, 'inviteUserToCar'
+        20000, 'inviteUserToCar'
     );
 };
 
@@ -481,7 +510,7 @@ App.supa.getPendingInvites = function() {
                 .select('*, cars(name)')
                 .eq('invited_user_id', userId)
                 .eq('accepted', false),
-            30000, 'getPendingInvites'
+            20000, 'getPendingInvites'
         );
     });
 };
@@ -495,7 +524,7 @@ App.supa.acceptInvite = async function(inviteId) {
             .update({ accepted: true, invited_user_id: userId })
             .eq('id', inviteId)
             .select(),
-        30000, 'acceptInvite'
+        20000, 'acceptInvite'
     );
 };
 
@@ -503,7 +532,7 @@ App.supa.declineInvite = function(inviteId) {
     ensureSupabase();
     return withTimeout(
         App.supabase.from('car_shares').delete().eq('id', inviteId).select(),
-        30000, 'declineInvite'
+        20000, 'declineInvite'
     );
 };
 
@@ -514,7 +543,7 @@ App.supa.getInviteByCode = function(code) {
             .select('*, cars(name)')
             .eq('invite_code', code)
             .maybeSingle(),
-        30000, 'getInviteByCode'
+        20000, 'getInviteByCode'
     );
 };
 
@@ -522,7 +551,7 @@ App.supa.getCarShares = function(carId) {
     ensureSupabase();
     return withTimeout(
         App.supabase.from('car_shares').select('*').eq('car_id', carId),
-        30000, 'getCarShares'
+        20000, 'getCarShares'
     );
 };
 
@@ -530,36 +559,8 @@ App.supa.deleteCarShare = function(shareId) {
     ensureSupabase();
     return withTimeout(
         App.supabase.from('car_shares').delete().eq('id', shareId).select(),
-        30000, 'deleteCarShare'
+        20000, 'deleteCarShare'
     );
-};
-
-App.supa.getVehicleState = async function(carId) {
-    return withRetry(async () => {
-        const { data, error } = await App.supabase
-            .from('vehicle_state')
-            .select('base_mileage, base_motohours, purchase_date, purchase_cost')
-            .eq('car_id', carId)
-            .maybeSingle();
-        if (error) throw error;
-        return data || null;
-    }, 3, 500, 'getVehicleState');
-};
-
-App.supa.updateVehicleState = async function(carId, updates) {
-    const record = {
-        car_id: carId,
-        base_mileage: updates.baseMileage,
-        base_motohours: updates.baseMotohours,
-        purchase_date: updates.purchaseDate,
-        purchase_cost: updates.purchaseCost
-    };
-    const { error } = await withTimeout(
-        App.supabase.from('vehicle_state').upsert(record, { onConflict: 'car_id' }),
-        30000, 'updateVehicleState'
-    );
-    if (error) throw error;
-    return true;
 };
 
 App.supa.getCalendarToken = async function(carId) {
@@ -596,13 +597,6 @@ App.supa.createInviteLink = async function(carId) {
     const inviteCode = data.invite_code;
     return window.location.origin + '/Car-K3eper/?invite=' + inviteCode;
 };
-
-if (!App.supa.getVehicleState) {
-    App.supa.getVehicleState = async function(carId) { return null; };
-}
-if (!App.supa.updateVehicleState) {
-    App.supa.updateVehicleState = async function(carId, updates) { return true; };
-}
 
 // ========== PUSH-ТОКЕНЫ ==========
 App.supa.savePushToken = async function(token) {
