@@ -1,4 +1,4 @@
-Entering // src/db/sync.js
+// src/db/sync.js
 window.App = window.App || {};
 App.db = App.db || {};
 App.db.sync = App.db.sync || {};
