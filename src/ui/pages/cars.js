@@ -1,4 +1,4 @@
-// src/ui/pages/cars.js (исправленная версия с сохранением основных параметров)
+// src/ui/pages/cars.js 
 window.App = window.App || {};
 App.ui.pages = App.ui.pages || {};
 
@@ -647,41 +647,47 @@ App.ui.pages.renderBasicParams = async function() {
     App.ui.pages.updateOwnershipCost();
 
     const saveParamsBtn = document.getElementById('save-params-btn');
-    if (saveParamsBtn) {
-        saveParamsBtn.onclick = async function() {
-            const newBaseMileage = parseInt(document.getElementById('set-base-mileage')?.value) || 0;
-            const newBaseMotohours = parseInt(document.getElementById('set-base-motohours')?.value) || 0;
-            const dateStr = document.getElementById('purchase-date')?.value || '';
-            const newPurchaseDate = dateStr ? App.utils.ddmmYYYYtoISO(dateStr) : null;
-            const newPurchaseCost = parseFloat(document.getElementById('purchase-cost')?.value) || 0;
+if (saveParamsBtn) {
+    saveParamsBtn.onclick = async function() {
+        const newBaseMileage = parseInt(document.getElementById('set-base-mileage')?.value) || 0;
+        const newBaseMotohours = parseInt(document.getElementById('set-base-motohours')?.value) || 0;
+        const dateStr = document.getElementById('purchase-date')?.value || '';
+        const newPurchaseDate = dateStr ? App.utils.ddmmYYYYtoISO(dateStr) : null;
+        const newPurchaseCost = parseFloat(document.getElementById('purchase-cost')?.value) || 0;
 
-            // Сохраняем в vehicle_state через отдельный метод (синхронизация)
-            if (App.store.activeCarId && App.supa && typeof App.supa.updateVehicleState === 'function') {
-                await App.supa.updateVehicleState(App.store.activeCarId, {
-                    baseMileage: newBaseMileage,
-                    baseMotohours: newBaseMotohours,
-                    purchaseDate: newPurchaseDate,
-                    purchaseCost: newPurchaseCost
-                });
-            }
-            // Дублируем в локальное хранилище (car_settings) для офлайн-доступа
-            await App.storage.saveVehicleStateAndSettings({
+        // 1. Сначала сохраняем локально (в IndexedDB, car_settings)
+        await App.storage.saveVehicleStateAndSettings({
+            baseMileage: newBaseMileage,
+            baseMotohours: newBaseMotohours,
+            purchaseDate: newPurchaseDate,
+            purchaseCost: newPurchaseCost
+        }, {});
+        
+        // 2. Обновляем глобальное состояние
+        App.store.baseMileage = newBaseMileage;
+        App.store.baseMotohours = newBaseMotohours;
+        App.store.purchaseDate = newPurchaseDate;
+        App.store.purchaseCost = newPurchaseCost;
+        App.store.calculateOwnershipDays();
+        App.ui.pages.updateOwnershipCost();
+        
+        App.toast('Параметры сохранены локально', 'success');
+        
+        // 3. Фоновая синхронизация с сервером (не блокируем)
+        if (navigator.onLine && App.supa && typeof App.supa.updateVehicleState === 'function') {
+            // Запускаем синхронизацию без await, чтобы не ждать ответа
+            App.supa.updateVehicleState(App.store.activeCarId, {
                 baseMileage: newBaseMileage,
                 baseMotohours: newBaseMotohours,
                 purchaseDate: newPurchaseDate,
                 purchaseCost: newPurchaseCost
-            }, {});
-            
-            // Обновляем store
-            App.store.baseMileage = newBaseMileage;
-            App.store.baseMotohours = newBaseMotohours;
-            App.store.purchaseDate = newPurchaseDate;
-            App.store.purchaseCost = newPurchaseCost;
-            App.store.calculateOwnershipDays();
-            App.ui.pages.updateOwnershipCost();
-            App.toast('Параметры сохранены', 'success');
-        };
-    }
+            }).catch(err => {
+                console.warn('Не удалось синхронизировать параметры с сервером:', err);
+                App.toast('Данные сохранены локально, синхронизация с сервером будет позже', 'warning');
+            });
+        }
+    };
+}
 
     var fields = [
         document.getElementById('set-base-mileage'),
