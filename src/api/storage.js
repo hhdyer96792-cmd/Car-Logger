@@ -296,6 +296,7 @@ const methodMap = {
     mileage: 'loadMileageHistory'
 };
 
+// ИСПРАВЛЕНА: правильное сопоставление ключей хранилища
 const storeMap = {
     operations: 'operations',
     fuel_log: 'fuelLog',
@@ -327,11 +328,17 @@ App.storage.loadFirstPage = async function(table, pageSize = 50) {
             if (error) throw error;
             const carId = App.store.activeCarId;
             const items = (data || []).map(item => ({ ...item, car_id: carId }));
+            
+            // Сохраняем в IndexedDB
             await App.db.putMany(table, items);
+            
+            // Обновляем Store с проверкой существования массива
             const storeKey = storeMap[table];
-            if (storeKey && App.store[storeKey]) {
+            if (storeKey && App.store[storeKey] && Array.isArray(App.store[storeKey])) {
                 const newMap = new Map(items.map(i => [i.id, i]));
                 App.store[storeKey] = App.store[storeKey].filter(old => !newMap.has(old.id)).concat(items);
+            } else if (storeKey && !App.store[storeKey]) {
+                App.store[storeKey] = items;
             }
             return; // успех
         } catch (err) {
