@@ -1,4 +1,3 @@
-// src/state/store.js
 window.App = window.App || {};
 
 App.store = {
@@ -14,12 +13,6 @@ App.store = {
 
     cars: [],
     activeCarId: null,
-
-    // Premium поля
-    isPremium: false,
-    premiumTier: 'free',
-    premiumFeatures: [],
-    premiumExpiresAt: null,
 
     settings: {
         currentMileage: 0,
@@ -37,9 +30,11 @@ App.store = {
         vin: ''
     },
 
+    // Базовые параметры (для автомобиля)
     baseMileage: 0,
     baseMotohours: 0,
     purchaseDate: '',
+    purchaseCost: 0,
 
     ownershipDays: 0,
     ownershipDisplayMode: 'days',
@@ -198,6 +193,51 @@ App.store = {
                 localStorage.setItem('vesta_active_car_id', this.activeCarId);
             }
 
+            // Загрузка базовых параметров из car_settings
+            if (this.activeCarId) {
+                const carSettings = await App.db.getById('car_settings', this.activeCarId);
+                if (carSettings) {
+                    let decrypted = carSettings;
+                    const masterKey = App.db.encryption.getMasterKey();
+                    if (masterKey && carSettings.telegramToken && typeof carSettings.telegramToken === 'object') {
+                        decrypted = await App.db.encryption.decryptSettings(carSettings, masterKey);
+                    }
+                    decrypted.plateNumber = (decrypted.plateNumber && typeof decrypted.plateNumber !== 'object') ? String(decrypted.plateNumber) : '';
+                    decrypted.vin = (decrypted.vin && typeof decrypted.vin !== 'object') ? String(decrypted.vin) : '';
+                    Object.assign(this.settings, decrypted);
+                    
+                    // Читаем базовые параметры, если они сохранены в car_settings
+                    this.baseMileage = carSettings.baseMileage || 0;
+                    this.baseMotohours = carSettings.baseMotohours || 0;
+                    this.purchaseDate = carSettings.purchaseDate || '';
+                    this.purchaseCost = carSettings.purchaseCost || 0;
+                } else {
+                    // Если car_settings нет, пробуем загрузить через Supabase (только онлайн)
+                    if (navigator.onLine && App.supa && typeof App.supa.getVehicleState === 'function') {
+                        try {
+                            const state = await App.supa.getVehicleState(this.activeCarId);
+                            if (state) {
+                                this.baseMileage = state.base_mileage || 0;
+                                this.baseMotohours = state.base_motohours || 0;
+                                this.purchaseDate = state.purchase_date || '';
+                                this.purchaseCost = state.purchase_cost || 0;
+                                // Сохраняем в car_settings для офлайн-доступа
+                                await App.db.put('car_settings', {
+                                    car_id: this.activeCarId,
+                                    baseMileage: this.baseMileage,
+                                    baseMotohours: this.baseMotohours,
+                                    purchaseDate: this.purchaseDate,
+                                    purchaseCost: this.purchaseCost,
+                                    ...this.settings
+                                });
+                            }
+                        } catch (e) {
+                            console.warn('Failed to load base params from Supabase', e);
+                        }
+                    }
+                }
+            }
+
             const pending = await App.db.getAll('pending_actions');
             const uniquePending = [];
             const seenIds = new Set();
@@ -227,28 +267,6 @@ App.store = {
                 console.log('[Store] Отфильтровано записей, ожидающих удаления:', pendingDeleteIds.length);
             }
 
-            if (this.activeCarId) {
-                const carSettings = await App.db.getById('car_settings', this.activeCarId);
-                if (carSettings) {
-                    let decrypted = carSettings;
-                    const masterKey = App.db.encryption.getMasterKey();
-                    if (masterKey && carSettings.telegramToken && typeof carSettings.telegramToken === 'object') {
-                        decrypted = await App.db.encryption.decryptSettings(carSettings, masterKey);
-                    }
-                    decrypted.plateNumber = (decrypted.plateNumber && typeof decrypted.plateNumber !== 'object') ? String(decrypted.plateNumber) : '';
-                    decrypted.vin = (decrypted.vin && typeof decrypted.vin !== 'object') ? String(decrypted.vin) : '';
-                    Object.assign(this.settings, decrypted);
-                } else if (typeof App.storage.loadSettingsForCar === 'function') {
-                    await App.storage.loadSettingsForCar(this.activeCarId);
-                }
-                if (!carSettings && !this.settings.carBrand && !this.settings.carModel) {
-                    this.settings = { ...this.settings, carBrand: '', carModel: '', carYear: null, plateNumber: '', vin: '' };
-                }
-            }
-
-            this.baseMileage = 0;
-            this.baseMotohours = 0;
-            this.purchaseDate = '';
             this.calculateOwnershipDays();
             console.log('[Store] Данные загружены из IndexedDB с фильтром car_id =', carId);
         } catch (err) {
@@ -317,7 +335,14 @@ App.store = {
     saveSettingsToDB: async function() {
         const carId = this.activeCarId;
         if (!carId) return;
-        const settingsToSave = { car_id: carId, ...this.settings };
+        const settingsToSave = { 
+            car_id: carId, 
+            ...this.settings,
+            baseMileage: this.baseMileage,
+            baseMotohours: this.baseMotohours,
+            purchaseDate: this.purchaseDate,
+            purchaseCost: this.purchaseCost
+        };
         if (!settingsToSave.id) settingsToSave.id = carId;
         const masterKey = App.db.encryption.getMasterKey();
         if (masterKey) {
@@ -390,36 +415,19 @@ App.store = {
         this.activeCarId = carId;
         localStorage.setItem('vesta_active_car_id', carId);
         
-        // Сначала загружаем локальные данные (мгновенно)
         this.loadFromIndexedDB().catch(console.error);
         
-        // Затем пробуем загрузить с сервера с повторными попытками
-        const tryLoadWithRetry = async (retries = 3) => {
-            for (let i = 0; i < retries; i++) {
-                if (navigator.onLine) {
-                    try {
-                        await App.storage.loadAllData();
-                        return;
-                    } catch (err) {
-                        console.warn(`Попытка ${i + 1} загрузки данных не удалась:`, err);
-                        if (i === retries - 1) {
-                            if (typeof App.toast === 'function') {
-                                App.toast('Не удалось загрузить свежие данные с сервера. Отображаются кэшированные данные.', 'warning');
-                            }
-                        }
-                        await new Promise(r => setTimeout(r, 2000 * (i + 1)));
-                    }
-                } else {
-                    if (typeof App.toast === 'function') {
-                        App.toast('Нет соединения. Отображаются сохранённые данные.', 'info');
-                    }
-                    return;
-                }
-            }
-        };
-        tryLoadWithRetry();
+        if (typeof App.storage.loadSettingsForCar === 'function') {
+            App.storage.loadSettingsForCar(carId).then(() => {
+                if (typeof App.renderAll === 'function') App.renderAll();
+            }).catch(console.error);
+        }
+        
+        if (navigator.onLine && typeof App.storage.loadAllData === 'function') {
+            App.storage.loadAllData().catch(console.error);
+        }
     },
-
+    
     loadCars: function() {
         const self = this;
         return App.supa.loadCars().then(cars => {
