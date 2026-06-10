@@ -28,7 +28,6 @@ async function checkDuplicate(type, record) {
                 (p.analog && record.analog && p.analog === record.analog)
             );
         case 'mileage':
-            // Проверка дубликата по дате и пробегу (±5 км)
             return App.store.mileageHistory.some(m => 
                 m.date === record.date && Math.abs(m.mileage - record.mileage) <= 5
             );
@@ -40,12 +39,10 @@ async function checkDuplicate(type, record) {
 // Валидация даты в формате YYYY-MM-DD или ДД.ММ.ГГГГ / ДД/ММ/ГГГГ
 function isValidDate(dateStr) {
     if (!dateStr) return false;
-    // Уже YYYY-MM-DD
     if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
         const d = new Date(dateStr);
         return !isNaN(d.getTime());
     }
-    // DD.MM.YYYY или DD/MM/YYYY
     const parts = dateStr.split(/[.\/]/);
     if (parts.length === 3) {
         const day = parseInt(parts[0], 10);
@@ -78,6 +75,40 @@ function normalizeDate(dateStr) {
     return null;
 }
 
+// Показ модального окна с инструкцией
+function showImportInstructions(onProceed) {
+    const content = `
+        <div style="margin-bottom:16px;">
+            <p><strong>Как правильно импортировать данные</strong></p>
+            <p>1. Скачайте шаблон для выбранного типа данных (кнопка «Шаблон»).</p>
+            <p>2. Откройте файл в Excel или любом текстовом редакторе.</p>
+            <p>3. Заполните строки, начиная со второй, соблюдая формат:</p>
+            <ul style="margin:8px 0 8px 20px;">
+                <li><strong>Разделитель:</strong> точка с запятой (;)</li>
+                <li><strong>Дата:</strong> ГГГГ-ММ-ДД или ДД.ММ.ГГГГ / ДД/ММ/ГГГГ</li>
+                <li><strong>Числа:</strong> целые или дробные с точкой</li>
+                <li><strong>Логические поля:</strong> только Да / Нет</li>
+            </ul>
+            <p>4. Сохраните файл в кодировке UTF-8.</p>
+            <p>5. Нажмите «Загрузить и импортировать» и выберите подготовленный файл.</p>
+            <p class="hint">При ошибках в строках они будут пропущены, вы увидите отчёт.</p>
+        </div>
+        <div class="modal-actions" style="display:flex; gap:8px; justify-content:flex-end;">
+            <button id="import-proceed-btn" class="primary-btn">Продолжить</button>
+            <button id="import-cancel-btn" class="secondary-btn">Отмена</button>
+        </div>
+    `;
+    const modal = App.ui.createModal('Импорт данных', content);
+    const proceedBtn = modal.querySelector('#import-proceed-btn');
+    const cancelBtn = modal.querySelector('#import-cancel-btn');
+
+    proceedBtn.onclick = () => {
+        modal.remove();
+        if (typeof onProceed === 'function') onProceed();
+    };
+    cancelBtn.onclick = () => modal.remove();
+}
+
 App.ui.pages.initCsvImport = function() {
     var container = document.getElementById('csv-import-container');
     if (!container) return;
@@ -89,7 +120,7 @@ App.ui.pages.initCsvImport = function() {
     html += '<option value="fuel">Топливо</option>';
     html += '<option value="tires">Шины</option>';
     html += '<option value="parts">Запчасти</option>';
-    html += '<option value="mileage">История пробега</option>';  // ДОБАВЛЕНО
+    html += '<option value="mileage">История пробега</option>';
     html += '</select>';
     html += '<button id="csv-download-template" class="secondary-btn">Шаблон</button>';
     html += '</div>';
@@ -106,7 +137,7 @@ App.ui.pages.initCsvImport = function() {
     var templateBtn = document.getElementById('csv-download-template');
     var msgDiv = document.getElementById('csv-import-message');
 
-    // Кнопка "Шаблон" – скачивает CSV с заголовками
+    // Скачивание шаблона
     templateBtn.addEventListener('click', function() {
         var type = typeSelect.value;
         var headers = [];
@@ -132,6 +163,8 @@ App.ui.pages.initCsvImport = function() {
                 headers = ['Дата', 'Пробег', 'Моточасы'];
                 example = ['2025-01-15', '12500', '320'];
                 break;
+            default:
+                return;
         }
         var csvContent = headers.join(';') + '\n' + example.join(';');
         var blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -141,10 +174,14 @@ App.ui.pages.initCsvImport = function() {
         link.click();
     });
 
+    // Кнопка импорта – сначала показываем инструкцию
     importBtn.addEventListener('click', function() {
-        fileInput.click();
+        showImportInstructions(() => {
+            fileInput.click();
+        });
     });
 
+    // Обработка выбранного файла
     fileInput.addEventListener('change', function(e) {
         var file = e.target.files[0];
         if (!file) return;
@@ -158,7 +195,6 @@ App.ui.pages.initCsvImport = function() {
             }
             var headers = lines[0].split(';').map(function(h) { return h.trim(); });
             var records = [];
-            var errors = [];
             for (var i = 1; i < lines.length; i++) {
                 var values = lines[i].split(';');
                 var obj = {};
@@ -171,6 +207,7 @@ App.ui.pages.initCsvImport = function() {
             importRecordsWithValidation(typeSelect.value, records, msgDiv, headers);
         };
         reader.readAsText(file, 'UTF-8');
+        e.target.value = ''; // сброс, чтобы можно было выбрать тот же файл повторно
     });
 };
 
@@ -316,7 +353,6 @@ async function importRecordsWithValidation(type, records, msgDiv, headers) {
                         duplicates++;
                         continue;
                     }
-                    // Используем storage.addMileageRecord, чтобы запись попала в локальную БД и очередь синхронизации
                     await App.storage.addMileageRecord(mileageDate, mileage, motohours);
                     success++;
                     break;
@@ -330,10 +366,9 @@ async function importRecordsWithValidation(type, records, msgDiv, headers) {
     var message = `Готово: импортировано ${success} записей`;
     if (duplicates > 0) message += `, пропущено дубликатов: ${duplicates}`;
     if (invalidDates > 0) message += `, ошибок формата даты: ${invalidDates}`;
-    if (errors > 0) message += `, ошибок: ${errors}`;
+    if (errors > 0) message += `, прочих ошибок: ${errors}`;
     msgDiv.textContent = message;
     
-    // Обновляем данные в хранилище
     await App.storage.loadAllData();
     if (typeof App.ui.pages.renderHistoryCards === 'function') App.ui.pages.renderHistoryCards();
     if (typeof App.ui.pages.renderFuelTab === 'function') App.ui.pages.renderFuelTab();
