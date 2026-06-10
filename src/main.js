@@ -596,26 +596,26 @@
         setTimeout(() => { if (typeof App.initIcons === 'function') App.initIcons(); }, 200);
 
         // FAB-меню
-        (function() {
-            const fab = document.createElement('div'); fab.id = 'fab-menu';
-            fab.innerHTML = `<div id="fab-overlay" class="fab-overlay" style="display:none;"></div><button id="fab-main-btn" class="fab-main"><i data-lucide="plus"></i></button><div id="fab-actions" class="fab-actions"><button id="fab-mileage" class="fab-action" title="Пробег"><i data-lucide="gauge"></i></button><button id="fab-fuel" class="fab-action" title="Заправка"><i data-lucide="fuel"></i></button><button id="fab-service" class="fab-action" title="ТО"><i data-lucide="wrench"></i></button><button id="fab-part" class="fab-action" title="Запчасть"><i data-lucide="package"></i></button></div>`;
-            document.body.appendChild(fab); App.initIcons();
-            const mainBtn = document.getElementById('fab-main-btn'), actions = document.getElementById('fab-actions'), overlay = document.getElementById('fab-overlay');
-            let open = false;
-            mainBtn.onclick = () => { open = !open; overlay.style.display = open ? 'block' : 'none'; actions.classList.toggle('open', open); };
-            overlay.onclick = () => { open = false; overlay.style.display = 'none'; actions.classList.remove('open'); };
-            document.getElementById('fab-fuel').onclick = () => { if (typeof App.ui.pages.openFuelModal === 'function') App.ui.pages.openFuelModal(null); };
-            document.getElementById('fab-service').onclick = () => { if (typeof App.ui.pages.openOperationForm === 'function') App.ui.pages.openOperationForm(null); };
-            document.getElementById('fab-part').onclick = () => { if (typeof App.ui.pages.openPartForm === 'function') App.ui.pages.openPartForm(null); };
-            document.getElementById('fab-mileage').onclick = () => {
-                if (typeof App.events.updateMileageAndAverages === 'function') {
-                    App.events.updateMileageAndAverages();
-                } else {
-                    console.warn('[FAB] updateMileageAndAverages not available');
-                }
-            };
-        })();
-    }
+(function() {
+    const fab = document.createElement('div'); fab.id = 'fab-menu';
+    fab.innerHTML = `<div id="fab-overlay" class="fab-overlay" style="display:none;"></div><button id="fab-main-btn" class="fab-main"><i data-lucide="plus"></i></button><div id="fab-actions" class="fab-actions"><button id="fab-mileage" class="fab-action" title="Пробег"><i data-lucide="gauge"></i></button><button id="fab-fuel" class="fab-action" title="Заправка"><i data-lucide="fuel"></i></button><button id="fab-service" class="fab-action" title="ТО"><i data-lucide="wrench"></i></button><button id="fab-part" class="fab-action" title="Запчасть"><i data-lucide="package"></i></button></div>`;
+    document.body.appendChild(fab); App.initIcons();
+    const mainBtn = document.getElementById('fab-main-btn'), actions = document.getElementById('fab-actions'), overlay = document.getElementById('fab-overlay');
+    let open = false;
+    mainBtn.onclick = () => { open = !open; overlay.style.display = open ? 'block' : 'none'; actions.classList.toggle('open', open); };
+    overlay.onclick = () => { open = false; overlay.style.display = 'none'; actions.classList.remove('open'); };
+    document.getElementById('fab-fuel').onclick = () => { if (typeof App.ui.pages.openFuelModal === 'function') App.ui.pages.openFuelModal(null); };
+    document.getElementById('fab-service').onclick = () => { if (typeof App.ui.pages.openOperationForm === 'function') App.ui.pages.openOperationForm(null); };
+    document.getElementById('fab-part').onclick = () => { if (typeof App.ui.pages.openPartForm === 'function') App.ui.pages.openPartForm(null); };
+    // ИСПРАВЛЕНО: теперь открываем модалку для ввода пробега/моточасов
+    document.getElementById('fab-mileage').onclick = () => {
+        if (typeof App.ui.pages.openMileageModal === 'function') {
+            App.ui.pages.openMileageModal();
+        } else {
+            console.warn('[FAB] openMileageModal not available');
+        }
+    };
+})();
 
     window.recoverViaTelegram = async function() {
         try {
