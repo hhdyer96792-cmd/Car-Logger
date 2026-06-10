@@ -261,14 +261,10 @@ App.events.initNavigation = function() {
         });
     });
 
-    // Обработчик для кнопки "Ещё" – используем только делегирование, не вешаем напрямую
-    // Удаляем старые обработчики, если они были
     const moreBtn = document.getElementById('more-menu-btn');
     if (moreBtn) {
-        // Удаляем все обработчики через cloneNode
         const newMoreBtn = moreBtn.cloneNode(true);
         moreBtn.parentNode.replaceChild(newMoreBtn, moreBtn);
-        // Не вешаем обработчик напрямую – используем делегирование в setupDelegation
     }
 
     const drawer = document.getElementById('drawer-menu');
@@ -288,10 +284,8 @@ App.events.initNavigation = function() {
     document.addEventListener('keydown', e => {
         if (e.key === 'Escape') {
             App.events.closeDrawer();
-            // Закрываем модалку, если она открыта
             const modal = document.querySelector('.modal');
             if (modal && modal.remove) modal.remove();
-            // Убираем блокировку body, если она осталась
             document.body.classList.remove('auth-modal-open');
             document.body.style.overflow = '';
         }
@@ -378,7 +372,6 @@ App.events.switchToTab = function(tabId) {
 };
 
 App.events.openDrawer = function() {
-    // Проверяем, открыта ли модалка
     const modal = document.querySelector('.modal');
     if (modal && modal.style.display !== 'none') {
         console.log('[Drawer] Не открываем drawer, так как открыта модалка');
@@ -487,11 +480,11 @@ App.events.initDirectListeners = function() {
     });
     
     const mobileUpdateMileageBtn = document.getElementById('mobile-dash-update-mileage-btn');
-if (mobileUpdateMileageBtn) {
-    mobileUpdateMileageBtn.addEventListener('click', () => {
-        App.events.updateMileageAndAverages();
-    });
-}
+    if (mobileUpdateMileageBtn) {
+        mobileUpdateMileageBtn.addEventListener('click', () => {
+            App.events.updateMileageAndAverages();
+        });
+    }
 
     const dashAddFuelBtn = document.getElementById('dash-add-fuel-btn');
     if (dashAddFuelBtn) dashAddFuelBtn.addEventListener('click', () => { App.ui.pages.openFuelModal(null); });
@@ -618,6 +611,90 @@ App.events.handleImport = function(e) {
     };
     reader.readAsText(file);
     e.target.value = '';
+};
+
+// === НОВАЯ ФУНКЦИЯ: открытие модалки для ввода пробега и моточасов ===
+App.ui.pages.openMileageModal = function() {
+    const content = `
+        <form id="mileage-form">
+            <label>Пробег (км)</label>
+            <input type="number" id="modal-mileage" step="1" value="${App.store.settings.currentMileage || 0}" required>
+            <label>Моточасы (ч)</label>
+            <input type="number" id="modal-motohours" step="0.1" value="${App.store.settings.currentMotohours || 0}">
+            <div class="modal-actions" style="display:flex; gap:8px; justify-content:flex-end; margin-top:16px;">
+                <button type="submit" class="primary-btn">Сохранить</button>
+                <button type="button" class="cancel-btn secondary-btn">Отмена</button>
+            </div>
+        </form>
+    `;
+    const modal = App.ui.createModal('Обновить пробег и моточасы', content);
+    const form = modal.querySelector('#mileage-form');
+    const mileageInput = modal.querySelector('#modal-mileage');
+    const motohoursInput = modal.querySelector('#modal-motohours');
+
+    form.onsubmit = async (e) => {
+        e.preventDefault();
+        const newM = App.utils.validateNumberInput(mileageInput, false);
+        const newH = App.utils.validateNumberInput(motohoursInput, true);
+        if (newM === null) return;
+
+        if (newM < (App.store.baseMileage || 0)) {
+            App.toast('Значение пробега меньше базового. Исправьте базовое значение на вкладке Автомобиль', 'error');
+            return;
+        }
+        if (newH < (App.store.baseMotohours || 0)) {
+            App.toast('Значение моточасов меньше базового. Исправьте базовое значение на вкладке Автомобиль', 'error');
+            return;
+        }
+
+        const today = new Date().toISOString().split('T')[0];
+        await App.storage.addMileageRecord(today, newM, newH);
+        App.store.mileageHistory.push({
+            uuid: crypto.randomUUID(),
+            date: today,
+            mileage: newM,
+            motohours: newH
+        });
+        App.store.mileageHistory.sort((a, b) => new Date(a.date) - new Date(b.date));
+
+        if (App.store.mileageHistory.length >= 2) {
+            const last = App.store.mileageHistory[App.store.mileageHistory.length - 1];
+            const prev = App.store.mileageHistory[App.store.mileageHistory.length - 2];
+            const days = (new Date(last.date) - new Date(prev.date)) / 86400000;
+            if (days > 0) {
+                App.store.settings.avgDailyMileage = (last.mileage - prev.mileage) / days;
+                App.store.settings.avgDailyMotohours = (last.motohours - prev.motohours) / days;
+            }
+        } else {
+            App.store.settings.avgDailyMileage = App.store.baseMileage > 0 ? (newM - App.store.baseMileage) / 30 : 20;
+            App.store.settings.avgDailyMotohours = App.store.baseMotohours > 0 ? (newH - App.store.baseMotohours) / 30 : 1.65;
+        }
+
+        App.store.settings.currentMileage = newM;
+        App.store.settings.currentMotohours = newH;
+
+        if (App.config.USE_SUPABASE) {
+            App.storage.addMileageRecord(today, newM, newH)
+                .then(() => App.storage.saveSettings({
+                    currentMileage: newM,
+                    currentMotohours: newH,
+                    avgDailyMileage: App.store.settings.avgDailyMileage,
+                    avgDailyMotohours: App.store.settings.avgDailyMotohours,
+                    telegramToken: App.store.settings.telegramToken,
+                    telegramChatId: App.store.settings.telegramChatId,
+                    notificationMethod: App.store.settings.notificationMethod
+                }))
+                .catch(err => console.error('Ошибка сохранения пробега в Supabase:', err));
+        }
+
+        if (typeof App.renderAll === 'function') App.renderAll();
+        if (typeof App.ui.pages.renderTop5Widget === 'function') App.ui.pages.renderTop5Widget();
+        App.toast('Пробег и моточасы обновлены', 'success');
+
+        modal.remove();
+    };
+
+    modal.querySelector('.cancel-btn').onclick = () => modal.remove();
 };
 
 App.events.updateMileageAndAverages = function() {
