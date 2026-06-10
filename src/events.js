@@ -485,6 +485,13 @@ App.events.initDirectListeners = function() {
         const newMileageInput = document.getElementById('new-mileage');
         if (newMileageInput) setTimeout(() => newMileageInput.focus(), 200);
     });
+    
+    const mobileUpdateMileageBtn = document.getElementById('mobile-dash-update-mileage-btn');
+if (mobileUpdateMileageBtn) {
+    mobileUpdateMileageBtn.addEventListener('click', () => {
+        App.events.updateMileageAndAverages();
+    });
+}
 
     const dashAddFuelBtn = document.getElementById('dash-add-fuel-btn');
     if (dashAddFuelBtn) dashAddFuelBtn.addEventListener('click', () => { App.ui.pages.openFuelModal(null); });
