@@ -99,10 +99,9 @@
     <div id="data-panel" style="display:none;">
         <!-- Дашборд -->
         <div id="tab-dashboard" class="tab-content active">
-            <!-- Десктопная часть генерируется через JS -->
             <div class="desktop-only" id="desktop-dashboard-container"></div>
-            <!-- Мобильная часть -->
             <div class="mobile-only" id="mobile-dashboard">
+                <!-- ... мобильный дашборд ... -->
                 <div class="card mode-card-mobile">
                     <div style="display:flex; align-items:center; gap:8px;">
                         <i data-lucide="car"></i>
@@ -168,8 +167,9 @@
             </div>
         </div>
 
-        <!-- ТО (переработан) -->
+        <!-- ТО -->
         <div id="tab-to" class="tab-content">
+            <!-- ... содержимое вкладки ТО ... -->
             <div class="to-top-row">
                 <div class="card to-total-cost-card" id="to-total-cost-card">
                     <h3><i data-lucide="dollar-sign"></i> Всего затрат на ТО</h3>
@@ -223,6 +223,7 @@
 
         <!-- Финансы -->
         <div id="tab-stats" class="tab-content">
+            <!-- ... содержимое ... -->
             <div class="finance-period-switch" id="finance-period-switch">
                 <button class="period-btn active" data-period="month">Месяц</button>
                 <button class="period-btn" data-period="quarter">Квартал</button>
@@ -253,6 +254,7 @@
 
         <!-- Топливо -->
         <div id="tab-fuel" class="tab-content">
+            <!-- ... -->
             <div class="fuel-actions-bar">
                 <button id="add-fuel-btn" class="primary-btn"><i data-lucide="plus"></i> Добавить заправку</button>
                 <button id="voice-fuel-btn" class="secondary-btn" title="Голосовой ввод"><i data-lucide="mic"></i> Голосовой</button>
@@ -284,6 +286,7 @@
 
         <!-- Шины -->
         <div id="tab-tires" class="tab-content">
+            <!-- ... -->
             <div class="card total-tires-card" id="total-tires-card"><h3><i data-lucide="circle-dollar-sign"></i> Всего затрат на колеса</h3><div class="total-cost-value" id="tires-total-cost">0 ₽</div></div>
             <div class="card calculator-card">
                 <h3><i data-lucide="calculator"></i> Калькулятор изменения показаний спидометра</h3>
@@ -301,6 +304,7 @@
 
         <!-- История -->
         <div id="tab-history" class="tab-content">
+            <!-- ... -->
             <div class="history-filters-bar" id="history-filters-bar">
                 <label class="filter-label">Период: <select id="history-period-select"><option value="all">Весь период</option><option value="year">Последний год</option><option value="6months">Последние 6 месяцев</option><option value="quarter">Последний квартал</option><option value="month">Последний месяц</option><option value="week">Последняя неделя</option></select></label>
                 <label class="filter-label">Операция: <select id="history-operation-filter"><option value="">Все операции</option></select></label>
@@ -320,6 +324,7 @@
 
         <!-- Запчасти -->
         <div id="tab-parts" class="tab-content">
+            <!-- ... -->
             <div class="card total-parts-card" id="total-parts-card"><h3><i data-lucide="package"></i> Всего затрат на запчасти</h3><div class="total-cost-value" id="parts-total-cost">0 ₽</div></div>
             <div class="parts-period-switch" id="parts-period-switch"><button class="period-btn active" data-period="all">Всё время</button><button class="period-btn" data-period="month">Месяц</button><button class="period-btn" data-period="quarter">Квартал</button><button class="period-btn" data-period="year">Год</button></div>
             <div class="card chart-card"><h3><i data-lucide="pie-chart"></i> Распределение затрат по категориям</h3><canvas id="partsPieChart" height="200"></canvas></div>
@@ -352,8 +357,28 @@
                 <div class="car-params-actions"><button id="save-params-btn" class="secondary-btn"><i data-lucide="save"></i> Сохранить</button><button id="edit-params-btn" class="icon-btn" title="Редактировать"><i data-lucide="pencil"></i></button><button id="clear-params-btn" class="icon-btn" title="Очистить данные"><i data-lucide="trash-2"></i></button></div>
             </div>
             <div class="card car-sharing-card"><h3><i data-lucide="users"></i> Совместный доступ</h3><button id="invite-btn" class="secondary-btn" style="margin-bottom:12px;"><i data-lucide="user-plus"></i> Пригласить пользователя</button><div id="sharing-container"><p class="hint">Загрузка...</p></div></div>
-            <div class="card car-export-card"><h3><i data-lucide="download"></i> Экспорт данных</h3><div style="display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end;"><label style="flex: 1; min-width: 180px;">Тип данных: <select id="export-type-select-car"><option value="to">Журнал ТО</option><option value="fuel">Топливо</option><option value="tires">Шины</option><option value="parts">Запчасти</option><option value="history">История ТО</option><option value="all">Все данные</option></select></label><label style="flex: 0 0 auto;">Формат: <select id="export-format-select-car"><option value="csv">CSV (csv)</option><option value="xlsx">Excel (XLSX)</option></select></label><button id="export-data-btn-car" class="primary-btn"><i data-lucide="download"></i> Экспорт данных</button></div></div>
-            <div class="card car-documents-card"><h3><i data-lucide="file-text"></i> Документы</h3><p class="hint">Просто сфотографируйте чек, полис или заказ-наряд — дата и тип подставятся сами. Можно добавить сумму позже.</p><div class="doc-add-area"><button id="add-document-btn" class="primary-btn"><i data-lucide="camera"></i> Фото</button><button id="upload-document-btn" class="secondary-btn"><i data-lucide="upload"></i> Загрузить</button><input type="file" id="doc-file-input" accept="image/*" capture="environment" style="display:none;"></div><div id="documents-accordions"></div></div>
+
+            <!-- Блок экспорта данных -->
+            <div class="card car-export-card">
+                <h3><i data-lucide="download"></i> Экспорт данных</h3>
+                <div style="display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end;">
+                    <label style="flex: 1; min-width: 180px;">Тип данных: <select id="export-type-select-car"><option value="to">Журнал ТО</option><option value="fuel">Топливо</option><option value="tires">Шины</option><option value="parts">Запчасти</option><option value="history">История ТО</option><option value="all">Все данные</option></select></label>
+                    <label style="flex: 0 0 auto;">Формат: <select id="export-format-select-car"><option value="csv">CSV (csv)</option><option value="xlsx">Excel (XLSX)</option></select></label>
+                    <button id="export-data-btn-car" class="primary-btn"><i data-lucide="download"></i> Экспорт данных</button>
+                </div>
+            </div>
+
+            <!-- Блок импорта CSV (ДОБАВЛЕН) -->
+            <div class="card" id="csv-import-container">
+                <!-- Содержимое будет заполнено из importCsv.js -->
+            </div>
+
+            <div class="card car-documents-card">
+                <h3><i data-lucide="file-text"></i> Документы</h3>
+                <p class="hint">Просто сфотографируйте чек, полис или заказ-наряд — дата и тип подставятся сами. Можно добавить сумму позже.</p>
+                <div class="doc-add-area"><button id="add-document-btn" class="primary-btn"><i data-lucide="camera"></i> Фото</button><button id="upload-document-btn" class="secondary-btn"><i data-lucide="upload"></i> Загрузить</button><input type="file" id="doc-file-input" accept="image/*" capture="environment" style="display:none;"></div>
+                <div id="documents-accordions"></div>
+            </div>
         </div>
 
         <!-- Настройки -->
