@@ -596,126 +596,144 @@
         setTimeout(() => { if (typeof App.initIcons === 'function') App.initIcons(); }, 200);
 
         // FAB-меню
-(function() {
-    const fab = document.createElement('div'); fab.id = 'fab-menu';
-    fab.innerHTML = `<div id="fab-overlay" class="fab-overlay" style="display:none;"></div><button id="fab-main-btn" class="fab-main"><i data-lucide="plus"></i></button><div id="fab-actions" class="fab-actions"><button id="fab-mileage" class="fab-action" title="Пробег"><i data-lucide="gauge"></i></button><button id="fab-fuel" class="fab-action" title="Заправка"><i data-lucide="fuel"></i></button><button id="fab-service" class="fab-action" title="ТО"><i data-lucide="wrench"></i></button><button id="fab-part" class="fab-action" title="Запчасть"><i data-lucide="package"></i></button></div>`;
-    document.body.appendChild(fab); App.initIcons();
-    const mainBtn = document.getElementById('fab-main-btn'), actions = document.getElementById('fab-actions'), overlay = document.getElementById('fab-overlay');
-    let open = false;
-    mainBtn.onclick = () => { open = !open; overlay.style.display = open ? 'block' : 'none'; actions.classList.toggle('open', open); };
-    overlay.onclick = () => { open = false; overlay.style.display = 'none'; actions.classList.remove('open'); };
-    document.getElementById('fab-fuel').onclick = () => { if (typeof App.ui.pages.openFuelModal === 'function') App.ui.pages.openFuelModal(null); };
-    document.getElementById('fab-service').onclick = () => { if (typeof App.ui.pages.openOperationForm === 'function') App.ui.pages.openOperationForm(null); };
-    document.getElementById('fab-part').onclick = () => { if (typeof App.ui.pages.openPartForm === 'function') App.ui.pages.openPartForm(null); };
-    // ИСПРАВЛЕНО: теперь открываем модалку для ввода пробега/моточасов
-    document.getElementById('fab-mileage').onclick = () => {
-        if (typeof App.ui.pages.openMileageModal === 'function') {
-            App.ui.pages.openMileageModal();
-        } else {
-            console.warn('[FAB] openMileageModal not available');
-        }
-    };
-})();
+        (function() {
+            const fab = document.createElement('div');
+            fab.id = 'fab-menu';
+            fab.innerHTML = `<div id="fab-overlay" class="fab-overlay" style="display:none;"></div><button id="fab-main-btn" class="fab-main"><i data-lucide="plus"></i></button><div id="fab-actions" class="fab-actions"><button id="fab-mileage" class="fab-action" title="Пробег"><i data-lucide="gauge"></i></button><button id="fab-fuel" class="fab-action" title="Заправка"><i data-lucide="fuel"></i></button><button id="fab-service" class="fab-action" title="ТО"><i data-lucide="wrench"></i></button><button id="fab-part" class="fab-action" title="Запчасть"><i data-lucide="package"></i></button></div>`;
+            document.body.appendChild(fab);
+            App.initIcons();
+            const mainBtn = document.getElementById('fab-main-btn');
+            const actions = document.getElementById('fab-actions');
+            const overlay = document.getElementById('fab-overlay');
+            let open = false;
+            mainBtn.onclick = () => {
+                open = !open;
+                overlay.style.display = open ? 'block' : 'none';
+                actions.classList.toggle('open', open);
+            };
+            overlay.onclick = () => {
+                open = false;
+                overlay.style.display = 'none';
+                actions.classList.remove('open');
+            };
+            document.getElementById('fab-fuel').onclick = () => {
+                if (typeof App.ui.pages.openFuelModal === 'function') App.ui.pages.openFuelModal(null);
+            };
+            document.getElementById('fab-service').onclick = () => {
+                if (typeof App.ui.pages.openOperationForm === 'function') App.ui.pages.openOperationForm(null);
+            };
+            document.getElementById('fab-part').onclick = () => {
+                if (typeof App.ui.pages.openPartForm === 'function') App.ui.pages.openPartForm(null);
+            };
+            document.getElementById('fab-mileage').onclick = () => {
+                if (typeof App.ui.pages.openMileageModal === 'function') {
+                    App.ui.pages.openMileageModal();
+                } else {
+                    console.warn('[FAB] openMileageModal not available');
+                }
+            };
+        })();
 
-    window.recoverViaTelegram = async function() {
-        try {
-            const username = await App.ui.promptModalAsync('Восстановление через Telegram', 'Введите ваш логин');
-            if (!username) return;
-            const { data, error } = await App.supabase.functions.invoke('send-telegram-recovery', { body: { username } });
-            if (error || !data || !data.success) {
-                App.toast(data?.error || 'Ошибка при отправке кода.', 'error');
-                return;
+        window.recoverViaTelegram = async function() {
+            try {
+                const username = await App.ui.promptModalAsync('Восстановление через Telegram', 'Введите ваш логин');
+                if (!username) return;
+                const { data, error } = await App.supabase.functions.invoke('send-telegram-recovery', { body: { username } });
+                if (error || !data || !data.success) {
+                    App.toast(data?.error || 'Ошибка при отправке кода.', 'error');
+                    return;
+                }
+                App.toast('Код отправлен в Telegram.', 'info');
+                const code = await App.ui.promptModalAsync('Код из Telegram', 'Введите полученный код');
+                if (!code) return;
+                const tokenRes = await App.supabase.rpc('verify_recovery_code', { p_username: username, p_code: code });
+                if (tokenRes.error || !tokenRes.data) {
+                    App.toast('Неверный код или срок истёк', 'error');
+                    return;
+                }
+                const resetToken = tokenRes.data;
+                const newPassword = await App.ui.promptModalAsync('Новый пароль', 'Введите новый пароль (минимум 6 символов)');
+                if (!newPassword || newPassword.length < 6) {
+                    App.toast('Пароль должен содержать не менее 6 символов', 'error');
+                    return;
+                }
+                const fetchRes = await fetch('https://qbjlccdqaudyvedpysil.supabase.co/functions/v1/secure-reset-password', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ reset_token: resetToken, newPassword: newPassword })
+                });
+                if (fetchRes.ok) {
+                    await App.ui.alertModal('Пароль успешно изменён! Теперь войдите с новым паролем.');
+                } else {
+                    const errText = await fetchRes.text();
+                    App.toast('Ошибка при сбросе: ' + errText, 'error');
+                }
+            } catch (err) {
+                console.error(err);
+                App.toast('Произошла ошибка. Попробуйте позже.', 'error');
+            } finally {
+                if (App.ui.currentModal) App.ui.currentModal.remove();
+                document.body.style.overflow = '';
+                document.body.classList.remove('auth-modal-open');
+                if (typeof App.events.closeDrawer === 'function') App.events.closeDrawer();
             }
-            App.toast('Код отправлен в Telegram.', 'info');
-            const code = await App.ui.promptModalAsync('Код из Telegram', 'Введите полученный код');
-            if (!code) return;
-            const tokenRes = await App.supabase.rpc('verify_recovery_code', { p_username: username, p_code: code });
-            if (tokenRes.error || !tokenRes.data) {
-                App.toast('Неверный код или срок истёк', 'error');
-                return;
-            }
-            const resetToken = tokenRes.data;
-            const newPassword = await App.ui.promptModalAsync('Новый пароль', 'Введите новый пароль (минимум 6 символов)');
-            if (!newPassword || newPassword.length < 6) {
-                App.toast('Пароль должен содержать не менее 6 символов', 'error');
-                return;
-            }
-            const fetchRes = await fetch('https://qbjlccdqaudyvedpysil.supabase.co/functions/v1/secure-reset-password', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ reset_token: resetToken, newPassword: newPassword })
-            });
-            if (fetchRes.ok) {
-                await App.ui.alertModal('Пароль успешно изменён! Теперь войдите с новым паролем.');
-            } else {
-                const errText = await fetchRes.text();
-                App.toast('Ошибка при сбросе: ' + errText, 'error');
-            }
-        } catch (err) {
-            console.error(err);
-            App.toast('Произошла ошибка. Попробуйте позже.', 'error');
-        } finally {
-            if (App.ui.currentModal) App.ui.currentModal.remove();
-            document.body.style.overflow = '';
-            document.body.classList.remove('auth-modal-open');
-            if (typeof App.events.closeDrawer === 'function') App.events.closeDrawer();
-        }
-    };
+        };
 
-    window.recoverViaRecoveryCode = async function() {
-        try {
-            const username = await App.ui.promptModalAsync('Восстановление по резервному коду', 'Введите ваш логин');
-            if (!username) return;
-            const code = await App.ui.promptModalAsync('Резервный код', 'Введите код');
-            if (!code) return;
-            const tokenRes = await App.supabase.rpc('verify_recovery_code', { p_username: username, p_code: code });
-            if (tokenRes.error || !tokenRes.data) {
-                App.toast('Неверный код или срок истёк', 'error');
-                return;
+        window.recoverViaRecoveryCode = async function() {
+            try {
+                const username = await App.ui.promptModalAsync('Восстановление по резервному коду', 'Введите ваш логин');
+                if (!username) return;
+                const code = await App.ui.promptModalAsync('Резервный код', 'Введите код');
+                if (!code) return;
+                const tokenRes = await App.supabase.rpc('verify_recovery_code', { p_username: username, p_code: code });
+                if (tokenRes.error || !tokenRes.data) {
+                    App.toast('Неверный код или срок истёк', 'error');
+                    return;
+                }
+                const resetToken = tokenRes.data;
+                const newPassword = await App.ui.promptModalAsync('Новый пароль', 'Введите новый пароль (минимум 6 символов)');
+                if (!newPassword || newPassword.length < 6) {
+                    App.toast('Пароль должен содержать не менее 6 символов', 'error');
+                    return;
+                }
+                const fetchRes = await fetch('https://qbjlccdqaudyvedpysil.supabase.co/functions/v1/secure-reset-password', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ reset_token: resetToken, newPassword: newPassword })
+                });
+                if (fetchRes.ok) {
+                    await App.ui.alertModal('Пароль успешно изменён! Теперь войдите с новым паролем.');
+                } else {
+                    const errText = await fetchRes.text();
+                    App.toast('Ошибка при сбросе: ' + errText, 'error');
+                }
+            } catch (err) {
+                console.error(err);
+                App.toast('Произошла ошибка. Попробуйте позже.', 'error');
+            } finally {
+                if (App.ui.currentModal) App.ui.currentModal.remove();
+                document.body.style.overflow = '';
+                document.body.classList.remove('auth-modal-open');
+                if (typeof App.events.closeDrawer === 'function') App.events.closeDrawer();
             }
-            const resetToken = tokenRes.data;
-            const newPassword = await App.ui.promptModalAsync('Новый пароль', 'Введите новый пароль (минимум 6 символов)');
-            if (!newPassword || newPassword.length < 6) {
-                App.toast('Пароль должен содержать не менее 6 символов', 'error');
-                return;
-            }
-            const fetchRes = await fetch('https://qbjlccdqaudyvedpysil.supabase.co/functions/v1/secure-reset-password', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ reset_token: resetToken, newPassword: newPassword })
-            });
-            if (fetchRes.ok) {
-                await App.ui.alertModal('Пароль успешно изменён! Теперь войдите с новым паролем.');
-            } else {
-                const errText = await fetchRes.text();
-                App.toast('Ошибка при сбросе: ' + errText, 'error');
-            }
-        } catch (err) {
-            console.error(err);
-            App.toast('Произошла ошибка. Попробуйте позже.', 'error');
-        } finally {
-            if (App.ui.currentModal) App.ui.currentModal.remove();
-            document.body.style.overflow = '';
-            document.body.classList.remove('auth-modal-open');
-            if (typeof App.events.closeDrawer === 'function') App.events.closeDrawer();
-        }
-    };
+        };
 
-    window.generateAndShowRecoveryCodes = async function(userId, username) {
-        try {
-            const { data: codes, error } = await App.supabase.rpc('generate_recovery_codes', { p_user_id: userId });
-            if (error || !codes || codes.length === 0) {
-                console.error('Ошибка генерации кодов:', error);
+        window.generateAndShowRecoveryCodes = async function(userId, username) {
+            try {
+                const { data: codes, error } = await App.supabase.rpc('generate_recovery_codes', { p_user_id: userId });
+                if (error || !codes || codes.length === 0) {
+                    console.error('Ошибка генерации кодов:', error);
+                    await App.ui.alertModal('Не удалось сгенерировать коды. Попробуйте позже.');
+                    return;
+                }
+                const msg = 'Ваши резервные коды для восстановления доступа (сохраните их!):\n\n' + codes.join('\n');
+                await App.ui.alertModal(msg);
+            } catch (err) {
+                console.error(err);
                 await App.ui.alertModal('Не удалось сгенерировать коды. Попробуйте позже.');
-                return;
             }
-            const msg = 'Ваши резервные коды для восстановления доступа (сохраните их!):\n\n' + codes.join('\n');
-            await App.ui.alertModal(msg);
-        } catch (err) {
-            console.error(err);
-            await App.ui.alertModal('Не удалось сгенерировать коды. Попробуйте позже.');
-        }
-    };
+        };
+    }
 
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', onReady);
     else onReady();
