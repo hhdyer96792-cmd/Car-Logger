@@ -25,7 +25,6 @@
     const sidebarLoginBtn = document.getElementById('sidebar-login');
     const drawerLoginBtn = document.getElementById('drawer-login');
 
-    // Функция проверки реальной доступности Supabase с повторными попытками
     async function waitForSupabase(retries = 5, delay = 2000) {
         for (let i = 0; i < retries; i++) {
             const online = await App.network.isReallyOnline();
@@ -189,7 +188,6 @@
                     App.toast('Введите логин и пароль', 'error');
                     return;
                 }
-                // Проверка сети перед отправкой
                 const isOnline = await App.network.isReallyOnline();
                 if (!isOnline) {
                     App.toast('Нет соединения с сервером. Проверьте интернет и попробуйте снова.', 'error');
@@ -356,7 +354,6 @@
                     const dataPanel = document.getElementById('data-panel');
                     if (dataPanel) dataPanel.style.display = 'block';
 
-                    // PIN / мастер-пароль
                     let masterPassword = null;
                     const hasPin = App.localAuth && await App.localAuth.isPinSet();
                     if (hasPin) {
@@ -426,7 +423,6 @@
                         }
                     }
 
-                    // Автомобили
                     const { data: { user } } = await App.supabase.auth.getUser();
                     const username = user?.user_metadata?.username || user?.email?.split('@')[0] || '';
                     if (username) localStorage.setItem('vesta_username', username);
@@ -454,7 +450,6 @@
                         if (typeof App.ui.pages.renderCarTab === 'function') App.ui.pages.renderCarTab();
                     }
 
-                    // Загружаем данные
                     showLoadingSpinner();
                     try {
                         if (typeof App.storage.loadAllData === 'function') {
@@ -504,14 +499,12 @@
             }
 
             if (navigator.onLine && App.db.sync) {
-                // Проверяем доступность Supabase перед синхронизацией
                 const available = await waitForSupabase(3, 1000);
                 if (available) {
                     App.db.sync.processSyncQueue().catch(()=>{});
                 }
             }
 
-            // Увеличиваем интервал синхронизации до 30 секунд (было 60)
             syncInterval = setInterval(() => {
                 if (navigator.onLine && App.db.sync && !App.db.sync._isRunning) {
                     App.db.sync.processSyncQueue().catch(()=>{});
@@ -555,7 +548,6 @@
             else {
                 const savedUsername = localStorage.getItem('vesta_username');
                 if (savedUsername) updateUsernameDisplay(savedUsername);
-                // setupAuthSubscription уже обработает SIGNED_IN
             }
         });
 
@@ -570,10 +562,8 @@
         window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); deferredPrompt = e; setInstallButtonVisible(isLoggedIn); });
         window.addEventListener('appinstalled', () => { deferredPrompt = null; setInstallButtonVisible(false); });
 
-        // Улучшенная обработка восстановления сети
         window.addEventListener('online', async () => {
             console.log('[Main] Сеть восстановлена');
-            // Сначала убедимся, что Supabase доступен
             const available = await waitForSupabase(3, 2000);
             if (!available) {
                 console.warn('[Main] Supabase всё ещё недоступен, синхронизация отложена');
@@ -583,14 +573,12 @@
                 App.db.sync.processSyncQueue().catch(console.error);
             }
             if (App.realtime?.resubscribe) App.realtime.resubscribe();
-            // Дополнительно: перезагружаем данные для текущего автомобиля
             if (App.store.activeCarId) {
                 App.storage.loadAllData().catch(console.warn);
             }
         });
         window.addEventListener('offline', () => {});
 
-        // Обработчик сообщений от Service Worker
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.addEventListener('message', event => {
                 if (event.data?.type === 'SYNC_TRIGGERED') {
@@ -608,27 +596,26 @@
         setTimeout(() => { if (typeof App.initIcons === 'function') App.initIcons(); }, 200);
 
         // FAB-меню
-(function() {
-    const fab = document.createElement('div'); fab.id = 'fab-menu';
-    fab.innerHTML = `<div id="fab-overlay" class="fab-overlay" style="display:none;"></div><button id="fab-main-btn" class="fab-main"><i data-lucide="plus"></i></button><div id="fab-actions" class="fab-actions"><button id="fab-mileage" class="fab-action" title="Пробег"><i data-lucide="gauge"></i></button><button id="fab-fuel" class="fab-action" title="Заправка"><i data-lucide="fuel"></i></button><button id="fab-service" class="fab-action" title="ТО"><i data-lucide="wrench"></i></button><button id="fab-part" class="fab-action" title="Запчасть"><i data-lucide="package"></i></button></div>`;
-    document.body.appendChild(fab); App.initIcons();
-    const mainBtn = document.getElementById('fab-main-btn'), actions = document.getElementById('fab-actions'), overlay = document.getElementById('fab-overlay');
-    let open = false;
-    mainBtn.onclick = () => { open = !open; overlay.style.display = open ? 'block' : 'none'; actions.classList.toggle('open', open); };
-    overlay.onclick = () => { open = false; overlay.style.display = 'none'; actions.classList.remove('open'); };
-    
-    // Обработчики кнопок FAB
-    document.getElementById('fab-fuel').onclick = () => { if (typeof App.ui.pages.openFuelModal === 'function') App.ui.pages.openFuelModal(null); };
-    document.getElementById('fab-service').onclick = () => { if (typeof App.ui.pages.openOperationForm === 'function') App.ui.pages.openOperationForm(null); };
-    document.getElementById('fab-part').onclick = () => { if (typeof App.ui.pages.openPartForm === 'function') App.ui.pages.openPartForm(null); };
-    document.getElementById('fab-mileage').onclick = () => {
-        if (typeof App.events.updateMileageAndAverages === 'function') {
-            App.events.updateMileageAndAverages();
-        } else {
-            console.warn('[FAB] updateMileageAndAverages not available');
-        }
-    };
-})();
+        (function() {
+            const fab = document.createElement('div'); fab.id = 'fab-menu';
+            fab.innerHTML = `<div id="fab-overlay" class="fab-overlay" style="display:none;"></div><button id="fab-main-btn" class="fab-main"><i data-lucide="plus"></i></button><div id="fab-actions" class="fab-actions"><button id="fab-mileage" class="fab-action" title="Пробег"><i data-lucide="gauge"></i></button><button id="fab-fuel" class="fab-action" title="Заправка"><i data-lucide="fuel"></i></button><button id="fab-service" class="fab-action" title="ТО"><i data-lucide="wrench"></i></button><button id="fab-part" class="fab-action" title="Запчасть"><i data-lucide="package"></i></button></div>`;
+            document.body.appendChild(fab); App.initIcons();
+            const mainBtn = document.getElementById('fab-main-btn'), actions = document.getElementById('fab-actions'), overlay = document.getElementById('fab-overlay');
+            let open = false;
+            mainBtn.onclick = () => { open = !open; overlay.style.display = open ? 'block' : 'none'; actions.classList.toggle('open', open); };
+            overlay.onclick = () => { open = false; overlay.style.display = 'none'; actions.classList.remove('open'); };
+            document.getElementById('fab-fuel').onclick = () => { if (typeof App.ui.pages.openFuelModal === 'function') App.ui.pages.openFuelModal(null); };
+            document.getElementById('fab-service').onclick = () => { if (typeof App.ui.pages.openOperationForm === 'function') App.ui.pages.openOperationForm(null); };
+            document.getElementById('fab-part').onclick = () => { if (typeof App.ui.pages.openPartForm === 'function') App.ui.pages.openPartForm(null); };
+            document.getElementById('fab-mileage').onclick = () => {
+                if (typeof App.events.updateMileageAndAverages === 'function') {
+                    App.events.updateMileageAndAverages();
+                } else {
+                    console.warn('[FAB] updateMileageAndAverages not available');
+                }
+            };
+        })();
+    }
 
     window.recoverViaTelegram = async function() {
         try {
