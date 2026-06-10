@@ -1,4 +1,4 @@
-// src/api/storage.js (исправленная версия с сохранением базовых параметров)
+// src/api/storage.js (исправленный)
 window.App = window.App || {};
 App.storage = App.storage || {};
 
@@ -91,7 +91,7 @@ App.storage.deleteCarDocument = async function(docId) {
     return true;
 };
 
-// ========== ОСНОВНЫЕ ПАРАМЕТРЫ (сохраняем и в vehicle_state и в car_settings) ==========
+// ========== ОСНОВНЫЕ ПАРАМЕТРЫ ==========
 App.storage.saveVehicleStateAndSettings = async function(state, settings) {
     const carId = App.store.activeCarId;
     if (!carId) return;
@@ -305,6 +305,16 @@ const storeMap = {
     mileage: 'mileageHistory'
 };
 
+// НОВОЕ: соответствие имени таблицы Supabase -> имени хранилища в IndexedDB
+const tableToStore = {
+    operations: 'operations',
+    fuel_log: 'fuel_log',
+    tires: 'tires',
+    parts: 'parts',
+    history: 'service_records',
+    mileage: 'mileage_log'
+};
+
 App.storage.loadFirstPage = async function(table, pageSize = 50) {
     if (!navigator.onLine) return;
     const methodName = methodMap[table];
@@ -325,8 +335,16 @@ App.storage.loadFirstPage = async function(table, pageSize = 50) {
         if (error) throw error;
         const carId = App.store.activeCarId;
         const items = (data || []).map(item => ({ ...item, car_id: carId }));
-        await App.db.putMany(table, items);
         
+        // Определяем имя хранилища в IndexedDB
+        const storeName = tableToStore[table];
+        if (!storeName) {
+            console.warn(`[Storage] Не найдено хранилище для таблицы ${table}`);
+            return;
+        }
+        await App.db.putMany(storeName, items);
+        
+        // Обновляем Store (через storeMap)
         const storeKey = storeMap[table];
         if (storeKey && App.store[storeKey]) {
             const newMap = new Map(items.map(i => [i.id, i]));
