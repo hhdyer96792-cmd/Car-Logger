@@ -7,50 +7,43 @@ App.ui.pages = App.ui.pages || {};
 async function checkDuplicate(type, record) {
     switch (type) {
         case 'to':
-            // Проверка по имени операции и интервалам (не строгая, чтобы не блокировать импорт)
             return App.store.operations.some(op => 
                 op.name === record.name && 
                 op.category === record.category &&
                 Math.abs((op.intervalKm || 0) - (record.intervalKm || 0)) < 100
             );
         case 'fuel':
-            // Проверка по дате и пробегу
             return App.store.fuelLog.some(f => 
                 f.date === record.date && 
                 Math.abs((f.mileage || 0) - (record.mileage || 0)) < 10
             );
         case 'tires':
-            // Проверка по дате и типу
             return App.store.tireLog.some(t => 
                 t.date === record.date && 
                 t.type === record.type
             );
         case 'parts':
-            // Проверка по OEM или аналогу
             return App.store.parts.some(p => 
                 (p.oem && record.oem && p.oem === record.oem) ||
                 (p.analog && record.analog && p.analog === record.analog)
+            );
+        case 'mileage':
+            // Проверка дубликата по дате и пробегу (±5 км)
+            return App.store.mileageHistory.some(m => 
+                m.date === record.date && Math.abs(m.mileage - record.mileage) <= 5
             );
         default:
             return false;
     }
 }
 
-// Валидация даты в формате YYYY-MM-DD
+// Валидация даты в формате YYYY-MM-DD или ДД.ММ.ГГГГ / ДД/ММ/ГГГГ
 function isValidDate(dateStr) {
     if (!dateStr) return false;
-    const regex = /^\d{4}-\d{2}-\d{2}$/;
-    if (!regex.test(dateStr)) return false;
-    const d = new Date(dateStr);
-    return !isNaN(d.getTime());
-}
-
-// Нормализация даты (попытка преобразовать из разных форматов)
-function normalizeDate(dateStr) {
-    if (!dateStr) return null;
     // Уже YYYY-MM-DD
     if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
-        return isValidDate(dateStr) ? dateStr : null;
+        const d = new Date(dateStr);
+        return !isNaN(d.getTime());
     }
     // DD.MM.YYYY или DD/MM/YYYY
     const parts = dateStr.split(/[.\/]/);
@@ -59,8 +52,27 @@ function normalizeDate(dateStr) {
         const month = parseInt(parts[1], 10);
         const year = parseInt(parts[2], 10);
         if (!isNaN(day) && !isNaN(month) && !isNaN(year) && year > 1900 && year < 2100) {
-            const iso = `${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
-            return isValidDate(iso) ? iso : null;
+            const iso = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+            const d = new Date(iso);
+            return !isNaN(d.getTime());
+        }
+    }
+    return false;
+}
+
+// Нормализация даты в ISO
+function normalizeDate(dateStr) {
+    if (!dateStr) return null;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+        return isValidDate(dateStr) ? dateStr : null;
+    }
+    const parts = dateStr.split(/[.\/]/);
+    if (parts.length === 3) {
+        const day = parseInt(parts[0], 10);
+        const month = parseInt(parts[1], 10);
+        const year = parseInt(parts[2], 10);
+        if (!isNaN(day) && !isNaN(month) && !isNaN(year) && year > 1900 && year < 2100) {
+            return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
         }
     }
     return null;
@@ -77,6 +89,7 @@ App.ui.pages.initCsvImport = function() {
     html += '<option value="fuel">Топливо</option>';
     html += '<option value="tires">Шины</option>';
     html += '<option value="parts">Запчасти</option>';
+    html += '<option value="mileage">История пробега</option>';  // ДОБАВЛЕНО
     html += '</select>';
     html += '<button id="csv-download-template" class="secondary-btn">Шаблон</button>';
     html += '</div>';
@@ -115,6 +128,10 @@ App.ui.pages.initCsvImport = function() {
                 headers = ['Операция', 'OEM', 'Аналог', 'Цена', 'Поставщик', 'Ссылка', 'Комментарий', 'В наличии (шт.)', 'Место хранения'];
                 example = ['Замена масла', '15208-65F0A', 'MANN W 610/80', '1200', 'Автодок', 'https://example.com', 'Масляный фильтр', '2', 'Гараж, полка 3'];
                 break;
+            case 'mileage':
+                headers = ['Дата', 'Пробег', 'Моточасы'];
+                example = ['2025-01-15', '12500', '320'];
+                break;
         }
         var csvContent = headers.join(';') + '\n' + example.join(';');
         var blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -124,12 +141,10 @@ App.ui.pages.initCsvImport = function() {
         link.click();
     });
 
-    // Открываем выбор файла при клике на кнопку импорта
     importBtn.addEventListener('click', function() {
         fileInput.click();
     });
 
-    // Обработка выбранного файла
     fileInput.addEventListener('change', function(e) {
         var file = e.target.files[0];
         if (!file) return;
@@ -141,7 +156,6 @@ App.ui.pages.initCsvImport = function() {
                 msgDiv.textContent = 'Файл пуст или содержит только заголовки.';
                 return;
             }
-            // Первая строка – заголовки
             var headers = lines[0].split(';').map(function(h) { return h.trim(); });
             var records = [];
             var errors = [];
@@ -180,7 +194,6 @@ async function importRecordsWithValidation(type, records, msgDiv, headers) {
             
             switch (type) {
                 case 'to':
-                    // Валидация даты
                     if (rec['Последняя дата'] && !isValidDate(rec['Последняя дата']) && !normalizeDate(rec['Последняя дата'])) {
                         invalidDates++;
                         console.warn(`[Import] Неверный формат даты в строке ${i+2}: ${rec['Последняя дата']}`);
@@ -190,7 +203,6 @@ async function importRecordsWithValidation(type, records, msgDiv, headers) {
                         errors++;
                         continue;
                     }
-                    // Проверка дубликата
                     var toRecord = {
                         category: rec['Категория'] || '',
                         name: rec['Операция'] || '',
@@ -203,7 +215,6 @@ async function importRecordsWithValidation(type, records, msgDiv, headers) {
                     };
                     if (await checkDuplicate('to', toRecord)) {
                         duplicates++;
-                        console.warn(`[Import] Дубликат операции ${toRecord.name}, пропуск`);
                         continue;
                     }
                     await App.supa.saveOperation(toRecord);
@@ -229,7 +240,6 @@ async function importRecordsWithValidation(type, records, msgDiv, headers) {
                     };
                     if (await checkDuplicate('fuel', fuelRecord)) {
                         duplicates++;
-                        console.warn(`[Import] Дубликат заправки от ${fuelDate}, пропуск`);
                         continue;
                     }
                     await App.supa.saveFuelRecord(null, fuelRecord);
@@ -258,7 +268,6 @@ async function importRecordsWithValidation(type, records, msgDiv, headers) {
                     };
                     if (await checkDuplicate('tires', tireRecord)) {
                         duplicates++;
-                        console.warn(`[Import] Дубликат шин от ${tireDate}, пропуск`);
                         continue;
                     }
                     await App.supa.saveTireRecord(null, tireRecord);
@@ -279,10 +288,36 @@ async function importRecordsWithValidation(type, records, msgDiv, headers) {
                     };
                     if (await checkDuplicate('parts', partsRecord)) {
                         duplicates++;
-                        console.warn(`[Import] Дубликат запчасти ${partsRecord.oem || partsRecord.analog}, пропуск`);
                         continue;
                     }
                     await App.supa.savePart(partsRecord);
+                    success++;
+                    break;
+                    
+                case 'mileage':
+                    var mileageDate = normalizeDate(rec['Дата']);
+                    if (!mileageDate) {
+                        invalidDates++;
+                        console.warn(`[Import] Неверный формат даты в строке ${i+2}: ${rec['Дата']}`);
+                        errors++;
+                        continue;
+                    }
+                    var mileage = parseFloat(rec['Пробег']);
+                    if (isNaN(mileage)) {
+                        errors++;
+                        console.warn(`[Import] Некорректный пробег в строке ${i+2}: ${rec['Пробег']}`);
+                        continue;
+                    }
+                    var motohours = rec['Моточасы'] ? parseFloat(rec['Моточасы']) : 0;
+                    if (isNaN(motohours)) motohours = 0;
+                    
+                    var mileageRecord = { date: mileageDate, mileage: mileage, motohours: motohours };
+                    if (await checkDuplicate('mileage', mileageRecord)) {
+                        duplicates++;
+                        continue;
+                    }
+                    // Используем storage.addMileageRecord, чтобы запись попала в локальную БД и очередь синхронизации
+                    await App.storage.addMileageRecord(mileageDate, mileage, motohours);
                     success++;
                     break;
             }
@@ -305,4 +340,5 @@ async function importRecordsWithValidation(type, records, msgDiv, headers) {
     if (typeof App.ui.pages.renderTiresTab === 'function') App.ui.pages.renderTiresTab();
     if (typeof App.ui.pages.renderPartsTab === 'function') App.ui.pages.renderPartsTab();
     if (typeof App.ui.pages.renderTOTable === 'function') App.ui.pages.renderTOTable();
+    if (typeof App.ui.pages.renderDashboard === 'function') App.ui.pages.renderDashboard();
 }
