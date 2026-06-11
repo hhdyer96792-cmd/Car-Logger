@@ -5,32 +5,25 @@ App.localAuth = App.localAuth || {};
 const AUTH_STORE = 'local_auth';
 const AUTH_KEY = 'encrypted_master_password';
 
-// ========== Лимит попыток ==========
-const PIN_ATTEMPTS_KEY = 'vesta_pin_attempts';
-const MAX_PIN_ATTEMPTS = 3;
-const PIN_BLOCK_DURATION_MS = 5 * 60 * 1000; // 5 минут
+// Новые параметры безопасности
+const MIN_PIN_LENGTH = 6;          // увеличено с 4
+const MAX_PIN_ATTEMPTS = 3;        // оставляем 3
+const PIN_BLOCK_DURATION_MS = 15 * 60 * 1000; // 15 минут
+const PIN_DELAY_MS = 2000;          // задержка между попытками (экспоненциально)
 
-// Состояние блокировки
-async function getPinAttempts() {
-    const data = localStorage.getItem(PIN_ATTEMPTS_KEY);
-    if (!data) return { count: 0, blockedUntil: 0 };
-    try {
-        return JSON.parse(data);
-    } catch {
-        return { count: 0, blockedUntil: 0 };
-    }
-}
+// Хранение времени следующей разрешённой попытки для PIN
+let pinNextAttemptTime = 0;
 
-async function savePinAttempts(attempts) {
-    localStorage.setItem(PIN_ATTEMPTS_KEY, JSON.stringify(attempts));
-}
+App.localAuth.isPinSupported = function() {
+    return typeof crypto !== 'undefined' && crypto.subtle && typeof TextEncoder !== 'undefined';
+};
 
-async function resetPinAttempts() {
-    localStorage.removeItem(PIN_ATTEMPTS_KEY);
-}
+App.localAuth.isPinSet = async function() {
+    const record = await App.db.getById(AUTH_STORE, AUTH_KEY);
+    return !!record;
+};
 
-// ========== Вспомогательные функции ==========
-async function deriveKeyFromPin(pin, salt, iterations = 100000) {
+async function deriveKeyFromPin(pin, salt, iterations = 200000) { // увеличил итерации
     const encoder = new TextEncoder();
     const keyMaterial = await crypto.subtle.importKey(
         'raw',
@@ -54,9 +47,9 @@ async function deriveKeyFromPin(pin, salt, iterations = 100000) {
 }
 
 async function encryptMasterPassword(masterPassword, pin) {
-    const salt = crypto.getRandomValues(new Uint8Array(16));
+    const salt = crypto.getRandomValues(new Uint8Array(32));
     const iv = crypto.getRandomValues(new Uint8Array(12));
-    const key = await deriveKeyFromPin(pin, salt);
+    const key = await deriveKeyFromPin(pin, salt, 200000);
     const encoder = new TextEncoder();
     const encrypted = await crypto.subtle.encrypt(
         { name: 'AES-GCM', iv },
@@ -73,7 +66,7 @@ async function encryptMasterPassword(masterPassword, pin) {
 async function decryptMasterPassword(pin, encryptedData) {
     const salt = new Uint8Array(encryptedData.salt);
     const iv = new Uint8Array(encryptedData.iv);
-    const key = await deriveKeyFromPin(pin, salt);
+    const key = await deriveKeyFromPin(pin, salt, 200000);
     const encrypted = new Uint8Array(encryptedData.encrypted);
     const decrypted = await crypto.subtle.decrypt(
         { name: 'AES-GCM', iv },
@@ -83,84 +76,73 @@ async function decryptMasterPassword(pin, encryptedData) {
     return new TextDecoder().decode(decrypted);
 }
 
-// ========== Публичные методы ==========
-App.localAuth.isPinSupported = function() {
-    return typeof crypto !== 'undefined' && crypto.subtle && typeof TextEncoder !== 'undefined';
-};
-
-App.localAuth.isPinSet = async function() {
-    const record = await App.db.getById(AUTH_STORE, AUTH_KEY);
-    return !!record;
-};
-
 App.localAuth.setPin = async function(pin, masterPassword) {
     if (!App.localAuth.isPinSupported()) {
         throw new Error('PIN-код не поддерживается в этом браузере');
     }
-    if (!pin || pin.length < 4) {
-        throw new Error('PIN-код должен содержать минимум 4 цифры');
+    if (!pin || pin.length < MIN_PIN_LENGTH || !/^\d+$/.test(pin)) {
+        throw new Error(`PIN-код должен содержать минимум ${MIN_PIN_LENGTH} цифр`);
     }
-    const salt = App.db.encryption.getStoredSalt();
+    const salt = await App.db.encryption.getEncryptedSalt();
+    if (!salt) throw new Error('Соль не найдена');
     const isValid = await App.db.encryption.verifyMasterKey(masterPassword, salt);
-    if (!isValid) {
-        throw new Error('Неверный мастер-пароль');
-    }
+    if (!isValid) throw new Error('Неверный мастер-пароль');
+    
     const encrypted = await encryptMasterPassword(masterPassword, pin);
     await App.db.put(AUTH_STORE, {
         id: AUTH_KEY,
         ...encrypted,
         createdAt: Date.now()
     });
-    // При успешной установке сбрасываем счётчик попыток
-    await resetPinAttempts();
+    // Сбрасываем счётчик попыток PIN
+    await App.db.attemptsTracker.resetAttempts('pin');
+    pinNextAttemptTime = 0;
     return true;
 };
 
 App.localAuth.verifyPin = async function(pin) {
     // Проверка блокировки
-    const attempts = await getPinAttempts();
-    if (attempts.blockedUntil && Date.now() < attempts.blockedUntil) {
-        const minutesLeft = Math.ceil((attempts.blockedUntil - Date.now()) / 60000);
-        throw new Error(`PIN заблокирован на ${minutesLeft} мин. Введите мастер-пароль.`);
+    const { blocked, remainingMs } = await App.db.attemptsTracker.isBlocked('pin');
+    if (blocked) {
+        const minutes = Math.ceil(remainingMs / 60000);
+        throw new Error(`PIN заблокирован на ${minutes} мин. Введите мастер-пароль.`);
     }
-    // Если время блокировки истекло, но записи ещё есть – сбрасываем
-    if (attempts.blockedUntil && Date.now() >= attempts.blockedUntil) {
-        await resetPinAttempts();
+    
+    // Защита от быстрого перебора: задержка между попытками
+    const now = Date.now();
+    if (pinNextAttemptTime > now) {
+        const wait = pinNextAttemptTime - now;
+        throw new Error(`Подождите ${Math.ceil(wait / 1000)} секунд перед следующей попыткой.`);
     }
-
+    
     const record = await App.db.getById(AUTH_STORE, AUTH_KEY);
     if (!record) return null;
     try {
         const masterPassword = await decryptMasterPassword(pin, record);
-        const salt = App.db.encryption.getStoredSalt();
+        const salt = await App.db.encryption.getEncryptedSalt();
         const isValid = await App.db.encryption.verifyMasterKey(masterPassword, salt);
         if (!isValid) throw new Error('Invalid master password');
-        // Успех – сбрасываем счётчик
-        await resetPinAttempts();
+        // Успех – сбрасываем счётчик и задержку
+        await App.db.attemptsTracker.resetAttempts('pin');
+        pinNextAttemptTime = 0;
         return masterPassword;
     } catch (err) {
         console.warn('[LocalAuth] PIN verification failed:', err);
         // Увеличиваем счётчик неудачных попыток
-        const newCount = (attempts.count || 0) + 1;
-        if (newCount >= MAX_PIN_ATTEMPTS) {
-            // Блокируем PIN и удаляем его
-            await App.localAuth.resetPin();
-            const blockedUntil = Date.now() + PIN_BLOCK_DURATION_MS;
-            await savePinAttempts({ count: newCount, blockedUntil });
-            throw new Error(`Превышено количество попыток (${MAX_PIN_ATTEMPTS}). PIN заблокирован на 5 минут. Введите мастер-пароль.`);
-        } else {
-            await savePinAttempts({ count: newCount, blockedUntil: 0 });
-            throw new Error(`Неверный PIN. Осталось попыток: ${MAX_PIN_ATTEMPTS - newCount}.`);
+        const blocked = await App.db.attemptsTracker.recordFailedAttempt('pin');
+        if (blocked) {
+            throw new Error(`Превышено количество попыток (${MAX_PIN_ATTEMPTS}). PIN заблокирован на 15 минут.`);
         }
-        return null;
+        // Устанавливаем экспоненциальную задержку
+        const remaining = await App.db.attemptsTracker.getRemainingAttempts('pin');
+        const delay = Math.min(2000 * (MAX_PIN_ATTEMPTS - remaining), 10000);
+        pinNextAttemptTime = Date.now() + delay;
+        throw new Error(`Неверный PIN. Осталось попыток: ${remaining}. Подождите ${Math.ceil(delay / 1000)} секунд.`);
     }
 };
 
 App.localAuth.resetPin = async function() {
     await App.db.delete(AUTH_STORE, AUTH_KEY);
-    // Также сбрасываем счётчик попыток
-    await resetPinAttempts();
+    await App.db.attemptsTracker.resetAttempts('pin');
+    pinNextAttemptTime = 0;
 };
-
-// ========== ЭКСПОРТ ВСПОМОГАТЕЛЬНЫХ ФУНКЦИЙ ДЛЯ ВНЕШНЕГО ВЫЗОВА ==========
-App.localAuth.resetPinAttempts = resetPinAttempts;
