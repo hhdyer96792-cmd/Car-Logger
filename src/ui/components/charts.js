@@ -26,94 +26,90 @@ function isMobile() {
 /* ================================================================
    ГРАФИК РАСХОДА ТОПЛИВА (ПО МЕСЯЦАМ)
    ================================================================ */
-App.charts.renderFuelConsumptionChart = function() {
+App.charts.renderFuelConsumptionChart = async function() {
     App.charts.destroyChart('fuelConsumptionChart');
-    var canvas = document.getElementById('fuelConsumptionChart');
+    const canvas = document.getElementById('fuelConsumptionChart');
     if (!canvas) return;
-    var grouped = App.logic.groupFuelByMonth();
-    var months = grouped.months;
-    var datasetsByType = grouped.datasetsByType;
-    var averageConsumption = grouped.averageConsumption;
-
-    var mobile = isMobile();
-    var chartType = mobile ? 'bar' : 'line';
-
-    var datasets = [];
-
-    var avgDataset = {
+    
+    const cacheKey = `fuel_consumption_${App.store.activeCarId}`;
+    let grouped = App.chartCache.get(cacheKey);
+    
+    if (!grouped && App.store.activeCarId && App.supa.getMonthlyFuelStats) {
+        const data = await App.supa.getMonthlyFuelStats(App.store.activeCarId);
+        if (data && data.length) {
+            grouped = {
+                months: data.map(d => d.year_month),
+                averageConsumption: data.map(d => parseFloat(d.avg_consumption) || 0),
+                datasetsByType: { 'Общий': { consumption: data.map(d => parseFloat(d.avg_consumption) || 0) } }
+            };
+            App.chartCache.set(cacheKey, grouped);
+        }
+    }
+    
+    if (!grouped) {
+        // fallback на локальную агрегацию (старый код)
+        grouped = App.logic.groupFuelByMonth();
+    }
+    
+    const months = grouped.months;
+    const datasetsByType = grouped.datasetsByType;
+    const averageConsumption = grouped.averageConsumption;
+    
+    const mobile = window.innerWidth < 768;
+    const chartType = mobile ? 'bar' : 'line';
+    
+    const datasets = [];
+    const avgDataset = {
         label: 'Средний расход',
         data: averageConsumption,
-        borderColor: averageColor,
-        backgroundColor: averageColor + '20',
-        tension: 0.2,
+        borderColor: '#e74c3c',
+        backgroundColor: mobile ? '#e74c3c70' : '#e74c3c20',
+        tension: mobile ? undefined : 0.2,
         fill: false,
         pointRadius: mobile ? 0 : 4,
         pointHoverRadius: mobile ? 3 : 6,
-        hidden: false
+        hidden: false,
+        borderWidth: mobile ? 2 : 1,
+        borderRadius: mobile ? 6 : 0
     };
-    if (mobile) {
-        avgDataset.backgroundColor = averageColor + '70';
-        avgDataset.borderWidth = 2;
-        avgDataset.borderRadius = 6;
-        delete avgDataset.tension;
-        delete avgDataset.fill;
-    }
+    if (mobile) delete avgDataset.tension;
     datasets.push(avgDataset);
-
-    for (var type in datasetsByType) {
-        var data = datasetsByType[type].consumption;
-        var color = fuelTypeColors[type] || '#888';
-        var typeDataset = {
+    
+    for (const type in datasetsByType) {
+        const data = datasetsByType[type].consumption;
+        const color = { 'Бензин': '#e67e22', 'Дизель': '#2ecc71', 'Газ (ГБО)': '#f39c12', 'Электричество': '#3498db' }[type] || '#888';
+        const typeDataset = {
             label: type,
             data: data,
             borderColor: color,
-            backgroundColor: color + '20',
-            tension: 0.2,
+            backgroundColor: mobile ? color + '70' : color + '20',
+            tension: mobile ? undefined : 0.2,
             fill: false,
             pointRadius: mobile ? 0 : 4,
             pointHoverRadius: mobile ? 3 : 6,
             hidden: true
         };
-        if (mobile) {
-            typeDataset.backgroundColor = color + '70';
-            typeDataset.borderWidth = 2;
-            typeDataset.borderRadius = 6;
-            delete typeDataset.tension;
-            delete typeDataset.fill;
-        }
+        if (mobile) delete typeDataset.tension;
         datasets.push(typeDataset);
     }
-
-    var ctx = canvas.getContext('2d');
-    var options = {
+    
+    const ctx = canvas.getContext('2d');
+    const options = {
         responsive: true,
         maintainAspectRatio: true,
         plugins: {
-            tooltip: {
-                callbacks: {
-                    label: function(ctx) { return ctx.dataset.label + ': ' + ctx.raw + ' л/100 км'; }
-                }
-            },
+            tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${ctx.raw} л/100 км` } },
             legend: { position: 'top' }
         },
-        scales: {
-            y: { title: { display: true, text: 'л/100 км' }, beginAtZero: true }
-        }
+        scales: { y: { title: { display: true, text: 'л/100 км' }, beginAtZero: true } }
     };
-
     if (!mobile) {
         options.plugins.zoom = {
             pan: { enabled: true, mode: 'x', speed: 10 },
-            zoom: {
-                wheel: { enabled: true },
-                pinch: { enabled: true },
-                mode: 'x',
-                speed: 0.1,
-                limits: { x: { min: 0.5, max: 5 } }
-            }
+            zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x', speed: 0.1, limits: { x: { min: 0.5, max: 5 } } }
         };
     }
-
+    
     App.charts.activeCharts['fuelConsumptionChart'] = new Chart(ctx, {
         type: chartType,
         data: { labels: months, datasets: datasets },
@@ -121,6 +117,7 @@ App.charts.renderFuelConsumptionChart = function() {
     });
     App.initIcons();
 };
+
 
 /* ================================================================
    ГРАФИК СРЕДНЕЙ ЦЕНЫ ТОПЛИВА (ПО МЕСЯЦАМ)
@@ -203,99 +200,80 @@ App.charts.renderFuelPriceChart = function() {
 /* ================================================================
    ГРАФИК ЗАТРАТ (ТОПЛИВО + ТО) ПО МЕСЯЦАМ
    ================================================================ */
-App.charts.renderCostsChart = function(period) {
+App.charts.renderCostsChart = async function(period) {
     App.charts.destroyChart('costsChart');
-    var canvas = document.getElementById('costsChart');
+    const canvas = document.getElementById('costsChart');
     if (!canvas) return;
     period = period || document.getElementById('stats-period-select')?.value || 'all';
-    var grouped = App.logic.groupCostsByMonth(period);
-    var months = grouped.months;
-    var fuelCosts = grouped.fuelCosts;
-    var toCosts = grouped.toCosts;
-
+    
+    let startDate = null, endDate = null;
+    if (period !== 'all') {
+        const range = App.logic.getPeriodDateRange(period);
+        startDate = range.start.toISOString().split('T')[0];
+        endDate = range.end.toISOString().split('T')[0];
+    }
+    
+    const cacheKey = `costs_${App.store.activeCarId}_${period}`;
+    let monthly = App.chartCache.get(cacheKey);
+    
+    if (!monthly && App.store.activeCarId && App.supa.getMonthlyCosts) {
+        const data = await App.supa.getMonthlyCosts(App.store.activeCarId, startDate, endDate);
+        if (data && data.length) {
+            monthly = {
+                months: data.map(d => d.year_month),
+                fuelCosts: data.map(d => parseFloat(d.fuel_cost) || 0),
+                toCosts: data.map(d => parseFloat(d.maintenance_cost) || 0)
+            };
+            App.chartCache.set(cacheKey, monthly);
+        }
+    }
+    
+    if (!monthly) {
+        // fallback на старую локальную агрегацию
+        monthly = App.logic.groupCostsByMonth(period);
+    }
+    
+    const months = monthly.months;
+    const fuelCosts = monthly.fuelCosts;
+    const toCosts = monthly.toCosts;
+    
     if (months.length === 0) {
-        var ctx = canvas.getContext('2d');
+        const ctx = canvas.getContext('2d');
         App.charts.activeCharts['costsChart'] = new Chart(ctx, {
             type: 'bar',
             data: { labels: [], datasets: [] },
-            options: {
-                responsive: true,
-                maintainAspectRatio: true,
-                plugins: {
-                    legend: { display: true },
-                    tooltip: { callbacks: { title: function() { return 'Нет данных'; } } }
-                },
-                scales: { y: { title: { display: true, text: '₽' } } }
-            }
+            options: { responsive: true, maintainAspectRatio: true }
         });
         return;
     }
-
-    var ctx = canvas.getContext('2d');
-    var options = {
+    
+    const ctx = canvas.getContext('2d');
+    const options = {
         responsive: true,
         maintainAspectRatio: true,
         plugins: {
-            tooltip: {
-                callbacks: {
-                    label: function(context) {
-                        return context.dataset.label + ': ' + context.raw.toFixed(2) + ' ₽';
-                    }
-                }
-            },
+            tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${ctx.raw.toFixed(2)} ₽` } },
             legend: { position: 'top' }
         },
         scales: {
-            y: {
-                beginAtZero: true,
-                title: { display: true, text: 'Затраты (₽)' },
-                ticks: { callback: function(value) { return value.toLocaleString(); } }
-            },
-            x: {
-                title: { display: true, text: 'Месяц' },
-                ticks: { maxRotation: 45, minRotation: 45 }
-            }
+            y: { beginAtZero: true, title: { display: true, text: 'Затраты (₽)' }, ticks: { callback: (v) => v.toLocaleString() } },
+            x: { title: { display: true, text: 'Месяц' }, ticks: { maxRotation: 45, minRotation: 45 } }
         }
     };
-
-    if (!isMobile()) {
+    if (window.innerWidth >= 768) {
         options.plugins.zoom = {
             pan: { enabled: true, mode: 'x', speed: 10 },
-            zoom: {
-                wheel: { enabled: true },
-                pinch: { enabled: true },
-                mode: 'x',
-                speed: 0.1,
-                limits: { x: { min: 0.5, max: 5 } }
-            }
+            zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x', speed: 0.1, limits: { x: { min: 0.5, max: 5 } } }
         };
     }
-
+    
     App.charts.activeCharts['costsChart'] = new Chart(ctx, {
         type: 'bar',
         data: {
             labels: months,
             datasets: [
-                {
-                    label: 'Топливо (₽)',
-                    data: fuelCosts,
-                    backgroundColor: 'rgba(52, 152, 219, 0.7)',
-                    borderColor: '#2980b9',
-                    borderWidth: 1,
-                    borderRadius: 4,
-                    barPercentage: 0.7,
-                    categoryPercentage: 0.8
-                },
-                {
-                    label: 'ТО (запчасти + работы) (₽)',
-                    data: toCosts,
-                    backgroundColor: 'rgba(231, 76, 60, 0.7)',
-                    borderColor: '#c0392b',
-                    borderWidth: 1,
-                    borderRadius: 4,
-                    barPercentage: 0.7,
-                    categoryPercentage: 0.8
-                }
+                { label: 'Топливо (₽)', data: fuelCosts, backgroundColor: 'rgba(52,152,219,0.7)', borderColor: '#2980b9', borderWidth: 1, borderRadius: 4, barPercentage: 0.7, categoryPercentage: 0.8 },
+                { label: 'ТО (запчасти + работы) (₽)', data: toCosts, backgroundColor: 'rgba(231,76,60,0.7)', borderColor: '#c0392b', borderWidth: 1, borderRadius: 4, barPercentage: 0.7, categoryPercentage: 0.8 }
             ]
         },
         options: options
