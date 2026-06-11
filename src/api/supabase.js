@@ -642,4 +642,40 @@ if (typeof window !== 'undefined') {
             App.supa.handleOAuthRedirect();
         }
     }, 100);
+
+// ========== АГРЕГИРОВАННЫЕ ДАННЫЕ ДЛЯ ГРАФИКОВ ==========
+App.supa.getMonthlyCosts = async function(carId, startDate, endDate) {
+    if (!carId) return [];
+    try {
+        const { data, error } = await App.supabase.rpc('get_monthly_costs', {
+            p_car_id: carId,
+            p_start_date: startDate || null,
+            p_end_date: endDate || null
+        });
+        if (error) throw error;
+        return data || [];
+    } catch (err) {
+        console.error('[Supabase] getMonthlyCosts error:', err);
+        App.errorHandler?.logError(err, 'getMonthlyCosts');
+        return [];
+    }
+};
+
+App.supa.getMonthlyFuelStats = async function(carId, startDate, endDate) {
+    if (!carId) return [];
+    try {
+        const { data, error } = await App.supabase.rpc('get_monthly_fuel_stats', {
+            p_car_id: carId,
+            p_start_date: startDate || null,
+            p_end_date: endDate || null
+        });
+        if (error) throw error;
+        return data || [];
+    } catch (err) {
+        console.error('[Supabase] getMonthlyFuelStats error:', err);
+        App.errorHandler?.logError(err, 'getMonthlyFuelStats');
+        return [];
+    }
+};
+
 }
