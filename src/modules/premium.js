@@ -11,46 +11,63 @@ App.premium.getDeviceId = function() {
     return deviceId;
 };
 
+/**
+ * Проверка статуса Premium через таблицу user_settings и subscription_keys
+ */
 App.premium.checkStatus = async function() {
     if (!App.supabase || !App.store.activeCarId) return { active: false, tier: 'free' };
     
     const { data: { user } } = await App.supabase.auth.getUser();
     if (!user) return { active: false, tier: 'free' };
     
-    let data = null;
-    let error = null;
-    
     try {
-        const result = await App.supabase.rpc('get_user_premium_status', {
-            p_user_id: user.id
-        });
-        data = result.data;
-        error = result.error;
+        // Получаем premium_tier из user_settings
+        const { data: settings, error: settingsError } = await App.supabase
+            .from('user_settings')
+            .select('premium_tier, premium_expires_at')
+            .eq('user_id', user.id)
+            .eq('car_id', App.store.activeCarId)
+            .maybeSingle();
+        
+        if (settingsError) throw settingsError;
+        
+        let tier = settings?.premium_tier || 'free';
+        let expiresAt = settings?.premium_expires_at || null;
+        let active = (tier !== 'free');
+        
+        // Если есть expires_at и просрочено – сбрасываем
+        if (active && expiresAt && new Date(expiresAt) < new Date()) {
+            active = false;
+            tier = 'free';
+            // Обновляем в БД (асинхронно)
+            App.supabase
+                .from('user_settings')
+                .update({ premium_tier: 'free', premium_expires_at: null })
+                .eq('user_id', user.id)
+                .eq('car_id', App.store.activeCarId)
+                .then(() => {})
+                .catch(e => console.warn('Failed to reset expired premium:', e));
+        }
+        
+        App.store.premiumTier = tier;
+        App.store.premiumExpiresAt = expiresAt;
+        App.store.isPremium = active;
+        
+        if (active) {
+            await App.premium.loadModulesByTier(tier);
+        }
+        
+        return { active, tier, expires_at: expiresAt };
     } catch (err) {
-        error = err;
-        console.error('[Premium] Исключение при вызове RPC:', err);
-    }
-    
-    if (error || !data) {
-        console.error('[Premium] Ошибка проверки статуса:', error);
+        console.error('[Premium] Ошибка проверки статуса:', err);
+        App.errorHandler?.logError(err, 'premium_check');
         return { active: false, tier: 'free' };
     }
-    
-    App.store.premiumTier = data.tier;
-    App.store.premiumExpiresAt = data.expires_at;
-    App.store.isPremium = (data.active && data.tier !== 'free');
-    
-    if (data.active && data.tier !== 'free') {
-        try {
-            await App.premium.loadModulesByTier(data.tier);
-        } catch (err) {
-            console.error('[Premium] Ошибка загрузки модулей:', err);
-        }
-    }
-    
-    return data;
 };
 
+/**
+ * Активация премиум-ключа
+ */
 App.premium.activateKey = async function(keyValue) {
     if (!App.supabase) throw new Error('Supabase not initialized');
     const { data: { user } } = await App.supabase.auth.getUser();
@@ -59,28 +76,20 @@ App.premium.activateKey = async function(keyValue) {
     const deviceId = App.premium.getDeviceId();
     const deviceName = navigator.userAgent || 'Unknown device';
     
-    let data = null;
-    let error = null;
+    // Вызов RPC activate_premium_key (должна быть создана в Supabase)
+    const { data, error } = await App.supabase.rpc('activate_premium_key', {
+        p_key: keyValue,
+        p_user_id: user.id,
+        p_device_id: deviceId,
+        p_device_name: deviceName
+    });
     
-    try {
-        const result = await App.supabase.rpc('activate_premium_key', {
-            p_key: keyValue,
-            p_user_id: user.id,
-            p_device_id: deviceId,
-            p_device_name: deviceName
-        });
-        data = result.data;
-        error = result.error;
-    } catch (err) {
-        error = err;
-        console.error('[Premium] Исключение при активации ключа:', err);
+    if (error) throw new Error(error.message);
+    if (!data || !data.success) {
+        throw new Error(data?.error || 'Неизвестная ошибка активации');
     }
     
-    if (error || !data || !data.success) {
-        const errMsg = data?.error || error?.message || 'Неизвестная ошибка';
-        throw new Error(errMsg);
-    }
-    
+    // Обновляем статус
     await App.premium.checkStatus();
     
     if (typeof App.ui.pages.renderCarTab === 'function') {
@@ -90,6 +99,9 @@ App.premium.activateKey = async function(keyValue) {
     return data;
 };
 
+/**
+ * Деактивация устройства (отвязка)
+ */
 App.premium.deactivateDevice = async function() {
     if (!App.supabase) return;
     const { data: { user } } = await App.supabase.auth.getUser();
@@ -104,17 +116,30 @@ App.premium.deactivateDevice = async function() {
         });
     } catch (err) {
         console.error('[Premium] Ошибка деактивации устройства:', err);
+        App.errorHandler?.logError(err, 'premium_deactivate');
     }
     
     App.store.isPremium = false;
     App.store.premiumTier = 'free';
-    App.store.premiumFeatures = [];
+    App.store.premiumExpiresAt = null;
+    
+    // Обновляем user_settings на клиенте
+    if (App.store.activeCarId && App.supabase) {
+        await App.supabase
+            .from('user_settings')
+            .update({ premium_tier: 'free', premium_expires_at: null })
+            .eq('user_id', user.id)
+            .eq('car_id', App.store.activeCarId);
+    }
     
     if (typeof App.ui.pages.renderCarTab === 'function') {
         App.ui.pages.renderCarTab();
     }
 };
 
+/**
+ * Загрузка премиум-модулей в зависимости от тарифа
+ */
 App.premium.loadModulesByTier = async function(tier) {
     const features = [];
     if (tier === 'premium' || tier === 'ultra') {
@@ -133,23 +158,28 @@ App.premium.loadModulesByTier = async function(tier) {
             }
         } catch (err) {
             console.warn(`[Premium] Не удалось загрузить модуль ${feature}:`, err);
+            App.errorHandler?.logError(err, 'premium_load_module', { feature });
         }
     }
 };
 
+/**
+ * Инициализация Premium (вызывается после аутентификации)
+ */
 App.premium.init = async function() {
     try {
-        const status = await App.premium.checkStatus();
-        if (status.active && status.tier !== 'free') {
-            await App.premium.loadModulesByTier(status.tier);
-        }
+        await App.premium.checkStatus();
     } catch (err) {
         console.error('[Premium] Ошибка инициализации:', err);
+        App.errorHandler?.logError(err, 'premium_init');
     }
     
-    // Сохраняем интервал в свойство, чтобы можно было очистить при выходе
+    // Периодическая проверка статуса (раз в час)
     if (App.premium._checkInterval) clearInterval(App.premium._checkInterval);
     App.premium._checkInterval = setInterval(() => {
-        App.premium.checkStatus().catch(err => console.error('[Premium] Ошибка периодической проверки:', err));
+        App.premium.checkStatus().catch(err => {
+            console.error('[Premium] Ошибка периодической проверки:', err);
+            App.errorHandler?.logError(err, 'premium_periodic_check');
+        });
     }, 60 * 60 * 1000);
 };
