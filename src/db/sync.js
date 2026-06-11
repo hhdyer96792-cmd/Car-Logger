@@ -5,9 +5,9 @@ App.db.sync = App.db.sync || {};
 
 // Увеличенные таймауты и задержки для стабильности при плохой сети
 const MAX_RETRIES = 10;
-const BASE_DELAY = 2000;      // увеличено с 1000
-const MAX_DELAY = 60000;      // увеличено с 30000
-const ACTION_TIMEOUT = 30000;  // увеличено с 20000
+const BASE_DELAY = 2000;
+const MAX_DELAY = 60000;
+const ACTION_TIMEOUT = 30000;
 
 App.db.sync._getDelay = function(retryCount) {
     const delay = Math.min(BASE_DELAY * Math.pow(2, retryCount), MAX_DELAY);
@@ -143,7 +143,6 @@ App.db.sync._updateLocalId = async function(entityType, oldId, serverRecord) {
 App.db.sync.processSyncQueue = async function() {
     if (!App.db._db) { setTimeout(() => App.db.sync.processSyncQueue(), 1000); return; }
     if (!navigator.onLine) {
-        // Если нет сети, планируем повтор через 30 секунд
         setTimeout(() => App.db.sync.processSyncQueue(), 30000);
         return;
     }
@@ -166,10 +165,19 @@ App.db.sync.processSyncQueue = async function() {
             try {
                 await App.db.sync._executeAction(action);
                 await App.db.delete('pending_actions', action.id);
+
+                // ========== [CLOUD BACKUP] Сохраняем бэкап после успешной синхронизации ==========
+                if (typeof App.db.cloudBackup?.savePendingActionToCloud === 'function') {
+                    await App.db.cloudBackup.savePendingActionToCloud(action);
+                }
+                if (typeof App.db.cloudBackup?.markActionAsSyncedAndCleanup === 'function') {
+                    App.db.cloudBackup.markActionAsSyncedAndCleanup(action).catch(e => console.warn('[Sync] Ошибка маркировки бэкапа:', e));
+                }
+                // =================================================================================
+
             } catch (err) {
                 errorCount++;
                 const retry = (action.retryCount || 0) + 1;
-                // Определяем, является ли ошибка сетевой (таймаут, fetch, etc.)
                 const isNetworkError = err.message && (err.message.includes('timeout') || err.message.includes('fetch') || err.message.includes('network') || err.message.includes('abort'));
                 if (retry >= MAX_RETRIES || !isNetworkError) {
                     console.error(`[Sync] Действие ${action.id} окончательно не удалось:`, err.message);
@@ -194,7 +202,6 @@ App.db.sync.processSyncQueue = async function() {
     } finally {
         App.db.sync._isRunning = false;
         clearTimeout(App.db.sync._retryTimeout);
-        // Повторяем проверку очереди каждые 30 секунд (уменьшен интервал)
         App.db.sync._retryTimeout = setTimeout(() => App.db.sync.processSyncQueue(), 30000);
     }
 };
