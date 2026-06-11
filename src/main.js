@@ -324,6 +324,12 @@
         }
         if (syncInterval) clearInterval(syncInterval);
         if (premiumCheckInterval) clearInterval(premiumCheckInterval);
+        
+        // [CLOUD BACKUP] Очищаем облачные бэкапы при выходе
+        if (typeof App.db.cloudBackup?.clearAllBackups === 'function') {
+            await App.db.cloudBackup.clearAllBackups();
+        }
+        
         await App.supabase.auth.signOut();
         isLoggedIn = false;
         setInstallButtonVisible(false);
@@ -455,6 +461,17 @@
                         if (typeof App.storage.loadAllData === 'function') {
                             await App.storage.loadAllData();
                         }
+                        
+                        // ========== [CLOUD BACKUP] Восстановление очереди из облака ==========
+                        // Если локальная очередь пуста, пробуем восстановить из облачного бэкапа
+                        if (App.store.pendingActions.length === 0 && typeof App.db.cloudBackup?.restorePendingActionsFromCloud === 'function') {
+                            const restored = await App.db.cloudBackup.restorePendingActionsFromCloud();
+                            if (restored > 0) {
+                                console.log(`[Main] Восстановлено ${restored} действий из облачного бэкапа`);
+                            }
+                        }
+                        // ======================================================================
+                        
                     } catch (err) {
                         console.warn('Ошибка начальной загрузки:', err);
                     } finally {
