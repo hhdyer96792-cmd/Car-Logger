@@ -12,7 +12,6 @@ App.events.init = function() {
     App.events.initHistoryFilters();
     App.events.initStatsListeners();
     
-    // Глобальный перехват необработанных ошибок
     window.addEventListener('unhandledrejection', function(event) {
         console.error('Unhandled rejection:', event.reason);
         if (App.db && App.db.put) {
@@ -49,7 +48,6 @@ App.events.init = function() {
 
 App.events.setupDelegation = function() {
     document.body.addEventListener('click', async function(e) {
-        // Обработка глобальной кнопки приглашения (invite-btn)
         const inviteBtn = e.target.closest('#invite-btn');
         if (inviteBtn && inviteBtn.id === 'invite-btn') {
             e.preventDefault();
@@ -59,7 +57,6 @@ App.events.setupDelegation = function() {
             return;
         }
         
-        // Обработка кнопки "Ещё" (more-menu-btn) - открывает drawer
         const moreBtn = e.target.closest('#more-menu-btn');
         if (moreBtn && moreBtn.id === 'more-menu-btn') {
             e.preventDefault();
@@ -613,7 +610,6 @@ App.events.handleImport = function(e) {
     e.target.value = '';
 };
 
-// === НОВАЯ ФУНКЦИЯ: открытие модалки для ввода пробега и моточасов ===
 App.ui.pages.openMileageModal = function() {
     const content = `
         <form id="mileage-form">
