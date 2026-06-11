@@ -24,8 +24,9 @@ App.auth.requestMasterPassword = async function(isFirstTime = false) {
  * Инициализация мастер-пароля и загрузка данных.
  * @returns {Promise<boolean>} - успешность инициализации
  */
+
 App.auth.initializeMasterPassword = async function() {
-    const hasMasterPassword = localStorage.getItem('vesta_master_password_set') === 'true';
+    const hasMasterPassword = await App.db.getById('encrypted_secrets', 'master_salt') !== null;
     let masterPassword = null;
     
     // 1. Сначала пробуем PIN
@@ -36,7 +37,8 @@ App.auth.initializeMasterPassword = async function() {
             if (pin) {
                 masterPassword = await App.localAuth.verifyPin(pin);
                 if (masterPassword) {
-                    const salt = App.db.encryption.getStoredSalt();
+                    const salt = await App.db.encryption.getEncryptedSalt();
+                    if (!salt) throw new Error('Соль не найдена');
                     const { key } = await App.db.encryption.initMasterKey(masterPassword, salt);
                     App.db.encryption.setMasterKey(key, salt);
                     await App.store.loadFromIndexedDB();
@@ -60,39 +62,57 @@ App.auth.initializeMasterPassword = async function() {
             await App.auth.loadDataWithoutEncryption();
             return false;
         }
-        const salt = App.db.encryption.getStoredSalt();
+        
         let isValid = false;
         let key, finalSalt;
+        
         if (hasMasterPassword) {
-            isValid = await App.db.encryption.verifyMasterKey(password, salt);
-            if (isValid) {
-                const res = await App.db.encryption.initMasterKey(password, salt);
-                key = res.key;
-                finalSalt = res.salt;
-                App.db.encryption.setMasterKey(key, finalSalt);
-                masterPassword = password;
+            const salt = await App.db.encryption.getEncryptedSalt();
+            if (!salt) {
+                // Старая схема? пытаемся получить из localStorage
+                const legacySalt = App.db.encryption.getStoredSalt();
+                if (legacySalt) {
+                    isValid = await App.db.encryption.verifyMasterKey(password, legacySalt);
+                    if (isValid) {
+                        const res = await App.db.encryption.initMasterKey(password, legacySalt);
+                        key = res.key;
+                        finalSalt = legacySalt;
+                        // Переносим соль в IndexedDB
+                        await App.db.encryption.saveEncryptedSalt(finalSalt);
+                        localStorage.removeItem('vesta_encryption_salt_legacy');
+                    }
+                } else {
+                    throw new Error('Соль не найдена');
+                }
+            } else {
+                isValid = await App.db.encryption.verifyMasterKey(password, salt);
+                if (isValid) {
+                    const res = await App.db.encryption.initMasterKey(password, salt);
+                    key = res.key;
+                    finalSalt = salt;
+                }
             }
         } else {
             // Первая установка мастер-пароля
             const res = await App.db.encryption.initMasterKey(password, null);
             key = res.key;
             finalSalt = res.salt;
-            App.db.encryption.setMasterKey(key, finalSalt);
+            await App.db.encryption.saveEncryptedSalt(finalSalt);
             await App.db.encryption.saveVerificationString(key);
-            localStorage.setItem('vesta_master_password_set', 'true');
             isValid = true;
-            masterPassword = password;
         }
+        
         if (isValid) {
+            App.db.encryption.setMasterKey(key, finalSalt);
             await App.store.loadFromIndexedDB();
             if (typeof App.renderAll === 'function') App.renderAll();
             App.toast(hasMasterPassword ? 'Расшифровка успешна' : 'Мастер-пароль сохранён', 'success');
-            // Сбрасываем счётчик попыток PIN при успешном входе через мастер-пароль
-            if (App.localAuth && App.localAuth.resetPinAttempts) {
-                App.localAuth.resetPinAttempts();
+            // Сбрасываем счётчик попыток PIN
+            if (App.db.attemptsTracker && App.db.attemptsTracker.resetAttempts) {
+                await App.db.attemptsTracker.resetAttempts('pin');
             }
             // Предлагаем настроить PIN, если ещё не настроен
-            await App.auth.offerPinSetup(masterPassword);
+            await App.auth.offerPinSetup(password);
             return true;
         } else {
             App.toast('Неверный мастер-пароль', 'error');
