@@ -1,4 +1,4 @@
-//src/state/store.js
+// src/state/store.js
 window.App = window.App || {};
 
 App.store = {
@@ -31,7 +31,6 @@ App.store = {
         vin: ''
     },
 
-    // Базовые параметры (для автомобиля)
     baseMileage: 0,
     baseMotohours: 0,
     purchaseDate: '',
@@ -52,7 +51,6 @@ App.store = {
         );
     },
 
-    // ========== ЗАГРУЗКА ИЗ INDEXEDDB ==========
     loadFromIndexedDB: async function() {
         if (!App.db || !App.db._db) {
             console.warn('[Store] IndexedDB не инициализирована, загружаю из localStorage (fallback)');
@@ -194,7 +192,6 @@ App.store = {
                 localStorage.setItem('vesta_active_car_id', this.activeCarId);
             }
 
-            // Загрузка базовых параметров из car_settings
             if (this.activeCarId) {
                 const carSettings = await App.db.getById('car_settings', this.activeCarId);
                 if (carSettings) {
@@ -207,13 +204,11 @@ App.store = {
                     decrypted.vin = (decrypted.vin && typeof decrypted.vin !== 'object') ? String(decrypted.vin) : '';
                     Object.assign(this.settings, decrypted);
                     
-                    // Читаем базовые параметры, если они сохранены в car_settings
                     this.baseMileage = carSettings.baseMileage || 0;
                     this.baseMotohours = carSettings.baseMotohours || 0;
                     this.purchaseDate = carSettings.purchaseDate || '';
                     this.purchaseCost = carSettings.purchaseCost || 0;
                 } else {
-                    // Если car_settings нет, пробуем загрузить через Supabase (только онлайн)
                     if (navigator.onLine && App.supa && typeof App.supa.getVehicleState === 'function') {
                         try {
                             const state = await App.supa.getVehicleState(this.activeCarId);
@@ -222,7 +217,6 @@ App.store = {
                                 this.baseMotohours = state.base_motohours || 0;
                                 this.purchaseDate = state.purchase_date || '';
                                 this.purchaseCost = state.purchase_cost || 0;
-                                // Сохраняем в car_settings для офлайн-доступа
                                 await App.db.put('car_settings', {
                                     car_id: this.activeCarId,
                                     baseMileage: this.baseMileage,
@@ -276,7 +270,6 @@ App.store = {
         }
     },
 
-    // ========== FALLBACK ==========
     initFromLocalStorage: function() {
         var cached = localStorage.getItem(App.config.CACHE_KEY);
         if (cached) {
@@ -308,7 +301,6 @@ App.store = {
         console.warn('[Store] Используется устаревший initFromLocalStorage');
     },
 
-    // ========== СОХРАНЕНИЕ В INDEXEDDB ==========
     saveOperationToDB: async function(op) {
         if (!op.id) op.id = crypto.randomUUID();
         await App.db.put('operations', op);
@@ -357,7 +349,6 @@ App.store = {
         await App.db.put('cars', car);
     },
 
-    // ========== ОЧЕРЕДЬ СИНХРОНИЗАЦИИ ==========
     addPendingAction: async function(action) {
         const newAction = {
             id: crypto.randomUUID(),
@@ -386,7 +377,6 @@ App.store = {
         return this.pendingActions;
     },
 
-    // ========== ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ ==========
     saveToLocalStorage: function() {
         console.warn('[Store] saveToLocalStorage игнорируется, данные в IndexedDB');
     },
@@ -415,6 +405,11 @@ App.store = {
         if (this.activeCarId === carId) return;
         this.activeCarId = carId;
         localStorage.setItem('vesta_active_car_id', carId);
+        
+        // Очищаем кэш графиков при смене автомобиля
+        if (typeof App.chartCache?.clear === 'function') {
+            App.chartCache.clear();
+        }
         
         this.loadFromIndexedDB().catch(console.error);
         
