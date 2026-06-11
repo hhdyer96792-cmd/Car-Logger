@@ -361,9 +361,67 @@ App.ui.pages.renderPremiumBlock = function() {
     App.initIcons();
 };
 
-// ==================== ОСНОВНАЯ ФУНКЦИЯ ЗАПОЛНЕНИЯ НАСТРОЕК (с проверкой DOM) ====================
+// ==================== НОВЫЙ БЛОК РЕЗЕРВНОГО КОПИРОВАНИЯ ====================
+App.ui.pages.renderBackupBlock = function() {
+    const container = document.getElementById('backup-settings-container');
+    if (!container) return;
+    
+    container.innerHTML = `
+        <div class="card">
+            <h3><i data-lucide="archive"></i> Резервное копирование</h3>
+            <p class="hint">Экспорт всех данных в зашифрованный ZIP-архив (требуется мастер-пароль). Импорт из такого архива.</p>
+            <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+                <button id="export-backup-btn" class="primary-btn"><i data-lucide="download"></i> Экспорт бэкапа</button>
+                <button id="import-backup-btn" class="secondary-btn"><i data-lucide="upload"></i> Импорт бэкапа</button>
+            </div>
+            <div id="backup-message" class="hint" style="margin-top: 8px;"></div>
+        </div>
+    `;
+    App.initIcons();
+    
+    const exportBtn = document.getElementById('export-backup-btn');
+    const importBtn = document.getElementById('import-backup-btn');
+    const msgDiv = document.getElementById('backup-message');
+    
+    if (exportBtn) {
+        exportBtn.onclick = async () => {
+            const masterPassword = await App.ui.promptModalAsync('Экспорт данных', 'Введите мастер-пароль для шифрования бэкапа', true);
+            if (!masterPassword) return;
+            
+            msgDiv.innerHTML = '<span style="color: var(--warning);">Формирование архива... подождите.</span>';
+            try {
+                const blob = await App.backup.exportAllData(masterPassword);
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `car_logger_backup_${new Date().toISOString().slice(0,19).replace(/:/g, '-')}.zip`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                msgDiv.innerHTML = '<span style="color: var(--success);">Бэкап успешно создан и скачан.</span>';
+            } catch (err) {
+                msgDiv.innerHTML = `<span style="color: var(--danger);">Ошибка: ${err.message}</span>`;
+                if (App.errorHandler) App.errorHandler.logError(err, 'backup_export');
+            } finally {
+                setTimeout(() => { msgDiv.innerHTML = ''; }, 5000);
+            }
+        };
+    }
+    
+    if (importBtn) {
+        importBtn.onclick = () => {
+            if (typeof App.backup?.showImportModal === 'function') {
+                App.backup.showImportModal();
+            } else {
+                App.toast('Модуль резервного копирования не загружен', 'error');
+            }
+        };
+    }
+};
+
+// ==================== ОСНОВНАЯ ФУНКЦИЯ ЗАПОЛНЕНИЯ НАСТРОЕК ====================
 App.ui.pages.populateSettingsFields = async function() {
-    // Проверка готовности DOM и наличия контейнеров
     if (document.readyState !== 'complete') {
         await new Promise(resolve => window.addEventListener('load', resolve));
     }
@@ -592,6 +650,11 @@ App.ui.pages.populateSettingsFields = async function() {
         });
     });
 
+    // Добавляем блок резервного копирования
+    if (typeof App.ui.pages.renderBackupBlock === 'function') {
+        App.ui.pages.renderBackupBlock();
+    }
+
     App.initIcons();
 };
 
@@ -697,7 +760,7 @@ App.ui.pages.renderPinSettings = async function() {
         container.innerHTML = `
             <div class="card">
                 <h3><i data-lucide="fingerprint"></i> Быстрый вход по PIN</h3>
-                <p>Установите PIN-код (4+ цифр), чтобы не вводить мастер-пароль при каждом запуске.</p>
+                <p>Установите PIN-код (6+ цифр), чтобы не вводить мастер-пароль при каждом запуске.</p>
                 ${blockedMessage}
                 <button id="pin-setup-btn" class="primary-btn">Установить PIN</button>
             </div>
@@ -722,8 +785,8 @@ App.ui.pages.renderPinSettings = async function() {
                 }
                 let pinSet = false;
                 while (!pinSet) {
-                    const pin = await App.ui.promptModalAsync('Установите PIN-код (минимум 4 цифры)', '');
-                    if (pin && pin.length >= 4 && /^\d+$/.test(pin)) {
+                    const pin = await App.ui.promptModalAsync('Установите PIN-код (минимум 6 цифр)', '');
+                    if (pin && pin.length >= 6 && /^\d+$/.test(pin)) {
                         const confirmPin = await App.ui.promptModalAsync('Подтвердите PIN-код', '');
                         if (confirmPin === pin) {
                             try {
@@ -738,7 +801,7 @@ App.ui.pages.renderPinSettings = async function() {
                             App.toast('PIN-коды не совпадают', 'error');
                         }
                     } else {
-                        App.toast('PIN должен содержать минимум 4 цифры', 'error');
+                        App.toast('PIN должен содержать минимум 6 цифр', 'error');
                     }
                 }
             });
@@ -806,8 +869,3 @@ App.ui.pages.subscribeToPush = async function() {
         App.toast('Ошибка активации push-уведомлений: ' + err.message, 'error');
     }
 };
-
-// Инициализация при загрузке вкладки
-if (document.getElementById('tab-settings')) {
-    App.ui.pages.populateSettingsFields();
-}
