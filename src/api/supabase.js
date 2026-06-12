@@ -678,4 +678,18 @@ App.supa.getMonthlyFuelStats = async function(carId, startDate, endDate) {
     }
 };
 
+    App.supa.getTelegramStatus = async function() {
+    const userId = await App.supa.getCurrentUserId();
+    if (!userId) return { is_connected: false, username: null, telegram_enabled: false };
+    try {
+        const { data, error } = await App.supabase.rpc('get_telegram_status', { p_user_id: userId });
+        if (error) throw error;
+        if (data && data.length > 0) return data[0];
+        return { is_connected: false, username: null, telegram_enabled: false };
+    } catch (err) {
+        console.error('Error getting telegram status:', err);
+        return { is_connected: false, username: null, telegram_enabled: false };
+    }
+};
+    
 }
