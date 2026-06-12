@@ -523,7 +523,7 @@ App.ui.pages.populateSettingsFields = async function() {
         if (App.store.isPremium) {
             const userId = await App.supa.getCurrentUserId();
             if (userId) {
-                const link = `https://t.me/CarLoggerRobot?start=${userId}`;
+                const link = `https://t.me/carloggermsbot?start=${userId}`;
                 telegramBindArea.innerHTML = `
                     <div style="margin-top: 12px;">
                         <p><strong><i data-lucide="send"></i> Telegram-уведомления</strong></p>
