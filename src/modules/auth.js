@@ -168,8 +168,8 @@ App.auth.offerPinSetup = async function(masterPassword) {
         if (wantPin) {
             let pinSet = false;
             while (!pinSet) {
-                const pin = await App.ui.promptModalAsync('PIN-код', 'Введите 4+ цифры', true);
-                if (pin && pin.length >= 4 && /^\d+$/.test(pin)) {
+                const pin = await App.ui.promptModalAsync('PIN-код', 'Введите 6+ цифры', true);
+                if (pin && pin.length >= 6 && /^\d+$/.test(pin)) {
                     const confirmPin = await App.ui.promptModalAsync('Подтвердите PIN', 'Повторите PIN', true);
                     if (confirmPin === pin) {
                         try {
@@ -183,7 +183,7 @@ App.auth.offerPinSetup = async function(masterPassword) {
                         App.toast('PIN не совпадают', 'error');
                     }
                 } else {
-                    App.toast('PIN должен быть 4+ цифры', 'error');
+                    App.toast('PIN должен быть 6+ цифры', 'error');
                 }
             }
         }
