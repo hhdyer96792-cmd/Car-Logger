@@ -4,6 +4,7 @@ App.realtime = App.realtime || {};
 
 App.realtime.channels = [];
 App.realtime._currentCarId = null;
+App.realtime._telegramChannel = null;
 
 App.realtime._subscribeWithRetry = async function(carId) {
     if (!carId) return;
@@ -43,15 +44,48 @@ App.realtime.subscribeToCar = function(carId) {
     App.realtime._subscribeWithRetry(carId);
 };
 
+App.realtime.subscribeToTelegramStatus = async function() {
+    const userId = await App.supa.getCurrentUserId();
+    if (!userId) return;
+    
+    if (App.realtime._telegramChannel) {
+        App.supabase.removeChannel(App.realtime._telegramChannel);
+        App.realtime._telegramChannel = null;
+    }
+    
+    const channelTelegram = App.supabase.channel('telegram-users-' + userId)
+        .on('postgres_changes', {
+            event: '*',
+            schema: 'public',
+            table: 'telegram_users',
+            filter: `user_id=eq.${userId}`
+        }, () => {
+            if (typeof App.ui.pages.populateSettingsFields === 'function') {
+                App.ui.pages.populateSettingsFields();
+            }
+        })
+        .subscribe();
+    App.realtime._telegramChannel = channelTelegram;
+    App.realtime.channels.push(channelTelegram);
+};
+
 App.realtime.resubscribe = function() {
     if (App.realtime._currentCarId) {
         App.realtime._subscribeWithRetry(App.realtime._currentCarId);
     }
+    App.realtime.subscribeToTelegramStatus();
 };
 
 App.realtime.unsubscribeAll = function() {
-    App.realtime.channels.forEach(ch => App.supabase.removeChannel(ch));
+    App.realtime.channels.forEach(ch => {
+        try {
+            App.supabase.removeChannel(ch);
+        } catch(e) {
+            console.warn('[Realtime] Ошибка при отписке канала:', e);
+        }
+    });
     App.realtime.channels = [];
+    App.realtime._telegramChannel = null;
 };
 
 App.realtime.handleChange = function(table, payload) {
