@@ -518,40 +518,77 @@ App.ui.pages.populateSettingsFields = async function() {
         }
     }
 
-    const telegramBindArea = document.getElementById('telegram-bind-area');
-    if (telegramBindArea) {
-        if (App.store.isPremium) {
-            const userId = await App.supa.getCurrentUserId();
-            if (userId) {
-                const link = `https://t.me/carloggermsbot?start=${userId}`;
-                telegramBindArea.innerHTML = `
-                    <div style="margin-top: 12px;">
-                        <p><strong><i data-lucide="send"></i> Telegram-уведомления</strong></p>
-                        <a href="${link}" target="_blank" class="primary-btn" style="display:inline-block; margin-bottom:8px;">
-                            <i data-lucide="message-circle"></i> Привязать Telegram
-                        </a>
-                        <p class="hint">Нажмите на кнопку, чтобы связать аккаунт с официальным ботом. После привязки уведомления о ТО будут приходить в Telegram.</p>
-                    </div>
-                `;
-            } else {
-                telegramBindArea.innerHTML = '<p class="hint">Ошибка получения ID пользователя</p>';
-            }
-        } else {
+  const telegramBindArea = document.getElementById('telegram-bind-area');
+if (telegramBindArea) {
+    if (App.store.isPremium) {
+        const userId = await App.supa.getCurrentUserId();
+        const status = await App.supa.getTelegramStatus();
+        const isConnected = status.is_connected;
+        const username = status.username;
+        const telegramEnabled = status.telegram_enabled;
+        
+        if (isConnected && telegramEnabled) {
             telegramBindArea.innerHTML = `
                 <div style="margin-top: 12px;">
-                    <p class="hint"><i data-lucide="lock"></i> Telegram-уведомления доступны в Premium и Ultra тарифах.</p>
-                    <button id="upgrade-to-premium-telegram" class="secondary-btn"><i data-lucide="crown"></i> Активировать Premium</button>
+                    <p><strong><i data-lucide="send"></i> Telegram-уведомления</strong></p>
+                    <p class="hint" style="color: var(--success);">Подключено: @${username || 'Telegram'}</p>
+                    <button id="unbind-telegram-btn" class="secondary-btn"><i data-lucide="bell-off"></i> Отписаться</button>
+                    <div id="unbind-message" class="hint" style="margin-top: 8px;"></div>
                 </div>
             `;
-            const upgradeBtn = document.getElementById('upgrade-to-premium-telegram');
-            if (upgradeBtn) {
-                const newUpgradeBtn = upgradeBtn.cloneNode(true);
-                upgradeBtn.parentNode.replaceChild(newUpgradeBtn, upgradeBtn);
-                newUpgradeBtn.onclick = () => App.modules.showUpgradeModal();
+            const unbindBtn = telegramBindArea.querySelector('#unbind-telegram-btn');
+            if (unbindBtn) {
+                unbindBtn.onclick = async () => {
+                    const confirmed = await App.ui.confirmModalAsync('Отписаться от Telegram-уведомлений? Вы перестанете получать напоминания в Telegram.');
+                    if (!confirmed) return;
+                    const msgDiv = telegramBindArea.querySelector('#unbind-message');
+                    msgDiv.innerHTML = '<span style="color: var(--warning);">Отправка запроса...</span>';
+                    try {
+                        // Вызываем Edge Function для отписки (или удаляем запись напрямую)
+                        const { error } = await App.supabase
+                            .from('telegram_users')
+                            .delete()
+                            .eq('user_id', userId);
+                        if (error) throw error;
+                        await App.supabase
+                            .from('user_settings')
+                            .update({ telegram_enabled: false })
+                            .eq('user_id', userId)
+                            .eq('car_id', App.store.activeCarId);
+                        msgDiv.innerHTML = '<span style="color: var(--success);">Вы отписались. Чтобы снова подключиться, нажмите кнопку привязки.</span>';
+                        // Обновляем интерфейс
+                        setTimeout(() => App.ui.pages.populateSettingsFields(), 2000);
+                    } catch (err) {
+                        msgDiv.innerHTML = `<span style="color: var(--danger);">Ошибка: ${err.message}</span>`;
+                    }
+                };
             }
+        } else {
+            const link = `https://t.me/CarLoggerDnCBot?start=${userId}`;
+            telegramBindArea.innerHTML = `
+                <div style="margin-top: 12px;">
+                    <p><strong><i data-lucide="send"></i> Telegram-уведомления</strong></p>
+                    <a href="${link}" target="_blank" class="primary-btn" style="display:inline-block; margin-bottom:8px;">
+                        <i data-lucide="message-circle"></i> Привязать Telegram
+                    </a>
+                    <p class="hint">Нажмите на кнопку, чтобы связать аккаунт с официальным ботом. После привязки уведомления о ТО будут приходить в Telegram.</p>
+                </div>
+            `;
         }
-        App.initIcons();
+    } else {
+        telegramBindArea.innerHTML = `
+            <div style="margin-top: 12px;">
+                <p class="hint"><i data-lucide="lock"></i> Telegram-уведомления доступны в Premium и Ultra тарифах.</p>
+                <button id="upgrade-to-premium-telegram" class="secondary-btn"><i data-lucide="crown"></i> Активировать Premium</button>
+            </div>
+        `;
+        const upgradeBtn = document.getElementById('upgrade-to-premium-telegram');
+        if (upgradeBtn) {
+            upgradeBtn.onclick = () => App.modules.showUpgradeModal();
+        }
     }
+    App.initIcons();
+}
 
     if (!settingsListenersAttached) {
         const saveBtn = document.getElementById('save-settings-btn');
