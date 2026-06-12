@@ -855,14 +855,17 @@ App.ui.pages.subscribeToPush = async function() {
     }
     
     try {
-        if (Notification.permission !== 'granted') {
-            const permission = await Notification.requestPermission();
+        // Запрашиваем разрешение
+        let permission = Notification.permission;
+        if (permission !== 'granted') {
+            permission = await Notification.requestPermission();
             if (permission !== 'granted') {
                 App.toast('Необходимо разрешить уведомления для работы Push', 'warning');
                 return;
             }
         }
         
+        // Регистрируем Firebase-воркер
         if ('serviceWorker' in navigator) {
             let registration = await navigator.serviceWorker.getRegistration('/firebase-messaging-sw.js');
             if (!registration) {
@@ -870,28 +873,45 @@ App.ui.pages.subscribeToPush = async function() {
                 console.log('[Push] Firebase SW registered:', registration);
             }
             
-            if (typeof firebase !== 'undefined' && firebase.messaging) {
-                const messaging = firebase.messaging();
-                const vapidKey = 'BEUVrsWau5E4NvAwwAKmkjfK8yoDVntppWmZ2IdqseLVxuNNy47bV7eOLVYDmZ1b2P3F27eRqJLoAjW58Fh0tyY';
-                const token = await messaging.getToken({ vapidKey });
-                
-                if (token) {
-                    console.log('[Push] FCM Token получен:', token);
-                    await App.ui.pages.savePushSubscription(token);
-                    App.toast('Push-уведомления активированы', 'success');
-                    
-                    const statusEl = document.getElementById('push-status');
-                    if (statusEl) statusEl.innerHTML = '<i data-lucide="check-circle" style="color: var(--success);"></i> Push-уведомления активны';
-                    const subscribeEl = document.getElementById('subscribe-push-btn');
-                    const unsubscribeEl = document.getElementById('unsubscribe-push-btn');
-                    if (subscribeEl) subscribeEl.style.display = 'none';
-                    if (unsubscribeEl) unsubscribeEl.style.display = 'inline-flex';
-                    App.initIcons();
+            // Проверяем, что firebase.messaging доступен
+            if (typeof firebase === 'undefined' || !firebase.messaging) {
+                throw new Error('Firebase не загружен');
+            }
+            
+            const messaging = firebase.messaging();
+            // VAPID ключ – возьмите из консоли Firebase (Project settings -> Cloud Messaging -> Web configuration)
+            const vapidKey = 'BEUVrsWau5E4NvAwwAKmkjfK8yoDVntppWmZ2IdqseLVxuNNy47bV7eOLVYDmZ1b2P3F27eRqJLoAjW58Fh0tyY';
+            
+            const token = await messaging.getToken({ vapidKey });
+            if (token) {
+                console.log('[Push] FCM Token получен:', token);
+                // Сохраняем токен в Supabase
+                if (App.supa && App.supa.savePushToken) {
+                    await App.supa.savePushToken(token);
                 } else {
-                    throw new Error('Не удалось получить токен FCM');
+                    // fallback – прямая вставка в таблицу push_subscriptions
+                    const { data: { user } } = await App.supabase.auth.getUser();
+                    if (user) {
+                        await App.supabase.from('push_subscriptions').upsert({
+                            user_id: user.id,
+                            player_id: token,
+                            fcm_token: token,
+                            updated_at: new Date().toISOString()
+                        }, { onConflict: 'user_id' });
+                    }
                 }
+                App.toast('Push-уведомления активированы', 'success');
+                
+                // Обновляем интерфейс
+                const statusEl = document.getElementById('push-status');
+                if (statusEl) statusEl.innerHTML = '<i data-lucide="check-circle" style="color: var(--success);"></i> Push-уведомления активны';
+                const subscribeEl = document.getElementById('subscribe-push-btn');
+                const unsubscribeEl = document.getElementById('unsubscribe-push-btn');
+                if (subscribeEl) subscribeEl.style.display = 'none';
+                if (unsubscribeEl) unsubscribeEl.style.display = 'inline-flex';
+                App.initIcons();
             } else {
-                throw new Error('Firebase не инициализирован');
+                throw new Error('Не удалось получить токен FCM');
             }
         } else {
             throw new Error('Service Worker не поддерживается');
