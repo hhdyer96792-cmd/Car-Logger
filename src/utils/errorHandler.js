@@ -2,19 +2,35 @@
 window.App = window.App || {};
 App.errorHandler = App.errorHandler || {};
 
-// Очередь для отправки ошибок на сервер (чтобы не флудить)
 let pendingErrors = [];
 let sendTimer = null;
 
-/**
- * Логирует ошибку в IndexedDB и (опционально) отправляет на сервер.
- * @param {Error|string} error - объект ошибки или сообщение
- * @param {string} context - контекст (например, 'sync', 'auth', 'storage')
- * @param {Object} extra - дополнительные данные (например, { userId, action })
- */
+function sanitizeExtra(extra) {
+    if (!extra) return {};
+    const safe = {};
+    for (const [key, value] of Object.entries(extra)) {
+        if (value === undefined) continue;
+        if (typeof value === 'function') continue;
+        if (value instanceof Promise) continue;
+        if (value && typeof value === 'object') {
+            try {
+                JSON.stringify(value);
+                safe[key] = value;
+            } catch {
+                safe[key] = String(value);
+            }
+        } else {
+            safe[key] = value;
+        }
+    }
+    return safe;
+}
+
 App.errorHandler.logError = async function(error, context = 'general', extra = {}) {
     const errorMessage = typeof error === 'string' ? error : (error.message || String(error));
     const errorStack = error instanceof Error ? error.stack : null;
+    
+    const safeExtra = sanitizeExtra(extra);
     
     const errorRecord = {
         id: crypto.randomUUID(),
@@ -22,18 +38,16 @@ App.errorHandler.logError = async function(error, context = 'general', extra = {
         context: context,
         message: errorMessage,
         stack: errorStack,
-        extra: extra,
+        extra: safeExtra,
         userAgent: navigator.userAgent,
         url: window.location.href,
         timestamp: Date.now()
     };
     
-    // Сохраняем в IndexedDB (таблица error_log)
     try {
         if (App.db && App.db._db) {
             await App.db.put('error_log', errorRecord);
         } else {
-            // Fallback на localStorage
             const errors = JSON.parse(localStorage.getItem('vesta_error_log') || '[]');
             errors.push(errorRecord);
             if (errors.length > 50) errors.shift();
@@ -43,7 +57,6 @@ App.errorHandler.logError = async function(error, context = 'general', extra = {
         console.error('Не удалось сохранить ошибку локально:', e);
     }
     
-    // Отправляем на сервер, если есть интернет и не слишком часто
     if (navigator.onLine && App.supabase) {
         pendingErrors.push(errorRecord);
         if (!sendTimer) {
@@ -51,15 +64,11 @@ App.errorHandler.logError = async function(error, context = 'general', extra = {
         }
     }
     
-    // Выводим в консоль в режиме отладки
     if (App.config && App.config.DEBUG) {
-        console.error(`[${context}]`, errorMessage, extra);
+        console.error(`[${context}]`, errorMessage, safeExtra);
     }
 };
 
-/**
- * Отправляет накопленные ошибки на сервер (в таблицу error_logs)
- */
 App.errorHandler.flushErrors = async function() {
     if (sendTimer) {
         clearTimeout(sendTimer);
@@ -88,20 +97,15 @@ App.errorHandler.flushErrors = async function() {
         if (error) throw error;
     } catch (err) {
         console.warn('Не удалось отправить ошибки на сервер:', err);
-        // Возвращаем ошибки обратно в очередь, но не более 100 записей
         pendingErrors = [...errorsToSend, ...pendingErrors].slice(0, 100);
-        // Повторим попытку через минуту
         setTimeout(() => App.errorHandler.flushErrors(), 60000);
     }
 };
 
-/**
- * Глобальный перехватчик необработанных ошибок
- */
 App.errorHandler.setupGlobalHandlers = function() {
     window.addEventListener('unhandledrejection', (event) => {
         App.errorHandler.logError(event.reason, 'unhandledrejection', {
-            promise: event.promise
+            promise: '[Promise]'
         });
     });
     
@@ -111,10 +115,9 @@ App.errorHandler.setupGlobalHandlers = function() {
             lineno: lineno,
             colno: colno
         });
-        return false; // не подавляем стандартное поведение
+        return false;
     };
     
-    // Перехват ошибок в fetch
     const originalFetch = window.fetch;
     window.fetch = function(...args) {
         return originalFetch.apply(this, args).catch(err => {
@@ -124,9 +127,6 @@ App.errorHandler.setupGlobalHandlers = function() {
     };
 };
 
-/**
- * Очистка старых локальных ошибок (старше 30 дней)
- */
 App.errorHandler.cleanupOldErrors = async function() {
     try {
         if (App.db && App.db._db) {
