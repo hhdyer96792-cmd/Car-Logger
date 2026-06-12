@@ -9,8 +9,8 @@ App.auth = App.auth || {};
  */
 App.auth.requestMasterPassword = async function(isFirstTime = false) {
     const message = isFirstTime
-        ? 'Установите мастер-пароль для шифрования данных (запомните его!)'
-        : 'Введите мастер-пароль';
+        ? 'Установите мастер-пароль для шифрования данных (запомните его!). Длина: не менее 8 символов.'
+        : 'Введите мастер-пароль. Длина: не менее 8 символов.';
     try {
         const password = await App.ui.promptModalAsync('Мастер-пароль', message, true);
         return password;
