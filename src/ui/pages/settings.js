@@ -844,80 +844,113 @@ App.ui.pages.renderPinSettings = async function() {
 
 // ==================== PUSH-УВЕДОМЛЕНИЯ ====================
 App.ui.pages.subscribeToPush = async function() {
+    console.log('[Push] 1. Начало подписки');
+    
     if (!('Notification' in window)) {
+        console.log('[Push] 2. Notification не поддерживается');
         App.ui.alertModal('Push-уведомления не поддерживаются вашим браузером.');
         return;
     }
     
+    console.log('[Push] 3. Notification разрешение:', Notification.permission);
+    
     if (Notification.permission === 'denied') {
+        console.log('[Push] 4. Разрешение заблокировано');
         App.ui.alertModal('Разрешение на уведомления заблокировано. Пожалуйста, измените настройки в браузере.');
         return;
     }
     
     try {
-        // Запрашиваем разрешение
+        // Запрашиваем разрешение, если его нет
         let permission = Notification.permission;
         if (permission !== 'granted') {
+            console.log('[Push] 5. Запрашиваем разрешение...');
             permission = await Notification.requestPermission();
+            console.log('[Push] 6. Результат запроса:', permission);
             if (permission !== 'granted') {
                 App.toast('Необходимо разрешить уведомления для работы Push', 'warning');
                 return;
             }
         }
         
-        // Регистрируем Firebase-воркер
-        if ('serviceWorker' in navigator) {
-            let registration = await navigator.serviceWorker.getRegistration('/firebase-messaging-sw.js');
-            if (!registration) {
-                registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
-                console.log('[Push] Firebase SW registered:', registration);
-            }
-            
-            // Проверяем, что firebase.messaging доступен
-            if (typeof firebase === 'undefined' || !firebase.messaging) {
-                throw new Error('Firebase не загружен');
-            }
-            
-            const messaging = firebase.messaging();
-            // VAPID ключ – возьмите из консоли Firebase (Project settings -> Cloud Messaging -> Web configuration)
-            const vapidKey = 'BEUVrsWau5E4NvAwwAKmkjfK8yoDVntppWmZ2IdqseLVxuNNy47bV7eOLVYDmZ1b2P3F27eRqJLoAjW58Fh0tyY';
-            
-            const token = await messaging.getToken({ vapidKey });
-            if (token) {
-                console.log('[Push] FCM Token получен:', token);
-                // Сохраняем токен в Supabase
-                if (App.supa && App.supa.savePushToken) {
-                    await App.supa.savePushToken(token);
-                } else {
-                    // fallback – прямая вставка в таблицу push_subscriptions
-                    const { data: { user } } = await App.supabase.auth.getUser();
-                    if (user) {
-                        await App.supabase.from('push_subscriptions').upsert({
-                            user_id: user.id,
-                            player_id: token,
-                            fcm_token: token,
-                            updated_at: new Date().toISOString()
-                        }, { onConflict: 'user_id' });
-                    }
-                }
-                App.toast('Push-уведомления активированы', 'success');
-                
-                // Обновляем интерфейс
-                const statusEl = document.getElementById('push-status');
-                if (statusEl) statusEl.innerHTML = '<i data-lucide="check-circle" style="color: var(--success);"></i> Push-уведомления активны';
-                const subscribeEl = document.getElementById('subscribe-push-btn');
-                const unsubscribeEl = document.getElementById('unsubscribe-push-btn');
-                if (subscribeEl) subscribeEl.style.display = 'none';
-                if (unsubscribeEl) unsubscribeEl.style.display = 'inline-flex';
-                App.initIcons();
-            } else {
-                throw new Error('Не удалось получить токен FCM');
-            }
+        // Проверяем Service Worker
+        if (!('serviceWorker' in navigator)) {
+            console.log('[Push] 7. Service Worker не поддерживается');
+            App.toast('Service Worker не поддерживается', 'error');
+            return;
+        }
+        
+        console.log('[Push] 8. Получаем регистрацию SW');
+        let registration = await navigator.serviceWorker.getRegistration('/firebase-messaging-sw.js');
+        if (!registration) {
+            console.log('[Push] 9. Регистрируем firebase-messaging-sw.js');
+            registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+            console.log('[Push] 10. SW зарегистрирован:', registration);
         } else {
-            throw new Error('Service Worker не поддерживается');
+            console.log('[Push] 11. SW уже зарегистрирован');
+        }
+        
+        // Проверяем наличие firebase
+        if (typeof firebase === 'undefined') {
+            console.log('[Push] 12. Firebase не загружен');
+            throw new Error('Firebase не загружен');
+        }
+        console.log('[Push] 13. Firebase загружен, apps:', firebase.apps.length);
+        
+        // Убеждаемся, что Firebase инициализирован
+        if (firebase.apps.length === 0) {
+            console.log('[Push] 14. Инициализируем Firebase');
+            firebase.initializeApp({
+                apiKey: "AIzaSyCKz1GKDdqxtK6NyLQAZ84QqUUCaqTQDWQ",
+                authDomain: "car-k3eper.firebaseapp.com",
+                projectId: "car-k3eper",
+                storageBucket: "car-k3eper.firebasestorage.app",
+                messagingSenderId: "826833638199",
+                appId: "1:826833638199:web:647fedbe3eae5b605240b2"
+            });
+        }
+        
+        const messaging = firebase.messaging();
+        console.log('[Push] 15. Объект messaging получен');
+        
+        // VAPID ключ
+        const vapidKey = 'BEUVrsWau5E4NvAwwAKmkjfK8yoDVntppWmZ2IdqseLVxuNNy47bV7eOLVYDmZ1b2P3F27eRqJLoAjW58Fh0tyY';
+        
+        console.log('[Push] 16. Запрашиваем токен...');
+        const token = await messaging.getToken({ vapidKey, serviceWorkerRegistration: registration });
+        console.log('[Push] 17. Токен получен:', token);
+        
+        if (token) {
+            // Сохраняем токен в Supabase
+            if (App.supa && App.supa.savePushToken) {
+                await App.supa.savePushToken(token);
+            } else {
+                const { data: { user } } = await App.supabase.auth.getUser();
+                if (user) {
+                    await App.supabase.from('push_subscriptions').upsert({
+                        user_id: user.id,
+                        player_id: token,
+                        fcm_token: token,
+                        updated_at: new Date().toISOString()
+                    }, { onConflict: 'user_id' });
+                }
+            }
+            localStorage.setItem('push_subscribed', 'true');
+            App.toast('Push-уведомления активированы', 'success');
+            
+            // Обновляем интерфейс
+            const statusEl = document.getElementById('push-status');
+            if (statusEl) statusEl.innerHTML = '<i data-lucide="check-circle" style="color: var(--success);"></i> Push-уведомления активны';
+            const subscribeEl = document.getElementById('subscribe-push-btn');
+            const unsubscribeEl = document.getElementById('unsubscribe-push-btn');
+            if (subscribeEl) subscribeEl.style.display = 'none';
+            if (unsubscribeEl) unsubscribeEl.style.display = 'inline-flex';
+            App.initIcons();
+        } else {
+            throw new Error('Токен не получен');
         }
     } catch (err) {
-        console.error('[Push] Ошибка подписки:', err);
+        console.error('[Push] Ошибка:', err);
         App.toast('Ошибка активации push-уведомлений: ' + err.message, 'error');
     }
 };
