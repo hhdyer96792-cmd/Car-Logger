@@ -4,16 +4,24 @@ App.events = App.events || {};
 
 App.events.currentActiveTab = null;
 
-// Debounced функция для перерисовки графиков (чтобы не вызывать часто)
+// ========== DEBOUNCE ДЛЯ ГРАФИКОВ ==========
 App.events.debouncedRenderCharts = (function() {
     let timeout;
     return function() {
         if (timeout) clearTimeout(timeout);
         timeout = setTimeout(() => {
-            if (typeof App.charts.renderFuelConsumptionChart === 'function') App.charts.renderFuelConsumptionChart();
-            if (typeof App.charts.renderCostsChart === 'function') App.charts.renderCostsChart();
-            if (typeof App.charts.renderFuelPriceChart === 'function') App.charts.renderFuelPriceChart();
-            if (typeof App.charts.renderExpensePieChart === 'function') App.charts.renderExpensePieChart();
+            if (typeof App.charts.renderFuelConsumptionChart === 'function') {
+                App.charts.renderFuelConsumptionChart();
+            }
+            if (typeof App.charts.renderCostsChart === 'function') {
+                App.charts.renderCostsChart();
+            }
+            if (typeof App.charts.renderFuelPriceChart === 'function') {
+                App.charts.renderFuelPriceChart();
+            }
+            if (typeof App.charts.renderExpensePieChart === 'function') {
+                App.charts.renderExpensePieChart();
+            }
         }, 300);
     };
 })();
@@ -26,7 +34,6 @@ App.events.init = function() {
     App.events.initHistoryFilters();
     App.events.initStatsListeners();
     
-    // Глобальный перехват необработанных ошибок
     window.addEventListener('unhandledrejection', function(event) {
         console.error('Unhandled rejection:', event.reason);
         if (App.db && App.db.put) {
