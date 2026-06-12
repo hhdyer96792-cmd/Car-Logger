@@ -135,11 +135,9 @@ App.ui.pages.renderRecoveryCodesBlock = function(container) {
     container.innerHTML = `
         <div class="card">
             <h3><i data-lucide="key"></i> Резервные коды</h3>
-            <div id="recovery-codes-container">
-                <button id="show-recovery-btn" class="secondary-btn">Показать неиспользованные коды</button>
-                <button id="gen-new-codes-btn" class="secondary-btn" style="margin-left:8px;">Сгенерировать новые</button>
-                <div id="recovery-codes-list" style="margin-top:12px;"></div>
-            </div>
+            <p class="hint">Коды генерируются один раз и показываются только при создании. Сохраните их сразу.</p>
+            <button id="gen-new-codes-btn" class="secondary-btn">Сгенерировать новые коды</button>
+            <div id="recovery-codes-list" style="margin-top:12px;"></div>
         </div>
     `;
     App.initIcons();
