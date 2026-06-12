@@ -678,6 +678,7 @@ App.supa.getMonthlyFuelStats = async function(carId, startDate, endDate) {
     }
 };
 
+// ========== ПОЛУЧЕНИЕ СТАТУСА TELEGRAM ==========
     App.supa.getTelegramStatus = async function() {
     const userId = await App.supa.getCurrentUserId();
     if (!userId) return { is_connected: false, username: null, telegram_enabled: false };
