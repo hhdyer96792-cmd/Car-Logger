@@ -701,6 +701,7 @@ App.ui.pages.initRecoveryCodesUI = function() {
     let genBtn = document.getElementById('gen-new-codes-btn');
     if (!showBtn || !genBtn) return;
 
+    // Удаляем старые клоны, чтобы избежать дублирования
     const newShowBtn = showBtn.cloneNode(true);
     const newGenBtn = genBtn.cloneNode(true);
     showBtn.parentNode.replaceChild(newShowBtn, showBtn);
@@ -708,36 +709,32 @@ App.ui.pages.initRecoveryCodesUI = function() {
     showBtn = newShowBtn;
     genBtn = newGenBtn;
 
-    showBtn.addEventListener('click', async function() {
-        const { data: { user } } = await App.supabase.auth.getUser();
-        if (!user) return;
-        const { data: codes } = await App.supabase.from('recovery_codes')
-            .select('code_hash, used')
-            .eq('user_id', user.id)
-            .order('created_at', { ascending: false });
-        const unused = codes.filter(c => !c.used);
-        const listEl = document.getElementById('recovery-codes-list');
-        if (!listEl) return;
-        if (unused.length === 0) {
-            listEl.innerHTML = '<p class="hint">Все коды использованы. Сгенерируйте новые.</p>';
-            return;
-        }
-        listEl.innerHTML = '<p>Неиспользованные коды:</p><ul>' + unused.map(c => '<li>' + c.code_hash + '</li>').join('') + '</ul>';
-    });
+    // Удаляем или отключаем кнопку "Показать" – она не нужна
+    showBtn.style.display = 'none';
 
     genBtn.addEventListener('click', async function() {
         const { data: { user } } = await App.supabase.auth.getUser();
         if (!user) return;
-        const confirmed = await App.ui.confirmModalAsync('Старые коды будут удалены. Продолжить?');
+        const confirmed = await App.ui.confirmModalAsync('Сгенерировать новые резервные коды? Старые коды будут аннулированы. Сохраните новые коды в надёжном месте.');
         if (!confirmed) return;
+        
         const { data: codes, error } = await App.supabase.rpc('generate_recovery_codes', { p_user_id: user.id });
         if (error || !codes || codes.length === 0) {
-            App.toast('Не удалось сгенерировать новые коды', 'error');
+            App.toast('Не удалось сгенерировать коды', 'error');
             return;
         }
-        await App.ui.alertModal('Новые резервные коды (сохраните их!):\n\n' + codes.join('\n'));
+        
+        // Показываем коды в модальном окне (только один раз)
+        let codesText = 'Ваши новые резервные коды (каждый можно использовать один раз):\n\n';
+        codes.forEach((code, idx) => {
+            codesText += `${idx+1}. ${code}\n`;
+        });
+        codesText += '\nСохраните их в надёжном месте. Эта страница больше не покажет эти коды.';
+        await App.ui.alertModal(codesText);
+        
+        // Обновляем интерфейс (убираем список, показываем сообщение)
         const listEl = document.getElementById('recovery-codes-list');
-        if (listEl) listEl.innerHTML = '<p class="hint">Новые коды сгенерированы. Нажмите "Показать", чтобы увидеть их.</p>';
+        if (listEl) listEl.innerHTML = '<p class="hint">Новые коды сгенерированы и показаны. Сохраните их.</p>';
     });
 };
 
