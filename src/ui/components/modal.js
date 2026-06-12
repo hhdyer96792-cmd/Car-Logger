@@ -192,8 +192,10 @@ App.ui.confirmModalAsync = function(message) {
 App.ui.promptModalAsync = function(title, placeholder, isPassword = false) {
     return new Promise(function(resolve) {
         const inputType = isPassword ? 'password' : 'text';
+        const hint = isPassword ? '<p class="hint" style="font-size:0.75rem; margin-top:-8px; margin-bottom:8px;">Рекомендуемая длина: не менее 8 символов</p>' : '';
         const content = `
             <input type="${inputType}" id="prompt-input" placeholder="${App.utils.escapeHtml(placeholder || '')}" style="width:100%; margin-bottom:16px;">
+            ${hint}
             <div class="modal-actions" style="display:flex; gap:8px; justify-content:flex-end;">
                 <button id="prompt-ok-btn" class="primary-btn">ОК</button>
                 <button id="prompt-cancel-btn" class="secondary-btn">Отмена</button>
