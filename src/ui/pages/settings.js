@@ -213,9 +213,9 @@ App.ui.pages.renderAccountPasswordBlock = function(container) {
                 const { error: signInError } = await App.supabase.auth.signInWithPassword({ email, password: currentPwd });
                 if (signInError) throw new Error('Неверный текущий пароль');
                 
-                const newPwd = await App.ui.promptModalAsync('Смена пароля входа', 'Введите новый пароль (мин. 6 символов):');
-                if (!newPwd || newPwd.length < 6) {
-                    statusDiv.innerHTML = '<span style="color: var(--danger);"><i data-lucide="alert-triangle"></i> Пароль должен быть не менее 6 символов</span>';
+                const newPwd = await App.ui.promptModalAsync('Смена пароля входа', 'Введите новый пароль (мин. 8 символов):');
+                if (!newPwd || newPwd.length < 8) {
+                    statusDiv.innerHTML = '<span style="color: var(--danger);"><i data-lucide="alert-triangle"></i> Пароль должен быть не менее 8 символов</span>';
                     setTimeout(() => statusDiv.innerHTML = '', 3000);
                     return;
                 }
