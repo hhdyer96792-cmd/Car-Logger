@@ -92,17 +92,20 @@ App.events.setupDelegation = function() {
         }
 
         const subscribePushBtn = e.target.closest('#subscribe-push-btn');
-        if (subscribePushBtn) {
-            e.preventDefault();
-            console.log('[Events] Подписка на push');
-            if (typeof App.ui.pages.subscribeToPush === 'function') {
-                await App.ui.pages.subscribeToPush();
-            } else {
-                console.error('[Events] subscribeToPush не определена');
-                App.toast('Ошибка: функция подписки не найдена', 'error');
-            }
-            return;
-        }
+if (subscribePushBtn) {
+    e.preventDefault();
+    console.log('[Events] Подписка на push');
+    console.log('[Events] Тип App.ui.pages.subscribeToPush:', typeof App.ui.pages.subscribeToPush);
+    if (typeof App.ui.pages.subscribeToPush === 'function') {
+        console.log('[Events] Вызываем App.ui.pages.subscribeToPush');
+        await App.ui.pages.subscribeToPush();
+        console.log('[Events] App.ui.pages.subscribeToPush завершилась');
+    } else {
+        console.error('[Events] subscribeToPush не определена');
+        App.toast('Ошибка: функция подписки не найдена', 'error');
+    }
+    return;
+}
 
         const unsubscribePushBtn = e.target.closest('#unsubscribe-push-btn');
         if (unsubscribePushBtn) {
