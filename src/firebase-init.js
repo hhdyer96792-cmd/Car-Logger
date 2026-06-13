@@ -1,13 +1,38 @@
 // src/firebase-init.js
-// Инициализация Firebase для клиентской части (необходима для получения FCM-токена)
-if (typeof firebase !== 'undefined' && firebase.apps && !firebase.apps.length) {
-  firebase.initializeApp({
-    apiKey: "AIzaSyCKz1GKDdqxtK6NyLQAZ84QqUUCaqTQDWQ",
-    authDomain: "car-k3eper.firebaseapp.com",
-    projectId: "car-k3eper",
-    storageBucket: "car-k3eper.firebasestorage.app",
-    messagingSenderId: "826833638199",
-    appId: "1:826833638199:web:647fedbe3eae5b605240b2"
-  });
-  console.log('[Firebase] Инициализирован в основном потоке');
+console.log('[Firebase] Инициализация...');
+
+// Проверяем, что Firebase уже загружен
+if (typeof firebase === 'undefined') {
+    console.error('[Firebase] Firebase не загружен');
+} else {
+    // Инициализация с вашими ключами
+    const firebaseConfig = {
+        apiKey: "AIzaSyCKz1GKDdqxtK6NyLQAZ84QqUUCaqTQDWQ",
+        authDomain: "car-k3eper.firebaseapp.com",
+        projectId: "car-k3eper",
+        storageBucket: "car-k3eper.firebasestorage.app",
+        messagingSenderId: "826833638199",
+        appId: "1:826833638199:web:647fedbe3eae5b605240b2"
+    };
+    
+    if (!firebase.apps.length) {
+        firebase.initializeApp(firebaseConfig);
+        console.log('[Firebase] Инициализирован');
+    } else {
+        console.log('[Firebase] Уже инициализирован');
+    }
+    
+    // Регистрация Service Worker для Firebase
+    if ('serviceWorker' in navigator) {
+        const swPath = window.location.pathname.includes('/Car-Logger/') 
+            ? '/Car-Logger/firebase-messaging-sw.js' 
+            : '/firebase-messaging-sw.js';
+        navigator.serviceWorker.register(swPath)
+            .then(registration => {
+                console.log('[Firebase] SW зарегистрирован:', swPath);
+                // Сохраняем регистрацию глобально для использования в subscribeToPush
+                window.firebaseSwRegistration = registration;
+            })
+            .catch(err => console.error('[Firebase] Ошибка регистрации SW:', err));
+    }
 }
