@@ -4,19 +4,6 @@ App.events = App.events || {};
 
 App.events.currentActiveTab = null;
 
-App.events.debouncedRenderCharts = (function() {
-    let timeout;
-    return function() {
-        if (timeout) clearTimeout(timeout);
-        timeout = setTimeout(() => {
-            if (typeof App.charts.renderFuelConsumptionChart === 'function') App.charts.renderFuelConsumptionChart();
-            if (typeof App.charts.renderCostsChart === 'function') App.charts.renderCostsChart();
-            if (typeof App.charts.renderFuelPriceChart === 'function') App.charts.renderFuelPriceChart();
-            if (typeof App.charts.renderExpensePieChart === 'function') App.charts.renderExpensePieChart();
-        }, 300);
-    };
-})();
-
 App.events.init = function() {
     App.events.setupDelegation();
     App.events.initNavigation();
@@ -25,6 +12,7 @@ App.events.init = function() {
     App.events.initHistoryFilters();
     App.events.initStatsListeners();
     
+    // Глобальный перехват необработанных ошибок
     window.addEventListener('unhandledrejection', function(event) {
         console.error('Unhandled rejection:', event.reason);
         if (App.db && App.db.put) {
@@ -61,6 +49,7 @@ App.events.init = function() {
 
 App.events.setupDelegation = function() {
     document.body.addEventListener('click', async function(e) {
+        // Обработка глобальной кнопки приглашения (invite-btn)
         const inviteBtn = e.target.closest('#invite-btn');
         if (inviteBtn && inviteBtn.id === 'invite-btn') {
             e.preventDefault();
@@ -70,63 +59,12 @@ App.events.setupDelegation = function() {
             return;
         }
         
+        // Обработка кнопки "Ещё" (more-menu-btn) - открывает drawer
         const moreBtn = e.target.closest('#more-menu-btn');
         if (moreBtn && moreBtn.id === 'more-menu-btn') {
             e.preventDefault();
             e.stopPropagation();
             App.events.openDrawer();
-            return;
-        }
-        
-        const saveSettingsBtn = e.target.closest('#save-settings-btn');
-        if (saveSettingsBtn) {
-            e.preventDefault();
-            console.log('[Events] save-settings-btn клик');
-            await App.ui.pages.saveSettings();
-            return;
-        }
-        
-        const subscribePushBtn = e.target.closest('#subscribe-push-btn');
-        if (subscribePushBtn) {
-            e.preventDefault();
-            console.log('[Events] subscribe-push-btn клик');
-            await App.ui.pages.subscribeToPush();
-            return;
-        }
-        
-        const unsubscribePushBtn = e.target.closest('#unsubscribe-push-btn');
-        if (unsubscribePushBtn) {
-            e.preventDefault();
-            console.log('[Events] unsubscribe-push-btn клик');
-            await App.ui.pages.removePushSubscription();
-            const statusEl = document.getElementById('push-status');
-            if (statusEl) statusEl.innerHTML = '<i data-lucide="bell-off"></i> Push-уведомления не настроены';
-            const subscribeEl = document.getElementById('subscribe-push-btn');
-            const unsubscribeEl = document.getElementById('unsubscribe-push-btn');
-            if (subscribeEl) subscribeEl.style.display = 'inline-flex';
-            if (unsubscribeEl) unsubscribeEl.style.display = 'none';
-            App.initIcons();
-            return;
-        }
-        
-        const unbindTelegramBtn = e.target.closest('#unbind-telegram-btn');
-        if (unbindTelegramBtn) {
-            e.preventDefault();
-            const confirmed = await App.ui.confirmModalAsync('Отписаться от Telegram-уведомлений? Вы перестанете получать напоминания в Telegram.');
-            if (!confirmed) return;
-            const userId = await App.supa.getCurrentUserId();
-            if (!userId) return;
-            const msgDiv = document.getElementById('unbind-message');
-            if (msgDiv) msgDiv.innerHTML = '<span style="color: var(--warning);">Отправка запроса...</span>';
-            try {
-                const { error } = await App.supabase.from('telegram_users').delete().eq('user_id', userId);
-                if (error) throw error;
-                await App.supabase.from('user_settings').update({ telegram_enabled: false }).eq('user_id', userId).eq('car_id', App.store.activeCarId);
-                if (msgDiv) msgDiv.innerHTML = '<span style="color: var(--success);">Вы отписались. Чтобы снова подключиться, нажмите кнопку привязки.</span>';
-                setTimeout(() => App.ui.pages.populateSettingsFields(), 2000);
-            } catch (err) {
-                if (msgDiv) msgDiv.innerHTML = `<span style="color: var(--danger);">Ошибка: ${err.message}</span>`;
-            }
             return;
         }
         
@@ -354,7 +292,7 @@ App.events.initNavigation = function() {
     });
 };
 
-App.events.switchToTab = async function(tabId) {
+App.events.switchToTab = function(tabId) {
     if (App.events.currentActiveTab === tabId) return;
 
     document.body.style.overflow = '';
@@ -423,9 +361,7 @@ App.events.switchToTab = async function(tabId) {
             if (typeof App.ui.pages.renderCarTab === 'function') App.ui.pages.renderCarTab();
             break;
         case 'settings':
-            if (typeof App.ui.pages.populateSettingsFields === 'function') {
-                await App.ui.pages.populateSettingsFields();
-            }
+            if (typeof App.ui.pages.populateSettingsFields === 'function') App.ui.pages.populateSettingsFields();
             if (typeof App.ui.pages.checkPushSubscriptionStatus === 'function') {
                 App.ui.pages.checkPushSubscriptionStatus();
             }
@@ -524,6 +460,9 @@ App.events.initDirectListeners = function() {
     const addPartBtn = document.getElementById('add-part-btn');
     if (addPartBtn) addPartBtn.addEventListener('click', () => { App.ui.pages.openPartForm(null); });
 
+    const saveSettingsBtn = document.getElementById('save-settings-btn');
+    if (saveSettingsBtn) saveSettingsBtn.addEventListener('click', App.ui.pages.saveSettings);
+
     const exportDataBtn = document.getElementById('export-data-btn');
     if (exportDataBtn) exportDataBtn.addEventListener('click', App.ui.pages.handleExport);
 
@@ -602,7 +541,7 @@ App.events.initDirectListeners = function() {
         settingsThemeToggle.addEventListener('click', () => {
             App.events.toggleTheme();
             const isDark = document.body.classList.contains('dark');
-            settingsThemeToggle.innerHTML = isDark ? '<i data-lucide="sun"></i> Светлая тема' : '<i data-lucide="moon"></i> Тёмная тема';
+            this.innerHTML = isDark ? '<i data-lucide="sun"></i> Светлая тема' : '<i data-lucide="moon"></i> Тёмная тема';
             App.initIcons();
         });
     }
@@ -644,7 +583,7 @@ App.events.initStatsListeners = function() {
         periodSelect.addEventListener('change', () => {
             localStorage.setItem(App.config.STATS_PERIOD_KEY, periodSelect.value);
             if (document.getElementById('tab-stats')?.classList.contains('active')) {
-                App.events.debouncedRenderCharts();
+                App.ui.pages.renderFinanceTab();
             }
         });
     }
@@ -674,6 +613,7 @@ App.events.handleImport = function(e) {
     e.target.value = '';
 };
 
+// === НОВАЯ ФУНКЦИЯ: открытие модалки для ввода пробега и моточасов ===
 App.ui.pages.openMileageModal = function() {
     const content = `
         <form id="mileage-form">
