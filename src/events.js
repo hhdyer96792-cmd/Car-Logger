@@ -61,7 +61,6 @@ App.events.init = function() {
 
 App.events.setupDelegation = function() {
     document.body.addEventListener('click', async function(e) {
-        // Обработка глобальной кнопки приглашения
         const inviteBtn = e.target.closest('#invite-btn');
         if (inviteBtn && inviteBtn.id === 'invite-btn') {
             e.preventDefault();
@@ -71,7 +70,6 @@ App.events.setupDelegation = function() {
             return;
         }
         
-        // Обработка кнопки "Ещё"
         const moreBtn = e.target.closest('#more-menu-btn');
         if (moreBtn && moreBtn.id === 'more-menu-btn') {
             e.preventDefault();
@@ -80,12 +78,16 @@ App.events.setupDelegation = function() {
             return;
         }
         
-        // --- Обработчики кнопок настроек (прямое делегирование) ---
+        // --- Обработчики кнопок настроек ---
         const saveSettingsBtn = e.target.closest('#save-settings-btn');
         if (saveSettingsBtn) {
             e.preventDefault();
             console.log('[Events] Сохранение настроек');
-            await App.ui.pages.saveSettings();
+            if (typeof App.ui.pages.saveSettings === 'function') {
+                await App.ui.pages.saveSettings();
+            } else {
+                console.error('[Events] App.ui.pages.saveSettings не определена');
+            }
             return;
         }
         
@@ -132,7 +134,7 @@ App.events.setupDelegation = function() {
             }
             return;
         }
-        // ------------------------------------------------
+        // ------------------------------------
         
         const target = e.target.closest('[data-action]');
         if (!target) return;
