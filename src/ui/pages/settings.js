@@ -88,10 +88,12 @@ App.ui.pages.savePushSubscription = async function(playerId) {
 };
 
 App.ui.pages.removePushSubscription = async function() {
+  console.log('[Settings] removePushSubscription вызвана');
   if (!App.supabase) return false;
   try {
     const { data: { user } } = await App.supabase.auth.getUser();
     if (!user) throw new Error('User not authenticated');
+    // Удаляем из БД
     if (App.supa.removePushToken) {
       await App.supa.removePushToken();
     } else {
@@ -101,18 +103,27 @@ App.ui.pages.removePushSubscription = async function() {
         .eq('user_id', user.id);
       if (error) throw error;
     }
-    localStorage.removeItem('push_subscribed');
-    if (typeof firebase !== 'undefined' && firebase.apps && firebase.apps.length > 0) {
+    // Отписываемся от FCM
+    if (typeof firebase !== 'undefined' && firebase.messaging) {
       try {
         const messaging = firebase.messaging();
-        if (messaging && typeof messaging.deleteToken === 'function') {
-          await messaging.deleteToken();
-        }
+        await messaging.deleteToken();
       } catch(e) { console.warn('Token delete failed:', e); }
     }
+    localStorage.removeItem('push_subscribed');
+    // Обновляем UI
+    const statusEl = document.getElementById('push-status');
+    if (statusEl) statusEl.innerHTML = '<i data-lucide="bell-off"></i> Push-уведомления не настроены';
+    const subscribeEl = document.getElementById('subscribe-push-btn');
+    const unsubscribeEl = document.getElementById('unsubscribe-push-btn');
+    if (subscribeEl) subscribeEl.style.display = 'inline-flex';
+    if (unsubscribeEl) unsubscribeEl.style.display = 'none';
+    App.initIcons();
+    App.toast('Push-уведомления отключены', 'success');
     return true;
   } catch (err) {
     console.error('Ошибка удаления push-подписки:', err);
+    App.toast('Ошибка: ' + err.message, 'error');
     return false;
   }
 };
@@ -244,18 +255,34 @@ App.ui.pages.unbindTelegram = async function() {
   const msgDiv = document.getElementById('unbind-message');
   if (msgDiv) msgDiv.innerHTML = '<span style="color: var(--warning);">Отправка запроса...</span>';
   try {
+    // Проверяем, есть ли запись
+    const { data: existing, error: checkError } = await App.supabase
+      .from('telegram_users')
+      .select('user_id')
+      .eq('user_id', userId)
+      .maybeSingle();
+    if (checkError) throw checkError;
+    if (!existing) {
+      if (msgDiv) msgDiv.innerHTML = '<span style="color: var(--success);">Вы уже отписаны.</span>';
+      return;
+    }
+    // Удаляем
     const { error } = await App.supabase.from('telegram_users').delete().eq('user_id', userId);
     if (error) throw error;
-    await App.supabase.from('user_settings').update({ telegram_enabled: false }).eq('user_id', userId).eq('car_id', App.store.activeCarId);
+    // Обновляем user_settings.telegram_enabled = false
+    await App.supabase
+      .from('user_settings')
+      .update({ telegram_enabled: false })
+      .eq('user_id', userId)
+      .eq('car_id', App.store.activeCarId);
     if (msgDiv) msgDiv.innerHTML = '<span style="color: var(--success);">Вы отписались. Обновите страницу, чтобы снова подключиться.</span>';
-    await App.premium.checkStatus();
-    const telegramBindArea = document.getElementById('telegram-bind-area');
-    if (telegramBindArea) {
-      await App.ui.pages._renderTelegramBlock(telegramBindArea);
-    }
+    // Обновляем интерфейс
+    await App.ui.pages._renderTelegramBlock(document.getElementById('telegram-bind-area'));
+    App.toast('Отписка от Telegram выполнена', 'success');
   } catch (err) {
     if (msgDiv) msgDiv.innerHTML = `<span style="color: var(--danger);">Ошибка: ${err.message}</span>`;
     console.error(err);
+    App.toast('Ошибка при отписке: ' + err.message, 'error');
   }
 };
 
