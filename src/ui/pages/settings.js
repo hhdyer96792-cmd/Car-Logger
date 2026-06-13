@@ -88,105 +88,118 @@ App.ui.pages.savePushSubscription = async function(playerId) {
 };
 
 App.ui.pages.removePushSubscription = async function() {
-  console.log('[Settings] removePushSubscription вызвана');
-  if (!App.supabase) return false;
-  try {
-    const { data: { user } } = await App.supabase.auth.getUser();
-    if (!user) throw new Error('User not authenticated');
-    // Удаляем из БД
-    if (App.supa.removePushToken) {
-      await App.supa.removePushToken();
-    } else {
-      const { error } = await App.supabase
-        .from('push_subscriptions')
-        .delete()
-        .eq('user_id', user.id);
-      if (error) throw error;
+    console.log('[Settings] removePushSubscription вызвана');
+    if (!App.supabase) return false;
+    try {
+        const { data: { user } } = await App.supabase.auth.getUser();
+        if (!user) throw new Error('User not authenticated');
+        
+        // Удаляем из БД
+        if (App.supa.removePushToken) {
+            await App.supa.removePushToken();
+        } else {
+            const { error } = await App.supabase
+                .from('push_subscriptions')
+                .delete()
+                .eq('user_id', user.id);
+            if (error) throw error;
+        }
+        
+        // Отписываемся от FCM
+        if (typeof firebase !== 'undefined' && firebase.messaging) {
+            try {
+                const messaging = firebase.messaging();
+                await messaging.deleteToken();
+            } catch(e) { 
+                console.warn('Token delete failed:', e);
+            }
+        }
+        
+        localStorage.removeItem('push_subscribed');
+        // Обновляем UI
+        const statusEl = document.getElementById('push-status');
+        if (statusEl) statusEl.innerHTML = '<i data-lucide="bell-off"></i> Push-уведомления не настроены';
+        const subscribeEl = document.getElementById('subscribe-push-btn');
+        const unsubscribeEl = document.getElementById('unsubscribe-push-btn');
+        if (subscribeEl) subscribeEl.style.display = 'inline-flex';
+        if (unsubscribeEl) unsubscribeEl.style.display = 'none';
+        App.initIcons();
+        App.toast('Push-уведомления отключены', 'success');
+        return true;
+    } catch (err) {
+        console.error('Ошибка удаления push-подписки:', err);
+        App.toast('Ошибка: ' + err.message, 'error');
+        return false;
     }
-    // Отписываемся от FCM
-    if (typeof firebase !== 'undefined' && firebase.messaging) {
-      try {
-        const messaging = firebase.messaging();
-        await messaging.deleteToken();
-      } catch(e) { console.warn('Token delete failed:', e); }
-    }
-    localStorage.removeItem('push_subscribed');
-    // Обновляем UI
-    const statusEl = document.getElementById('push-status');
-    if (statusEl) statusEl.innerHTML = '<i data-lucide="bell-off"></i> Push-уведомления не настроены';
-    const subscribeEl = document.getElementById('subscribe-push-btn');
-    const unsubscribeEl = document.getElementById('unsubscribe-push-btn');
-    if (subscribeEl) subscribeEl.style.display = 'inline-flex';
-    if (unsubscribeEl) unsubscribeEl.style.display = 'none';
-    App.initIcons();
-    App.toast('Push-уведомления отключены', 'success');
-    return true;
-  } catch (err) {
-    console.error('Ошибка удаления push-подписки:', err);
-    App.toast('Ошибка: ' + err.message, 'error');
-    return false;
-  }
 };
 
 App.ui.pages.subscribeToPush = async function() {
-  console.log('[Push] subscribeToPush вызвана');
-  if (!('Notification' in window)) {
-    App.ui.alertModal('Push-уведомления не поддерживаются вашим браузером.');
-    return;
-  }
-  if (Notification.permission === 'denied') {
-    App.ui.alertModal('Разрешение на уведомления заблокировано. Измените настройки браузера.');
-    return;
-  }
-  try {
-    let permission = Notification.permission;
-    if (permission !== 'granted') {
-      permission = await Notification.requestPermission();
-      if (permission !== 'granted') {
-        App.toast('Необходимо разрешить уведомления', 'warning');
+    console.log('[Settings] subscribeToPush вызвана');
+    if (!('Notification' in window)) {
+        App.ui.alertModal('Push-уведомления не поддерживаются вашим браузером.');
         return;
-      }
     }
-    if (!('serviceWorker' in navigator)) {
-      throw new Error('Service Worker не поддерживается');
+    if (Notification.permission === 'denied') {
+        App.ui.alertModal('Разрешение на уведомления заблокировано. Измените настройки браузера.');
+        return;
     }
-    // Определяем путь к firebase-messaging-sw.js
-    let swPath = '/firebase-messaging-sw.js';
-    if (window.location.pathname.includes('/Car-Logger/')) {
-      swPath = '/Car-Logger/firebase-messaging-sw.js';
+    try {
+        let permission = Notification.permission;
+        if (permission !== 'granted') {
+            permission = await Notification.requestPermission();
+            if (permission !== 'granted') {
+                App.toast('Необходимо разрешить уведомления', 'warning');
+                return;
+            }
+        }
+        
+        // Используем уже зарегистрированный SW из firebase-init.js
+        let registration = window.firebaseSwRegistration;
+        if (!registration) {
+            // Попробуем зарегистрировать самостоятельно
+            const swPath = window.location.pathname.includes('/Car-Logger/') 
+                ? '/Car-Logger/firebase-messaging-sw.js' 
+                : '/firebase-messaging-sw.js';
+            registration = await navigator.serviceWorker.register(swPath);
+            window.firebaseSwRegistration = registration;
+            console.log('[Push] SW зарегистрирован вручную');
+        }
+        
+        if (typeof firebase === 'undefined' || !firebase.messaging) {
+            throw new Error('Firebase не загружен');
+        }
+        const messaging = firebase.messaging();
+        // Используем правильный VAPID ключ (ваш)
+        const vapidKey = 'BEUVrsWau5E4NvAwwAKmkjfK8yoDVntppWmZ2IdqseLVxuNNy47bV7eOLVYDmZ1b2P3F27eRqJLoAjW58Fh0tyY';
+        const token = await messaging.getToken({ 
+            vapidKey: vapidKey,
+            serviceWorkerRegistration: registration
+        });
+        if (token) {
+            console.log('[Push] FCM Token получен:', token);
+            const saved = await App.ui.pages.savePushSubscription(token);
+            if (saved) {
+                App.toast('Push-уведомления активированы', 'success');
+                const statusEl = document.getElementById('push-status');
+                if (statusEl) statusEl.innerHTML = '<i data-lucide="check-circle" style="color: var(--success);"></i> Push-уведомления активны';
+                const subscribeEl = document.getElementById('subscribe-push-btn');
+                const unsubscribeEl = document.getElementById('unsubscribe-push-btn');
+                if (subscribeEl) subscribeEl.style.display = 'none';
+                if (unsubscribeEl) unsubscribeEl.style.display = 'inline-flex';
+                App.initIcons();
+            } else {
+                throw new Error('Не удалось сохранить токен');
+            }
+        } else {
+            throw new Error('Не удалось получить токен FCM');
+        }
+    } catch (err) {
+        console.error('[Push] Ошибка подписки:', err);
+        App.toast('Ошибка активации push-уведомлений: ' + err.message, 'error');
     }
-    let registration = await navigator.serviceWorker.getRegistration(swPath);
-    if (!registration) {
-      console.log('[Push] Регистрация Firebase SW по пути', swPath);
-      registration = await navigator.serviceWorker.register(swPath);
-      await navigator.serviceWorker.ready;
-    }
-    if (typeof firebase === 'undefined' || !firebase.messaging) {
-      throw new Error('Firebase не загружен. Проверьте подключение firebase-app-compat.js и firebase-messaging-compat.js');
-    }
-    const messaging = firebase.messaging();
-    // VAPID ключ (должен совпадать с ключом в проекте Firebase)
-    const vapidKey = 'BEUVrsWau5E4NvAwwAKmkjfK8yoDVntppWmZ2IdqseLVxuNNy47bV7eOLVYDmZ1b2P3F27eRqJLoAjW58Fh0tyY';
-    const token = await messaging.getToken({ vapidKey, serviceWorkerRegistration: registration });
-    if (token) {
-      console.log('[Push] FCM Token получен:', token);
-      await App.ui.pages.savePushSubscription(token);
-      App.toast('Push-уведомления активированы', 'success');
-      const statusEl = document.getElementById('push-status');
-      if (statusEl) statusEl.innerHTML = '<i data-lucide="check-circle" style="color: var(--success);"></i> Push-уведомления активны';
-      const subscribeEl = document.getElementById('subscribe-push-btn');
-      const unsubscribeEl = document.getElementById('unsubscribe-push-btn');
-      if (subscribeEl) subscribeEl.style.display = 'none';
-      if (unsubscribeEl) unsubscribeEl.style.display = 'inline-flex';
-      App.initIcons();
-    } else {
-      throw new Error('Не удалось получить токен FCM');
-    }
-  } catch (err) {
-    console.error('[Push] Ошибка подписки:', err);
-    App.toast('Ошибка активации push-уведомлений: ' + err.message, 'error');
-  }
 };
+
+
 
 // ==================== TELEGRAM БЛОК ====================
 App.ui.pages._renderTelegramBlock = async function(container) {
