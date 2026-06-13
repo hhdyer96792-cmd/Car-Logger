@@ -87,25 +87,35 @@ App.events.setupDelegation = function() {
                 await App.ui.pages.saveSettings();
             } else {
                 console.error('[Events] saveSettings не определена');
+                App.toast('Ошибка: функция сохранения не найдена', 'error');
             }
             return;
         }
 
         const subscribePushBtn = e.target.closest('#subscribe-push-btn');
-if (subscribePushBtn) {
-    e.preventDefault();
-    console.log('[Events] Подписка на push');
-    console.log('[Events] Тип App.ui.pages.subscribeToPush:', typeof App.ui.pages.subscribeToPush);
-    if (typeof App.ui.pages.subscribeToPush === 'function') {
-        console.log('[Events] Вызываем App.ui.pages.subscribeToPush');
-        await App.ui.pages.subscribeToPush();
-        console.log('[Events] App.ui.pages.subscribeToPush завершилась');
-    } else {
-        console.error('[Events] subscribeToPush не определена');
-        App.toast('Ошибка: функция подписки не найдена', 'error');
-    }
-    return;
-}
+        if (subscribePushBtn) {
+            e.preventDefault();
+            console.log('[Events] Подписка на push');
+            // Пытаемся вызвать функцию, если она есть
+            if (typeof App.ui.pages.subscribeToPush === 'function') {
+                await App.ui.pages.subscribeToPush();
+            } else {
+                // Если функции нет, пробуем загрузить модуль settings заново и повторить
+                console.warn('[Events] subscribeToPush не определена, пробуем перезагрузить');
+                try {
+                    await import('./ui/pages/settings.js');
+                    if (typeof App.ui.pages.subscribeToPush === 'function') {
+                        await App.ui.pages.subscribeToPush();
+                    } else {
+                        throw new Error('Функция всё ещё не определена');
+                    }
+                } catch (err) {
+                    console.error('[Events] Не удалось загрузить subscribeToPush:', err);
+                    App.toast('Ошибка: функция подписки недоступна. Перезагрузите страницу.', 'error');
+                }
+            }
+            return;
+        }
 
         const unsubscribePushBtn = e.target.closest('#unsubscribe-push-btn');
         if (unsubscribePushBtn) {
@@ -122,6 +132,7 @@ if (subscribePushBtn) {
                 App.initIcons();
             } else {
                 console.error('[Events] removePushSubscription не определена');
+                App.toast('Ошибка: функция отписки недоступна', 'error');
             }
             return;
         }
@@ -134,6 +145,7 @@ if (subscribePushBtn) {
                 await App.ui.pages.unbindTelegram();
             } else {
                 console.error('[Events] unbindTelegram не определена');
+                App.toast('Ошибка: функция отписки недоступна', 'error');
             }
             return;
         }
