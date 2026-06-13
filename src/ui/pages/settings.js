@@ -5,6 +5,7 @@ App.ui.pages = App.ui.pages || {};
 
 // ==================== СОХРАНЕНИЕ НАСТРОЕК ====================
 App.ui.pages.saveSettings = async function() {
+  console.log('[Settings] saveSettings вызвана');
   const notificationMethodSelect = document.getElementById('notification-method');
   const reminderDaysInput = document.getElementById('reminder-days-input');
   let reminderDaysRaw = reminderDaysInput?.value.trim() || '7,2';
@@ -117,7 +118,9 @@ App.ui.pages.removePushSubscription = async function() {
 };
 
 App.ui.pages.subscribeToPush = async function() {
-  if (!('Notification' in window)) {
+  console.log('[Settings] subscribeToPush вызвана');
+
+ if (!('Notification' in window)) {
     App.ui.alertModal('Push-уведомления не поддерживаются вашим браузером.');
     return;
   }
