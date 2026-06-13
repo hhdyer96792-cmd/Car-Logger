@@ -12,7 +12,6 @@ App.events.init = function() {
     App.events.initHistoryFilters();
     App.events.initStatsListeners();
     
-    // Глобальный перехват необработанных ошибок
     window.addEventListener('unhandledrejection', function(event) {
         console.error('Unhandled rejection:', event.reason);
         if (App.db && App.db.put) {
@@ -49,7 +48,7 @@ App.events.init = function() {
 
 App.events.setupDelegation = function() {
     document.body.addEventListener('click', async function(e) {
-        // Обработка глобальной кнопки приглашения (invite-btn)
+        // Кнопка приглашения
         const inviteBtn = e.target.closest('#invite-btn');
         if (inviteBtn && inviteBtn.id === 'invite-btn') {
             e.preventDefault();
@@ -59,7 +58,7 @@ App.events.setupDelegation = function() {
             return;
         }
         
-        // Обработка кнопки "Ещё" (more-menu-btn) - открывает drawer
+        // Кнопка "Ещё"
         const moreBtn = e.target.closest('#more-menu-btn');
         if (moreBtn && moreBtn.id === 'more-menu-btn') {
             e.preventDefault();
@@ -67,6 +66,61 @@ App.events.setupDelegation = function() {
             App.events.openDrawer();
             return;
         }
+        
+        // ========== ОБРАБОТЧИКИ КНОПОК НАСТРОЕК ==========
+        const saveSettingsBtn = e.target.closest('#save-settings-btn');
+        if (saveSettingsBtn) {
+            e.preventDefault();
+            console.log('[Events] Сохранение настроек');
+            await App.ui.pages.saveSettings();
+            return;
+        }
+        
+        const subscribePushBtn = e.target.closest('#subscribe-push-btn');
+        if (subscribePushBtn) {
+            e.preventDefault();
+            console.log('[Events] Подписка на push');
+            await App.ui.pages.subscribeToPush();
+            return;
+        }
+        
+        const unsubscribePushBtn = e.target.closest('#unsubscribe-push-btn');
+        if (unsubscribePushBtn) {
+            e.preventDefault();
+            console.log('[Events] Отписка от push');
+            await App.ui.pages.removePushSubscription();
+            const statusEl = document.getElementById('push-status');
+            if (statusEl) statusEl.innerHTML = '<i data-lucide="bell-off"></i> Push-уведомления не настроены';
+            const subscribeEl = document.getElementById('subscribe-push-btn');
+            const unsubscribeEl = document.getElementById('unsubscribe-push-btn');
+            if (subscribeEl) subscribeEl.style.display = 'inline-flex';
+            if (unsubscribeEl) unsubscribeEl.style.display = 'none';
+            App.initIcons();
+            return;
+        }
+        
+        const unbindTelegramBtn = e.target.closest('#unbind-telegram-btn');
+        if (unbindTelegramBtn) {
+            e.preventDefault();
+            console.log('[Events] Отписка от Telegram');
+            const confirmed = await App.ui.confirmModalAsync('Отписаться от Telegram-уведомлений? Вы перестанете получать напоминания в Telegram.');
+            if (!confirmed) return;
+            const userId = await App.supa.getCurrentUserId();
+            if (!userId) return;
+            const msgDiv = document.getElementById('unbind-message');
+            if (msgDiv) msgDiv.innerHTML = '<span style="color: var(--warning);">Отправка запроса...</span>';
+            try {
+                const { error } = await App.supabase.from('telegram_users').delete().eq('user_id', userId);
+                if (error) throw error;
+                await App.supabase.from('user_settings').update({ telegram_enabled: false }).eq('user_id', userId).eq('car_id', App.store.activeCarId);
+                if (msgDiv) msgDiv.innerHTML = '<span style="color: var(--success);">Вы отписались. Чтобы снова подключиться, нажмите кнопку привязки.</span>';
+                setTimeout(() => App.ui.pages.populateSettingsFields(), 2000);
+            } catch (err) {
+                if (msgDiv) msgDiv.innerHTML = `<span style="color: var(--danger);">Ошибка: ${err.message}</span>`;
+            }
+            return;
+        }
+        // ==================================================
         
         const target = e.target.closest('[data-action]');
         if (!target) return;
@@ -78,7 +132,6 @@ App.events.setupDelegation = function() {
                 const opName = target.dataset.opName;
                 if (opId && opName) App.ui.pages.openServiceModal(opId, opName);
                 break;
-                
             case 'edit-op':
                 const editOpId = target.dataset.opId;
                 if (editOpId) {
@@ -86,12 +139,10 @@ App.events.setupDelegation = function() {
                     if (editOp) App.ui.pages.openOperationForm(editOp);
                 }
                 break;
-                
             case 'shopping-list':
                 const shopOpId = target.dataset.opId;
                 if (shopOpId) App.ui.pages.generateShoppingList(shopOpId);
                 break;
-                
             case 'delete-op':
                 const delOpId = target.dataset.opId;
                 if (!delOpId) return;
@@ -106,98 +157,70 @@ App.events.setupDelegation = function() {
                     }
                 }
                 break;
-                
             case 'calendar':
                 const calOpId = target.dataset.opId;
                 const calOpName = target.dataset.opName;
                 const calPlanDate = target.dataset.planDate;
                 const calPlanMileage = target.dataset.planMileage;
-                if (calOpId && calPlanDate) {
-                    App.events.addToCalendar(calOpId, calOpName, calPlanDate, calPlanMileage);
-                }
+                if (calOpId && calPlanDate) App.events.addToCalendar(calOpId, calOpName, calPlanDate, calPlanMileage);
                 break;
-                
             case 'execute-plan':
                 const planOpId = target.dataset.opId;
                 const planOpName = target.dataset.opName;
                 if (planOpId && planOpName) App.ui.pages.openServiceModal(planOpId, planOpName);
                 break;
-                
             case 'execute-upcoming':
                 const upcomingOpId = target.dataset.opId;
                 const upcomingOpName = target.dataset.opName;
                 if (upcomingOpId && upcomingOpName) App.ui.pages.openServiceModal(upcomingOpId, upcomingOpName);
                 break;
-                
             case 'edit-part':
                 const partId = target.dataset.id;
                 const part = App.store.parts.find(p => p.id == partId);
                 if (part) App.ui.pages.openPartForm(part);
                 break;
-                
             case 'delete-part':
                 const delPartId = target.dataset.id;
                 if (!delPartId) return;
-                if (await App.ui.confirmModalAsync('Удалить запчасть?')) {
-                    App.ui.pages.deletePart(delPartId);
-                }
+                if (await App.ui.confirmModalAsync('Удалить запчасть?')) App.ui.pages.deletePart(delPartId);
                 break;
-                
             case 'search-part':
                 const oem = target.dataset.oem;
                 if (oem) App.ui.pages.showCatalogMenu(target, oem);
                 break;
-                
             case 'price-history':
                 const histPartId = target.dataset.id;
                 const histPart = App.store.parts.find(p => p.id == histPartId);
                 if (histPart) App.ui.pages.showPriceHistoryChart(histPart);
                 break;
-                
             case 'edit-fuel':
                 const fuelIdx = parseInt(target.dataset.idx);
                 const fuelRec = App.store.fuelLog[fuelIdx];
-                if (fuelRec) {
-                    fuelRec.id = fuelRec.id;
-                    App.ui.pages.openFuelModal(fuelRec);
-                }
+                if (fuelRec) App.ui.pages.openFuelModal(fuelRec);
                 break;
-                
             case 'delete-fuel':
                 const delFuelIdx = parseInt(target.dataset.idx);
                 if (isNaN(delFuelIdx)) return;
-                if (await App.ui.confirmModalAsync('Удалить заправку?')) {
-                    App.ui.pages.deleteFuelEntry(delFuelIdx);
-                }
+                if (await App.ui.confirmModalAsync('Удалить заправку?')) App.ui.pages.deleteFuelEntry(delFuelIdx);
                 break;
-                
             case 'edit-tire':
                 const tireIdx = parseInt(target.dataset.idx);
                 const tireRec = App.store.tireLog[tireIdx];
-                if (tireRec) {
-                    App.ui.pages.openTireModal(tireRec);
-                }
+                if (tireRec) App.ui.pages.openTireModal(tireRec);
                 break;
-                
             case 'delete-tire':
                 const delTireIdx = parseInt(target.dataset.idx);
                 if (isNaN(delTireIdx)) return;
-                if (await App.ui.confirmModalAsync('Удалить запись о шинах?')) {
-                    App.ui.pages.deleteTireEntry(delTireIdx);
-                }
+                if (await App.ui.confirmModalAsync('Удалить запись о шинах?')) App.ui.pages.deleteTireEntry(delTireIdx);
                 break;
-                
             case 'edit-history':
                 const histRow = target.dataset.row;
                 if (histRow) App.ui.pages.openHistoryEdit(histRow);
                 break;
-                
             case 'delete-history':
                 const delHistRow = target.dataset.row;
                 if (!delHistRow) return;
-                if (await App.ui.confirmModalAsync('Удалить запись из истории? Это действие нельзя отменить.')) {
-                    App.ui.pages.deleteHistoryEntry(delHistRow);
-                }
+                if (await App.ui.confirmModalAsync('Удалить запись из истории? Это действие нельзя отменить.')) App.ui.pages.deleteHistoryEntry(delHistRow);
                 break;
         }
     });
@@ -208,7 +231,6 @@ App.events.addToCalendar = function(opId, opName, planDate, planMileage) {
         const op = App.store.operations.find(o => o.id == opId);
         return p.operation === opName || p.operation === (op ? op.category : '');
     });
-
     let partsList = '';
     if (parts.length > 0) {
         partsList = '\\n\\nСписок запчастей:\\n';
@@ -217,13 +239,11 @@ App.events.addToCalendar = function(opId, opName, planDate, planMileage) {
             partsList += status + ' ' + (p.oem || p.analog || p.operation) + (p.price ? ' (' + p.price + '₽)' : '') + '\\n';
         });
     }
-
     const description = 'Пробег: ' + (planMileage || '—') + ' км.' + partsList;
     const uid = opId + '-vesta-' + planDate;
     const dtStart = planDate.replace(/-/g, '') + 'T090000';
     const dtEnd   = planDate.replace(/-/g, '') + 'T100000';
     const now = new Date().toISOString().replace(/[-:]/g, '').slice(0, 15) + 'Z';
-
     const icsContent = 'BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Vesta Dashboard//RU\r\nCALSCALE:GREGORIAN\r\nMETHOD:PUBLISH\r\n' +
         'BEGIN:VEVENT\r\n' +
         'UID:' + uid + '\r\n' +
@@ -251,7 +271,6 @@ App.events.initNavigation = function() {
             if (tab) App.events.switchToTab(tab);
         });
     });
-
     document.querySelectorAll('.bottom-nav-item').forEach(btn => {
         if (btn.id === 'more-menu-btn') return;
         btn.addEventListener('click', () => {
@@ -260,19 +279,15 @@ App.events.initNavigation = function() {
             App.events.closeDrawer();
         });
     });
-
     const moreBtn = document.getElementById('more-menu-btn');
     if (moreBtn) {
         const newMoreBtn = moreBtn.cloneNode(true);
         moreBtn.parentNode.replaceChild(newMoreBtn, moreBtn);
     }
-
     const drawer = document.getElementById('drawer-menu');
     if (drawer) {
         const overlay = drawer.querySelector('.drawer-overlay');
-        if (overlay) {
-            overlay.addEventListener('click', App.events.closeDrawer);
-        }
+        if (overlay) overlay.addEventListener('click', App.events.closeDrawer);
         drawer.querySelectorAll('.drawer-item[data-tab]').forEach(item => {
             item.addEventListener('click', () => {
                 App.events.switchToTab(item.dataset.tab);
@@ -280,7 +295,6 @@ App.events.initNavigation = function() {
             });
         });
     }
-
     document.addEventListener('keydown', e => {
         if (e.key === 'Escape') {
             App.events.closeDrawer();
@@ -292,9 +306,8 @@ App.events.initNavigation = function() {
     });
 };
 
-App.events.switchToTab = function(tabId) {
+App.events.switchToTab = async function(tabId) {
     if (App.events.currentActiveTab === tabId) return;
-
     document.body.style.overflow = '';
     const allTabs = document.querySelectorAll('.tab-content');
     allTabs.forEach(tab => {
@@ -305,15 +318,12 @@ App.events.switchToTab = function(tabId) {
             tab.classList.remove('active');
         }
     });
-
     document.querySelectorAll('.sidebar-item, .bottom-nav-item').forEach(btn => {
         btn.classList.remove('active');
         if (btn.dataset.tab === tabId) btn.classList.add('active');
     });
-
     App.events.closeDrawer();
     App.events.currentActiveTab = tabId;
-
     switch (tabId) {
         case 'dashboard':
             if (typeof App.ui.pages.renderDashboard === 'function') App.ui.pages.renderDashboard();
@@ -325,9 +335,7 @@ App.events.switchToTab = function(tabId) {
                     container.innerHTML = '<div class="spinner"></div><p class="hint">Загрузка данных...</p>';
                 }
                 try {
-                    if (!App.store.operations || App.store.operations.length === 0) {
-                        await App.storage.loadAllData();
-                    }
+                    if (!App.store.operations || App.store.operations.length === 0) await App.storage.loadAllData();
                     if (typeof App.ui.pages.renderTotalCost === 'function') App.ui.pages.renderTotalCost();
                     if (typeof App.ui.pages.renderTOStats === 'function') App.ui.pages.renderTOStats();
                     if (typeof App.ui.pages.renderOilResourceCard === 'function') App.ui.pages.renderOilResourceCard();
@@ -361,13 +369,18 @@ App.events.switchToTab = function(tabId) {
             if (typeof App.ui.pages.renderCarTab === 'function') App.ui.pages.renderCarTab();
             break;
         case 'settings':
-            if (typeof App.ui.pages.populateSettingsFields === 'function') App.ui.pages.populateSettingsFields();
+            // Обновляем статус Premium перед отрисовкой настроек
+            if (typeof App.premium?.checkStatus === 'function') {
+                await App.premium.checkStatus();
+            }
+            if (typeof App.ui.pages.populateSettingsFields === 'function') {
+                await App.ui.pages.populateSettingsFields();
+            }
             if (typeof App.ui.pages.checkPushSubscriptionStatus === 'function') {
                 App.ui.pages.checkPushSubscriptionStatus();
             }
             break;
     }
-
     setTimeout(() => { App.initIcons(); }, 150);
 };
 
@@ -400,10 +413,8 @@ App.events.initTheme = function() {
         const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
         App.events.applyTheme(prefersDark ? 'dark' : 'light');
     }
-
     const themeToggle = document.getElementById('theme-toggle');
     if (themeToggle) themeToggle.addEventListener('click', App.events.toggleTheme);
-
     const sidebarTheme = document.getElementById('sidebar-theme');
     if (sidebarTheme) sidebarTheme.addEventListener('click', App.events.toggleTheme);
 };
@@ -434,61 +445,42 @@ App.events.toggleTheme = function() {
 App.events.initDirectListeners = function() {
     const addOperationBtn = document.getElementById('add-operation-btn');
     if (addOperationBtn) addOperationBtn.addEventListener('click', () => { App.ui.pages.openOperationForm(null); });
-
     const exportBtn = document.getElementById('export-btn');
     if (exportBtn) exportBtn.addEventListener('click', App.ui.pages.exportToExcelAll);
-
     const importBtn = document.getElementById('import-btn');
     const importFile = document.getElementById('import-file');
     if (importBtn && importFile) {
         importBtn.addEventListener('click', () => { importFile.click(); });
         importFile.addEventListener('change', App.events.handleImport);
     }
-
     const updateMileageBtn = document.getElementById('update-mileage-btn');
     if (updateMileageBtn) updateMileageBtn.addEventListener('click', App.events.updateMileageAndAverages);
-
     const addFuelBtn = document.getElementById('add-fuel-btn');
     if (addFuelBtn) addFuelBtn.addEventListener('click', () => { App.ui.pages.openFuelModal(null); });
-
     const voiceFuelBtn = document.getElementById('voice-fuel-btn');
     if (voiceFuelBtn) voiceFuelBtn.addEventListener('click', App.ui.pages.startVoiceFuelInput);
-
     const addTireBtn = document.getElementById('add-tire-btn');
     if (addTireBtn) addTireBtn.addEventListener('click', () => { App.ui.pages.openTireModal(null); });
-
     const addPartBtn = document.getElementById('add-part-btn');
     if (addPartBtn) addPartBtn.addEventListener('click', () => { App.ui.pages.openPartForm(null); });
-
-    const saveSettingsBtn = document.getElementById('save-settings-btn');
-    if (saveSettingsBtn) saveSettingsBtn.addEventListener('click', App.ui.pages.saveSettings);
-
     const exportDataBtn = document.getElementById('export-data-btn');
     if (exportDataBtn) exportDataBtn.addEventListener('click', App.ui.pages.handleExport);
-
     const generatePdfBtn = document.getElementById('generate-pdf-btn');
     if (generatePdfBtn) generatePdfBtn.addEventListener('click', App.ui.pages.generateServiceReport);
-
     const toggleOwnershipBtn = document.getElementById('toggle-ownership-unit');
     if (toggleOwnershipBtn) toggleOwnershipBtn.addEventListener('click', App.ui.pages.toggleOwnershipUnit);
-
     const dashUpdateMileageBtn = document.getElementById('dash-update-mileage-btn');
     if (dashUpdateMileageBtn) dashUpdateMileageBtn.addEventListener('click', () => {
         App.events.switchToTab('to');
         const newMileageInput = document.getElementById('new-mileage');
         if (newMileageInput) setTimeout(() => newMileageInput.focus(), 200);
     });
-    
     const mobileUpdateMileageBtn = document.getElementById('mobile-dash-update-mileage-btn');
-    if (mobileUpdateMileageBtn) {
-        mobileUpdateMileageBtn.addEventListener('click', () => {
-            App.events.updateMileageAndAverages();
-        });
-    }
-
+    if (mobileUpdateMileageBtn) mobileUpdateMileageBtn.addEventListener('click', () => {
+        App.events.updateMileageAndAverages();
+    });
     const dashAddFuelBtn = document.getElementById('dash-add-fuel-btn');
     if (dashAddFuelBtn) dashAddFuelBtn.addEventListener('click', () => { App.ui.pages.openFuelModal(null); });
-
     const dashAddServiceBtn = document.getElementById('dash-add-service-btn');
     if (dashAddServiceBtn) dashAddServiceBtn.addEventListener('click', () => {
         const upcoming = document.getElementById('dash-upcoming-container');
@@ -502,7 +494,6 @@ App.events.initDirectListeners = function() {
             App.events.switchToTab('to');
         }
     });
-
     const dashPredictBtn = document.getElementById('dash-predict-btn');
     if (dashPredictBtn) dashPredictBtn.addEventListener('click', () => {
         const target = parseFloat(document.getElementById('dash-target-mileage')?.value);
@@ -518,7 +509,6 @@ App.events.initDirectListeners = function() {
         }
         App.initIcons();
     });
-
     const resetZoomBtn = document.getElementById('reset-all-zoom');
     if (resetZoomBtn) resetZoomBtn.addEventListener('click', () => {
         ['fuelConsumptionChart', 'fuelPriceChart', 'costsChart'].forEach(id => {
@@ -526,22 +516,16 @@ App.events.initDirectListeners = function() {
             if (chart && typeof chart.resetZoom === 'function') chart.resetZoom();
         });
     });
-
     const toCostPeriod = document.getElementById('to-cost-period');
-    if (toCostPeriod) {
-        toCostPeriod.addEventListener('change', () => {
-            if (document.getElementById('tab-to')?.classList.contains('active')) {
-                App.ui.pages.renderTOCostChart();
-            }
-        });
-    }
-
+    if (toCostPeriod) toCostPeriod.addEventListener('change', () => {
+        if (document.getElementById('tab-to')?.classList.contains('active')) App.ui.pages.renderTOCostChart();
+    });
     const settingsThemeToggle = document.getElementById('settings-theme-toggle');
     if (settingsThemeToggle) {
         settingsThemeToggle.addEventListener('click', () => {
             App.events.toggleTheme();
             const isDark = document.body.classList.contains('dark');
-            this.innerHTML = isDark ? '<i data-lucide="sun"></i> Светлая тема' : '<i data-lucide="moon"></i> Тёмная тема';
+            settingsThemeToggle.innerHTML = isDark ? '<i data-lucide="sun"></i> Светлая тема' : '<i data-lucide="moon"></i> Тёмная тема';
             App.initIcons();
         });
     }
@@ -557,23 +541,20 @@ App.events.initHistoryFilters = function() {
             el.addEventListener(eventType, App.ui.pages.renderHistoryCards);
         }
     });
-
     const resetFiltersBtn = document.getElementById('history-reset-filters');
-    if (resetFiltersBtn) {
-        resetFiltersBtn.addEventListener('click', () => {
-            ['history-period-select', 'history-operation-filter', 'history-category-filter', 'history-executor-filter',
-             'history-search', 'history-diy-only', 'history-cost-min', 'history-cost-max', 'history-mileage-min', 'history-mileage-max', 'history-sort-order'
-            ].forEach(id => {
-                const el = document.getElementById(id);
-                if (el) {
-                    if (el.type === 'checkbox') el.checked = false;
-                    else el.value = '';
-                }
-            });
-            document.getElementById('history-sort-order').value = 'date-desc';
-            App.ui.pages.renderHistoryCards();
+    if (resetFiltersBtn) resetFiltersBtn.addEventListener('click', () => {
+        ['history-period-select', 'history-operation-filter', 'history-category-filter', 'history-executor-filter',
+         'history-search', 'history-diy-only', 'history-cost-min', 'history-cost-max', 'history-mileage-min', 'history-mileage-max', 'history-sort-order'
+        ].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) {
+                if (el.type === 'checkbox') el.checked = false;
+                else el.value = '';
+            }
         });
-    }
+        document.getElementById('history-sort-order').value = 'date-desc';
+        App.ui.pages.renderHistoryCards();
+    });
 };
 
 App.events.initStatsListeners = function() {
@@ -613,7 +594,6 @@ App.events.handleImport = function(e) {
     e.target.value = '';
 };
 
-// === НОВАЯ ФУНКЦИЯ: открытие модалки для ввода пробега и моточасов ===
 App.ui.pages.openMileageModal = function() {
     const content = `
         <form id="mileage-form">
@@ -631,13 +611,11 @@ App.ui.pages.openMileageModal = function() {
     const form = modal.querySelector('#mileage-form');
     const mileageInput = modal.querySelector('#modal-mileage');
     const motohoursInput = modal.querySelector('#modal-motohours');
-
     form.onsubmit = async (e) => {
         e.preventDefault();
         const newM = App.utils.validateNumberInput(mileageInput, false);
         const newH = App.utils.validateNumberInput(motohoursInput, true);
         if (newM === null) return;
-
         if (newM < (App.store.baseMileage || 0)) {
             App.toast('Значение пробега меньше базового. Исправьте базовое значение на вкладке Автомобиль', 'error');
             return;
@@ -646,7 +624,6 @@ App.ui.pages.openMileageModal = function() {
             App.toast('Значение моточасов меньше базового. Исправьте базовое значение на вкладке Автомобиль', 'error');
             return;
         }
-
         const today = new Date().toISOString().split('T')[0];
         await App.storage.addMileageRecord(today, newM, newH);
         App.store.mileageHistory.push({
@@ -656,7 +633,6 @@ App.ui.pages.openMileageModal = function() {
             motohours: newH
         });
         App.store.mileageHistory.sort((a, b) => new Date(a.date) - new Date(b.date));
-
         if (App.store.mileageHistory.length >= 2) {
             const last = App.store.mileageHistory[App.store.mileageHistory.length - 1];
             const prev = App.store.mileageHistory[App.store.mileageHistory.length - 2];
@@ -669,10 +645,8 @@ App.ui.pages.openMileageModal = function() {
             App.store.settings.avgDailyMileage = App.store.baseMileage > 0 ? (newM - App.store.baseMileage) / 30 : 20;
             App.store.settings.avgDailyMotohours = App.store.baseMotohours > 0 ? (newH - App.store.baseMotohours) / 30 : 1.65;
         }
-
         App.store.settings.currentMileage = newM;
         App.store.settings.currentMotohours = newH;
-
         if (App.config.USE_SUPABASE) {
             App.storage.addMileageRecord(today, newM, newH)
                 .then(() => App.storage.saveSettings({
@@ -686,14 +660,11 @@ App.ui.pages.openMileageModal = function() {
                 }))
                 .catch(err => console.error('Ошибка сохранения пробега в Supabase:', err));
         }
-
         if (typeof App.renderAll === 'function') App.renderAll();
         if (typeof App.ui.pages.renderTop5Widget === 'function') App.ui.pages.renderTop5Widget();
         App.toast('Пробег и моточасы обновлены', 'success');
-
         modal.remove();
     };
-
     modal.querySelector('.cancel-btn').onclick = () => modal.remove();
 };
 
@@ -706,11 +677,9 @@ App.events.updateMileageAndAverages = function() {
         console.warn('Поля пробега/моточасов не найдены на текущей странице');
         return;
     }
-
     const newM = App.utils.validateNumberInput(m, false);
     const newH = App.utils.validateNumberInput(h, true);
     if (newM === null || newH === null) return;
-
     if (newM < (App.store.baseMileage || 0)) {
         App.toast('Значение пробега меньше базового. Исправьте базовое значение на вкладке Автомобиль', 'error');
         return;
@@ -719,7 +688,6 @@ App.events.updateMileageAndAverages = function() {
         App.toast('Значение моточасов меньше базового. Исправьте базовое значение на вкладке Автомобиль', 'error');
         return;
     }
-
     const today = new Date().toISOString().split('T')[0];
     App.storage.addMileageRecord(today, newM, newH);
     App.store.mileageHistory.push({
@@ -729,7 +697,6 @@ App.events.updateMileageAndAverages = function() {
         motohours: newH
     });
     App.store.mileageHistory.sort((a, b) => new Date(a.date) - new Date(b.date));
-
     if (App.store.mileageHistory.length >= 2) {
         const last = App.store.mileageHistory[App.store.mileageHistory.length - 1];
         const prev = App.store.mileageHistory[App.store.mileageHistory.length - 2];
@@ -742,10 +709,8 @@ App.events.updateMileageAndAverages = function() {
         App.store.settings.avgDailyMileage = App.store.baseMileage > 0 ? (newM - App.store.baseMileage) / 30 : 20;
         App.store.settings.avgDailyMotohours = App.store.baseMotohours > 0 ? (newH - App.store.baseMotohours) / 30 : 1.65;
     }
-
     App.store.settings.currentMileage = newM;
     App.store.settings.currentMotohours = newH;
-
     if (App.config.USE_SUPABASE) {
         App.storage.addMileageRecord(today, newM, newH)
             .then(() => App.storage.saveSettings({
@@ -759,7 +724,6 @@ App.events.updateMileageAndAverages = function() {
             }))
             .catch(err => console.error('Ошибка сохранения пробега в Supabase:', err));
     }
-
     if (typeof App.renderAll === 'function') App.renderAll();
     if (typeof App.ui.pages.renderTop5Widget === 'function') App.ui.pages.renderTop5Widget();
     App.toast('Пробег и моточасы обновлены', 'success');
