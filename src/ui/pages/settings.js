@@ -606,48 +606,54 @@ App.ui.pages.populateSettingsFields = async function() {
     App.initIcons();
   }
 
-  // Обработчики кнопок (создаются заново каждый раз, но без дублирования через клонирование)
-  const saveBtn = document.getElementById('save-settings-btn');
-  if (saveBtn) {
-    const newSaveBtn = saveBtn.cloneNode(true);
-    saveBtn.parentNode.replaceChild(newSaveBtn, saveBtn);
-    newSaveBtn.onclick = App.ui.pages.saveSettings;
-  }
+  // Обработчики кнопок (без клонирования, просто находим и вешаем обработчик, предварительно удалив старый)
+const saveBtn = document.getElementById('save-settings-btn');
+if (saveBtn) {
+  // Удаляем старый обработчик, если он был (через replace)
+  const newSaveBtn = saveBtn.cloneNode(true);
+  saveBtn.parentNode.replaceChild(newSaveBtn, saveBtn);
+  newSaveBtn.onclick = async () => {
+    console.log('[Settings] Кнопка Сохранить нажата');
+    await App.ui.pages.saveSettings();
+  };
+}
 
-  const subPushBtn = document.getElementById('subscribe-push-btn');
-  if (subPushBtn) {
-    const newSubBtn = subPushBtn.cloneNode(true);
-    subPushBtn.parentNode.replaceChild(newSubBtn, subPushBtn);
-    newSubBtn.onclick = async () => {
-      await App.ui.pages.subscribeToPush();
-    };
-  }
+const subPushBtn = document.getElementById('subscribe-push-btn');
+if (subPushBtn) {
+  const newSubBtn = subPushBtn.cloneNode(true);
+  subPushBtn.parentNode.replaceChild(newSubBtn, subPushBtn);
+  newSubBtn.onclick = async () => {
+    console.log('[Settings] Кнопка Подписаться на push нажата');
+    await App.ui.pages.subscribeToPush();
+  };
+}
 
-  const unsubPushBtn = document.getElementById('unsubscribe-push-btn');
-  if (unsubPushBtn) {
-    const newUnsubBtn = unsubPushBtn.cloneNode(true);
-    unsubPushBtn.parentNode.replaceChild(newUnsubBtn, unsubPushBtn);
-    newUnsubBtn.onclick = async () => {
-      await App.ui.pages.removePushSubscription();
-      App.toast('Подписка на push отключена', 'success');
-      const statusEl = document.getElementById('push-status');
-      if (statusEl) statusEl.innerHTML = '<i data-lucide="bell-off"></i> Push-уведомления не настроены';
-      const subscribeEl = document.getElementById('subscribe-push-btn');
-      const unsubscribeEl = document.getElementById('unsubscribe-push-btn');
-      if (subscribeEl) subscribeEl.style.display = 'inline-flex';
-      if (unsubscribeEl) unsubscribeEl.style.display = 'none';
-      App.initIcons();
-    };
-  }
+const unsubPushBtn = document.getElementById('unsubscribe-push-btn');
+if (unsubPushBtn) {
+  const newUnsubBtn = unsubPushBtn.cloneNode(true);
+  unsubPushBtn.parentNode.replaceChild(newUnsubBtn, unsubPushBtn);
+  newUnsubBtn.onclick = async () => {
+    console.log('[Settings] Кнопка Отписаться от push нажата');
+    await App.ui.pages.removePushSubscription();
+    App.toast('Подписка на push отключена', 'success');
+    const statusEl = document.getElementById('push-status');
+    if (statusEl) statusEl.innerHTML = '<i data-lucide="bell-off"></i> Push-уведомления не настроены';
+    const subscribeEl = document.getElementById('subscribe-push-btn');
+    const unsubscribeEl = document.getElementById('unsubscribe-push-btn');
+    if (subscribeEl) subscribeEl.style.display = 'inline-flex';
+    if (unsubscribeEl) unsubscribeEl.style.display = 'none';
+    App.initIcons();
+  };
+}
 
-  const infoBtn = document.getElementById('telegram-info-btn');
-  if (infoBtn) {
-    const newInfoBtn = infoBtn.cloneNode(true);
-    infoBtn.parentNode.replaceChild(newInfoBtn, infoBtn);
-    newInfoBtn.onclick = () => {
-      App.ui.alertModal('Для привязки Telegram перейдите в раздел Premium (доступно после активации подписки).');
-    };
-  }
+const infoBtn = document.getElementById('telegram-info-btn');
+if (infoBtn) {
+  const newInfoBtn = infoBtn.cloneNode(true);
+  infoBtn.parentNode.replaceChild(newInfoBtn, infoBtn);
+  newInfoBtn.onclick = () => {
+    App.ui.alertModal('Для привязки Telegram перейдите в раздел Premium (доступно после активации подписки).');
+  };
+}
 
   if (typeof App.ui.pages.renderPinSettings === 'function') {
     await App.ui.pages.renderPinSettings();
