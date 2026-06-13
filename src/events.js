@@ -78,64 +78,6 @@ App.events.setupDelegation = function() {
             return;
         }
         
-        // --- Обработчики кнопок настроек ---
-        const saveSettingsBtn = e.target.closest('#save-settings-btn');
-        if (saveSettingsBtn) {
-            e.preventDefault();
-            console.log('[Events] Сохранение настроек');
-            if (typeof App.ui.pages.saveSettings === 'function') {
-                await App.ui.pages.saveSettings();
-            } else {
-                console.error('[Events] App.ui.pages.saveSettings не определена');
-            }
-            return;
-        }
-        
-        const subscribePushBtn = e.target.closest('#subscribe-push-btn');
-        if (subscribePushBtn) {
-            e.preventDefault();
-            console.log('[Events] Подписка на push');
-            if (typeof App.ui.pages.subscribeToPush === 'function') {
-                await App.ui.pages.subscribeToPush();
-            } else {
-                console.error('[Events] App.ui.pages.subscribeToPush не определена');
-                App.toast('Ошибка: функция подписки не найдена', 'error');
-            }
-            return;
-        }
-        
-        const unsubscribePushBtn = e.target.closest('#unsubscribe-push-btn');
-        if (unsubscribePushBtn) {
-            e.preventDefault();
-            console.log('[Events] Отписка от push');
-            if (typeof App.ui.pages.removePushSubscription === 'function') {
-                await App.ui.pages.removePushSubscription();
-                const statusEl = document.getElementById('push-status');
-                if (statusEl) statusEl.innerHTML = '<i data-lucide="bell-off"></i> Push-уведомления не настроены';
-                const subscribeEl = document.getElementById('subscribe-push-btn');
-                const unsubscribeEl = document.getElementById('unsubscribe-push-btn');
-                if (subscribeEl) subscribeEl.style.display = 'inline-flex';
-                if (unsubscribeEl) unsubscribeEl.style.display = 'none';
-                App.initIcons();
-            } else {
-                console.error('[Events] App.ui.pages.removePushSubscription не определена');
-            }
-            return;
-        }
-        
-        const unbindTelegramBtn = e.target.closest('#unbind-telegram-btn');
-        if (unbindTelegramBtn) {
-            e.preventDefault();
-            console.log('[Events] Отписка от Telegram');
-            if (typeof App.ui.pages.unbindTelegram === 'function') {
-                await App.ui.pages.unbindTelegram();
-            } else {
-                console.error('[Events] App.ui.pages.unbindTelegram не определена');
-            }
-            return;
-        }
-        // ------------------------------------
-        
         const target = e.target.closest('[data-action]');
         if (!target) return;
         const action = target.dataset.action;
