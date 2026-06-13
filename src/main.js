@@ -424,7 +424,7 @@
                         if (wantPin) {
                             let pinSet = false;
                             while (!pinSet) {
-                                const pin = await App.ui.promptModalAsync('PIN-код', 'Введите 4+ цифры', true);
+                                const pin = await App.ui.promptModalAsync('PIN-код', 'Введите 6+ цифр', true);
                                 if (pin && pin.length >= 4 && /^\d+$/.test(pin)) {
                                     const confirmPin = await App.ui.promptModalAsync('Подтвердите PIN', 'Повторите PIN', true);
                                     if (confirmPin === pin) {
@@ -433,7 +433,7 @@
                                             pinSet = true;
                                         } catch (err) { App.toast('Ошибка: ' + err.message, 'error'); }
                                     } else App.toast('PIN не совпадают', 'error');
-                                } else App.toast('PIN должен быть 4+ цифры', 'error');
+                                } else App.toast('PIN должен быть 6+ цифр', 'error');
                             }
                         }
                     }
