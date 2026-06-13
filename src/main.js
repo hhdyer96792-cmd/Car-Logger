@@ -56,59 +56,72 @@
     }
 
     function clearDemoArtefacts() {
-        App.store.operations = [];
-        App.store.fuelLog = [];
-        App.store.tireLog = [];
-        App.store.parts = [];
-        App.store.serviceRecords = [];
-        App.store.mileageHistory = [];
-        App.store.cars = [];
-        App.store.activeCarId = null;
-       App.store.settings = {
-    currentMileage: 0,
-    currentMotohours: 0,
-    avgDailyMileage: 45,
-    avgDailyMotohours: 1.8,
-    notificationMethod: 'telegram',
-    reminderDays: '7,2',
-    telegramEnabled: true
-}; localStorage.removeItem('vesta_active_car_id');
-        localStorage.removeItem('vesta_username');
-        if (App.db && App.db._db) {
-            const stores = ['operations','fuel_log','tires','parts','service_records','mileage_log','cars','settings'];
-            stores.forEach(s => App.db.clear(s).catch(()=>{}));
-        }
-        demoModeInitialized = false;
-        isDemoMode = false;
+    App.store.operations = [];
+    App.store.fuelLog = [];
+    App.store.tireLog = [];
+    App.store.parts = [];
+    App.store.serviceRecords = [];
+    App.store.mileageHistory = [];
+    App.store.cars = [];
+    App.store.activeCarId = null;
+    App.store.settings = {
+        currentMileage: 0,
+        currentMotohours: 0,
+        avgDailyMileage: 45,
+        avgDailyMotohours: 1.8,
+        notificationMethod: 'telegram',
+        reminderDays: '7,2',
+        telegramEnabled: true
+    };
+    // Сброс премиум-статуса
+    App.store.isPremium = false;
+    App.store.premiumTier = 'free';
+    App.store.premiumExpiresAt = null;
+    App.store.premiumFeatures = [];
+    
+    localStorage.removeItem('vesta_active_car_id');
+    localStorage.removeItem('vesta_username');
+    if (App.db && App.db._db) {
+        const stores = ['operations','fuel_log','tires','parts','service_records','mileage_log','cars','settings'];
+        stores.forEach(s => App.db.clear(s).catch(()=>{}));
     }
+    demoModeInitialized = false;
+    isDemoMode = false;
+}
 
     function enterDemoMode() {
-        if (demoModeInitialized) return;
-        demoModeInitialized = true;
-        isDemoMode = true;
-        clearDemoArtefacts();
-        const demoCarId = crypto.randomUUID();
-        App.store.cars = [{ id: demoCarId, name: 'Мой автомобиль', user_id: 'demo' }];
-        App.store.activeCarId = demoCarId;
-        localStorage.setItem('vesta_active_car_id', demoCarId);
-        App.store.operations = [
-            { id: 'demo1', category: 'ДВС', name: 'Масло', intervalKm: 10000, intervalMonths: 12 },
-            { id: 'demo2', category: 'Тормозная система', name: 'Тормозные колодки', intervalKm: 30000 }
-        ];
-        App.store.fuelLog = [{ date: new Date().toISOString().split('T')[0], mileage: 1000, liters: 45, pricePerLiter: 50, fuelType: 'Бензин' }];
-        App.store.settings = { currentMileage: 5000, currentMotohours: 100, avgDailyMileage: 45, avgDailyMotohours: 1.8, telegramToken:'', telegramChatId:'', notificationMethod:'telegram', reminderDays:'7,2', carBrand:'', carModel:'', carYear:null, plateNumber:'', vin:'' };
-        if (App.realtime && typeof App.realtime.unsubscribeAll === 'function') App.realtime.unsubscribeAll();
-        App.store.saveToLocalStorage();
-        if (App.db && App.db._db) App.store.saveSettingsToDB().catch(()=>{});
-        const dataPanel = document.getElementById('data-panel');
-        if (dataPanel) dataPanel.style.display = 'block';
-        if (typeof App.ui.pages.renderDashboard === 'function') App.ui.pages.renderDashboard();
-        if (typeof App.ui.pages.renderCarSelector === 'function') App.ui.pages.renderCarSelector();
-        if (typeof App.ui.pages.renderCarTab === 'function') App.ui.pages.renderCarTab();
-        if (typeof App.ui.pages.populateSettingsFields === 'function') App.ui.pages.populateSettingsFields();
-        if (typeof App.renderAll === 'function') App.renderAll();
-        if (typeof App.toast === 'function') App.toast('Демо-режим. Войдите, чтобы сохранить данные.', 'info');
-    }
+    if (demoModeInitialized) return;
+    demoModeInitialized = true;
+    isDemoMode = true;
+    clearDemoArtefacts();
+    const demoCarId = crypto.randomUUID();
+    App.store.cars = [{ id: demoCarId, name: 'Мой автомобиль', user_id: 'demo' }];
+    App.store.activeCarId = demoCarId;
+    localStorage.setItem('vesta_active_car_id', demoCarId);
+    App.store.operations = [
+        { id: 'demo1', category: 'ДВС', name: 'Масло', intervalKm: 10000, intervalMonths: 12 },
+        { id: 'demo2', category: 'Тормозная система', name: 'Тормозные колодки', intervalKm: 30000 }
+    ];
+    App.store.fuelLog = [{ date: new Date().toISOString().split('T')[0], mileage: 1000, liters: 45, pricePerLiter: 50, fuelType: 'Бензин' }];
+    App.store.settings = { currentMileage: 5000, currentMotohours: 100, avgDailyMileage: 45, avgDailyMotohours: 1.8, telegramToken:'', telegramChatId:'', notificationMethod:'telegram', reminderDays:'7,2', carBrand:'', carModel:'', carYear:null, plateNumber:'', vin:'' };
+    // Демо-режим: премиум отключён
+    App.store.isPremium = false;
+    App.store.premiumTier = 'free';
+    App.store.premiumExpiresAt = null;
+    App.store.premiumFeatures = [];
+    
+    if (App.realtime && typeof App.realtime.unsubscribeAll === 'function') App.realtime.unsubscribeAll();
+    App.store.saveToLocalStorage();
+    if (App.db && App.db._db) App.store.saveSettingsToDB().catch(()=>{});
+    const dataPanel = document.getElementById('data-panel');
+    if (dataPanel) dataPanel.style.display = 'block';
+    if (typeof App.ui.pages.renderDashboard === 'function') App.ui.pages.renderDashboard();
+    if (typeof App.ui.pages.renderCarSelector === 'function') App.ui.pages.renderCarSelector();
+    if (typeof App.ui.pages.renderCarTab === 'function') App.ui.pages.renderCarTab();
+    if (typeof App.ui.pages.populateSettingsFields === 'function') App.ui.pages.populateSettingsFields();
+    if (typeof App.renderAll === 'function') App.renderAll();
+    if (typeof App.toast === 'function') App.toast('Демо-режим. Войдите, чтобы сохранить данные.', 'info');
+}
 
     function showLoadingSpinner() {
         const panel = document.getElementById('data-panel');
