@@ -45,7 +45,6 @@ App.ui.pages.saveSettings = async function() {
   }
 };
 
-// ==================== PUSH-УВЕДОМЛЕНИЯ ====================
 App.ui.pages.checkPushSubscriptionStatus = async function() {
   if (!App.supabase) return false;
   try {
@@ -120,10 +119,6 @@ App.ui.pages.removePushSubscription = async function() {
 
 App.ui.pages.subscribeToPush = async function() {
   console.log('[Settings] subscribeToPush вызвана');
-  
-  // Временная диагностика: показываем alert, чтобы убедиться, что вызов происходит
-  App.toast('Функция подписки вызвана, проверьте консоль', 'info');
-  
   if (!('Notification' in window)) {
     App.ui.alertModal('Push-уведомления не поддерживаются вашим браузером.');
     return;
@@ -264,7 +259,7 @@ App.ui.pages.unbindTelegram = async function() {
   }
 };
 
-// ==================== ОСТАЛЬНЫЕ БЛОКИ ====================
+// ==================== ОСТАЛЬНЫЕ БЛОКИ (без изменений) ====================
 App.ui.pages.renderRecoveryCodesBlock = function(container) {
   if (!container) return;
   container.innerHTML = `
@@ -648,33 +643,6 @@ App.ui.pages.populateSettingsFields = async function() {
     saveBtn.addEventListener('click', _handlers.saveSettings);
   }
 
-  const subPushBtn = document.getElementById('subscribe-push-btn');
-  if (subPushBtn) {
-    if (_handlers.subscribePush) subPushBtn.removeEventListener('click', _handlers.subscribePush);
-    _handlers.subscribePush = () => {
-      console.log('[Settings] subscribePush обработчик вызван из кнопки');
-      App.ui.pages.subscribeToPush();
-    };
-    subPushBtn.addEventListener('click', _handlers.subscribePush);
-  }
-
-  const unsubPushBtn = document.getElementById('unsubscribe-push-btn');
-  if (unsubPushBtn) {
-    if (_handlers.unsubscribePush) unsubPushBtn.removeEventListener('click', _handlers.unsubscribePush);
-    _handlers.unsubscribePush = async () => {
-      await App.ui.pages.removePushSubscription();
-      App.toast('Подписка на push отключена', 'success');
-      const statusEl = document.getElementById('push-status');
-      if (statusEl) statusEl.innerHTML = '<i data-lucide="bell-off"></i> Push-уведомления не настроены';
-      const subscribeEl = document.getElementById('subscribe-push-btn');
-      const unsubscribeEl = document.getElementById('unsubscribe-push-btn');
-      if (subscribeEl) subscribeEl.style.display = 'inline-flex';
-      if (unsubscribeEl) unsubscribeEl.style.display = 'none';
-      App.initIcons();
-    };
-    unsubPushBtn.addEventListener('click', _handlers.unsubscribePush);
-  }
-
   const infoBtn = document.getElementById('telegram-info-btn');
   if (infoBtn) {
     if (_handlers.telegramInfo) infoBtn.removeEventListener('click', _handlers.telegramInfo);
@@ -769,107 +737,4 @@ App.ui.pages.initRecoveryCodesUI = function() {
     codesText += '\nСохраните их в надёжном месте. Эта страница больше не покажет эти коды.';
     await App.ui.alertModal(codesText);
     const listEl = document.getElementById('recovery-codes-list');
-    if (listEl) listEl.innerHTML = '<p class="hint">Новые коды сгенерированы и показаны. Сохраните их.</p>';
-  };
-  genBtn.addEventListener('click', _handlers.genRecoveryCodes);
-};
-
-App.ui.pages.renderPinSettings = async function() {
-  const container = document.getElementById('pin-settings-container');
-  if (!container) return;
-  if (!App.db || !App.db._db) {
-    setTimeout(() => App.ui.pages.renderPinSettings(), 500);
-    return;
-  }
-  const hasPin = App.localAuth && await App.localAuth.isPinSet();
-  const supported = App.localAuth && App.localAuth.isPinSupported();
-  if (!supported) {
-    container.innerHTML = '<p class="hint"><i data-lucide="info"></i> PIN-код не поддерживается вашим браузером.</p>';
-    App.initIcons();
-    return;
-  }
-  const attempts = localStorage.getItem('vesta_pin_attempts');
-  let blockedMessage = '';
-  if (attempts) {
-    try {
-      const data = JSON.parse(attempts);
-      if (data.blockedUntil && Date.now() < data.blockedUntil) {
-        const minutesLeft = Math.ceil((data.blockedUntil - Date.now()) / 60000);
-        blockedMessage = `<p class="hint" style="color: var(--danger);">PIN временно заблокирован (${minutesLeft} мин.). Введите мастер-пароль для разблокировки.</p>`;
-      }
-    } catch(e) {}
-  }
-  if (hasPin) {
-    container.innerHTML = `
-      <div class="card">
-        <h3><i data-lucide="lock"></i> Быстрый вход по PIN</h3>
-        <p>PIN-код установлен. Вы можете сбросить его.</p>
-        ${blockedMessage}
-        <button id="pin-reset-btn" class="secondary-btn">Сбросить PIN</button>
-      </div>
-    `;
-    const resetBtn = document.getElementById('pin-reset-btn');
-    if (resetBtn) {
-      if (_handlers.pinReset) resetBtn.removeEventListener('click', _handlers.pinReset);
-      _handlers.pinReset = async () => {
-        if (await App.ui.confirmModalAsync('Сбросить PIN? Придётся заново вводить мастер-пароль.')) {
-          await App.localAuth.resetPin();
-          await App.ui.pages.renderPinSettings();
-          App.toast('PIN сброшен', 'success');
-        }
-      };
-      resetBtn.addEventListener('click', _handlers.pinReset);
-    }
-  } else {
-    container.innerHTML = `
-      <div class="card">
-        <h3><i data-lucide="fingerprint"></i> Быстрый вход по PIN</h3>
-        <p>Установите PIN-код (6+ цифр), чтобы не вводить мастер-пароль при каждом запуске.</p>
-        ${blockedMessage}
-        <button id="pin-setup-btn" class="primary-btn">Установить PIN</button>
-      </div>
-    `;
-    const setupBtn = document.getElementById('pin-setup-btn');
-    if (setupBtn) {
-      if (_handlers.pinSetup) setupBtn.removeEventListener('click', _handlers.pinSetup);
-      _handlers.pinSetup = async () => {
-        const masterKey = App.db.encryption.getMasterKey();
-        if (!masterKey) {
-          App.toast('Мастер-пароль не активен. Выйдите и войдите снова.', 'error');
-          return;
-        }
-        const masterPassword = await App.ui.promptModalAsync('Подтвердите мастер-пароль', '');
-        if (!masterPassword) return;
-        const salt = App.db.encryption.getStoredSalt();
-        const isValid = await App.db.encryption.verifyMasterKey(masterPassword, salt);
-        if (!isValid) {
-          App.toast('Неверный мастер-пароль', 'error');
-          return;
-        }
-        let pinSet = false;
-        while (!pinSet) {
-          const pin = await App.ui.promptModalAsync('Установите PIN-код (минимум 6 цифр)', '');
-          if (pin && pin.length >= 6 && /^\d+$/.test(pin)) {
-            const confirmPin = await App.ui.promptModalAsync('Подтвердите PIN-код', '');
-            if (confirmPin === pin) {
-              try {
-                await App.localAuth.setPin(pin, masterPassword);
-                App.toast('PIN-код сохранён', 'success');
-                await App.ui.pages.renderPinSettings();
-                pinSet = true;
-              } catch (err) {
-                App.toast('Ошибка: ' + err.message, 'error');
-              }
-            } else {
-              App.toast('PIN-коды не совпадают', 'error');
-            }
-          } else {
-            App.toast('PIN должен содержать минимум 6 цифр', 'error');
-          }
-        }
-      };
-      setupBtn.addEventListener('click', _handlers.pinSetup);
-    }
-  }
-  App.initIcons();
-};
+    if (listEl)
