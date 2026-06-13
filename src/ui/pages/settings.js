@@ -45,6 +45,7 @@ App.ui.pages.saveSettings = async function() {
   }
 };
 
+// ==================== PUSH-УВЕДОМЛЕНИЯ ====================
 App.ui.pages.checkPushSubscriptionStatus = async function() {
   if (!App.supabase) return false;
   try {
@@ -119,6 +120,10 @@ App.ui.pages.removePushSubscription = async function() {
 
 App.ui.pages.subscribeToPush = async function() {
   console.log('[Settings] subscribeToPush вызвана');
+  
+  // Временная диагностика: показываем alert, чтобы убедиться, что вызов происходит
+  App.toast('Функция подписки вызвана, проверьте консоль', 'info');
+  
   if (!('Notification' in window)) {
     App.ui.alertModal('Push-уведомления не поддерживаются вашим браузером.');
     return;
@@ -175,6 +180,7 @@ App.ui.pages.subscribeToPush = async function() {
   }
 };
 
+// ==================== TELEGRAM БЛОК ====================
 App.ui.pages._renderTelegramBlock = async function(container) {
   if (!container) return;
   console.log('[Settings] _renderTelegramBlock начат, App.store.isPremium =', App.store.isPremium);
@@ -258,6 +264,7 @@ App.ui.pages.unbindTelegram = async function() {
   }
 };
 
+// ==================== ОСТАЛЬНЫЕ БЛОКИ ====================
 App.ui.pages.renderRecoveryCodesBlock = function(container) {
   if (!container) return;
   container.innerHTML = `
@@ -537,6 +544,7 @@ App.ui.pages.renderBackupBlock = function() {
   }
 };
 
+// ==================== ОСНОВНАЯ ФУНКЦИЯ ЗАПОЛНЕНИЯ НАСТРОЕК ====================
 App.ui.pages.populateSettingsFields = async function() {
   console.log('[Settings] populateSettingsFields начат');
   if (document.readyState !== 'complete') {
@@ -643,7 +651,10 @@ App.ui.pages.populateSettingsFields = async function() {
   const subPushBtn = document.getElementById('subscribe-push-btn');
   if (subPushBtn) {
     if (_handlers.subscribePush) subPushBtn.removeEventListener('click', _handlers.subscribePush);
-    _handlers.subscribePush = () => App.ui.pages.subscribeToPush();
+    _handlers.subscribePush = () => {
+      console.log('[Settings] subscribePush обработчик вызван из кнопки');
+      App.ui.pages.subscribeToPush();
+    };
     subPushBtn.addEventListener('click', _handlers.subscribePush);
   }
 
