@@ -73,12 +73,6 @@
         reminderDays: '7,2',
         telegramEnabled: true
     };
-    // Сброс премиум-статуса
-    App.store.isPremium = false;
-    App.store.premiumTier = 'free';
-    App.store.premiumExpiresAt = null;
-    App.store.premiumFeatures = [];
-    
     localStorage.removeItem('vesta_active_car_id');
     localStorage.removeItem('vesta_username');
     if (App.db && App.db._db) {
