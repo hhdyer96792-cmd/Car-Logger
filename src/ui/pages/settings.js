@@ -3,8 +3,6 @@ window.App = window.App || {};
 App.ui = App.ui || {};
 App.ui.pages = App.ui.pages || {};
 
-let settingsListenersAttached = false;
-
 // ==================== СОХРАНЕНИЕ НАСТРОЕК ====================
 App.ui.pages.saveSettings = async function() {
   const notificationMethodSelect = document.getElementById('notification-method');
@@ -137,7 +135,6 @@ App.ui.pages.subscribeToPush = async function() {
       }
     }
     if ('serviceWorker' in navigator) {
-      // Определяем базовый путь приложения
       let swPath = '/firebase-messaging-sw.js';
       if (window.location.pathname.includes('/Car-Logger/')) {
         swPath = '/Car-Logger/firebase-messaging-sw.js';
@@ -157,6 +154,7 @@ App.ui.pages.subscribeToPush = async function() {
         console.log('[Push] FCM Token получен:', token);
         await App.ui.pages.savePushSubscription(token);
         App.toast('Push-уведомления активированы', 'success');
+        // Обновляем интерфейс
         const statusEl = document.getElementById('push-status');
         if (statusEl) statusEl.innerHTML = '<i data-lucide="check-circle" style="color: var(--success);"></i> Push-уведомления активны';
         const subscribeEl = document.getElementById('subscribe-push-btn');
@@ -176,7 +174,7 @@ App.ui.pages.subscribeToPush = async function() {
   }
 };
 
-// ==================== ОТДЕЛЬНЫЕ БЛОКИ НАСТРОЕК ====================
+// ==================== ОТДЕЛЬНЫЕ БЛОКИ ====================
 App.ui.pages.renderRecoveryCodesBlock = function(container) {
   if (!container) return;
   container.innerHTML = `
@@ -459,10 +457,12 @@ App.ui.pages.populateSettingsFields = async function() {
   if (document.readyState !== 'complete') {
     await new Promise(resolve => window.addEventListener('load', resolve));
   }
+
   const premiumContainer = document.getElementById('premium-settings-container');
   const notificationsContainer = document.getElementById('notifications-card-container');
   const pinContainer = document.getElementById('pin-settings-container');
   const accordionContainer = document.getElementById('settings-accordion-container');
+
   if (!premiumContainer || !notificationsContainer || !pinContainer || !accordionContainer) {
     console.warn('[Settings] Missing containers, retrying...');
     setTimeout(() => App.ui.pages.populateSettingsFields(), 100);
@@ -606,38 +606,47 @@ App.ui.pages.populateSettingsFields = async function() {
     App.initIcons();
   }
 
-  if (!settingsListenersAttached) {
-    const saveBtn = document.getElementById('save-settings-btn');
-    if (saveBtn) {
-      saveBtn.addEventListener('click', App.ui.pages.saveSettings);
-    }
-    const subPushBtn = document.getElementById('subscribe-push-btn');
-    if (subPushBtn) {
-      subPushBtn.addEventListener('click', async () => {
-        await App.ui.pages.subscribeToPush();
-      });
-    }
-    const unsubPushBtn = document.getElementById('unsubscribe-push-btn');
-    if (unsubPushBtn) {
-      unsubPushBtn.addEventListener('click', async () => {
-        await App.ui.pages.removePushSubscription();
-        App.toast('Подписка на push отключена', 'success');
-        const statusEl = document.getElementById('push-status');
-        if (statusEl) statusEl.innerHTML = '<i data-lucide="bell-off"></i> Push-уведомления не настроены';
-        const subscribeEl = document.getElementById('subscribe-push-btn');
-        const unsubscribeEl = document.getElementById('unsubscribe-push-btn');
-        if (subscribeEl) subscribeEl.style.display = 'inline-flex';
-        if (unsubscribeEl) unsubscribeEl.style.display = 'none';
-        App.initIcons();
-      });
-    }
-    const infoBtn = document.getElementById('telegram-info-btn');
-    if (infoBtn) {
-      infoBtn.addEventListener('click', () => {
-        App.ui.alertModal('Для привязки Telegram перейдите в раздел Premium (доступно после активации подписки).');
-      });
-    }
-    settingsListenersAttached = true;
+  // Обработчики кнопок (создаются заново каждый раз, но без дублирования через клонирование)
+  const saveBtn = document.getElementById('save-settings-btn');
+  if (saveBtn) {
+    const newSaveBtn = saveBtn.cloneNode(true);
+    saveBtn.parentNode.replaceChild(newSaveBtn, saveBtn);
+    newSaveBtn.onclick = App.ui.pages.saveSettings;
+  }
+
+  const subPushBtn = document.getElementById('subscribe-push-btn');
+  if (subPushBtn) {
+    const newSubBtn = subPushBtn.cloneNode(true);
+    subPushBtn.parentNode.replaceChild(newSubBtn, subPushBtn);
+    newSubBtn.onclick = async () => {
+      await App.ui.pages.subscribeToPush();
+    };
+  }
+
+  const unsubPushBtn = document.getElementById('unsubscribe-push-btn');
+  if (unsubPushBtn) {
+    const newUnsubBtn = unsubPushBtn.cloneNode(true);
+    unsubPushBtn.parentNode.replaceChild(newUnsubBtn, unsubPushBtn);
+    newUnsubBtn.onclick = async () => {
+      await App.ui.pages.removePushSubscription();
+      App.toast('Подписка на push отключена', 'success');
+      const statusEl = document.getElementById('push-status');
+      if (statusEl) statusEl.innerHTML = '<i data-lucide="bell-off"></i> Push-уведомления не настроены';
+      const subscribeEl = document.getElementById('subscribe-push-btn');
+      const unsubscribeEl = document.getElementById('unsubscribe-push-btn');
+      if (subscribeEl) subscribeEl.style.display = 'inline-flex';
+      if (unsubscribeEl) unsubscribeEl.style.display = 'none';
+      App.initIcons();
+    };
+  }
+
+  const infoBtn = document.getElementById('telegram-info-btn');
+  if (infoBtn) {
+    const newInfoBtn = infoBtn.cloneNode(true);
+    infoBtn.parentNode.replaceChild(newInfoBtn, infoBtn);
+    newInfoBtn.onclick = () => {
+      App.ui.alertModal('Для привязки Telegram перейдите в раздел Premium (доступно после активации подписки).');
+    };
   }
 
   if (typeof App.ui.pages.renderPinSettings === 'function') {
@@ -680,14 +689,17 @@ App.ui.pages.populateSettingsFields = async function() {
   if (deleteBody) await App.ui.pages.renderDeleteAccountBlock(deleteBody);
 
   document.querySelectorAll('.settings-accordion .accordion-header').forEach(header => {
-    header.addEventListener('click', function() {
+    header.removeEventListener('click', header._clickHandler);
+    const handler = function() {
       const body = this.nextElementSibling;
       if (body && body.classList.contains('accordion-body')) {
         body.classList.toggle('open');
         const arrow = this.querySelector('.accordion-arrow');
         if (arrow) arrow.style.transform = body.classList.contains('open') ? 'rotate(180deg)' : 'rotate(0deg)';
       }
-    });
+    };
+    header._clickHandler = handler;
+    header.addEventListener('click', handler);
   });
 
   if (typeof App.ui.pages.renderBackupBlock === 'function') {
@@ -700,7 +712,7 @@ App.ui.pages.populateSettingsFields = async function() {
 App.ui.pages.initRecoveryCodesUI = function() {
   let genBtn = document.getElementById('gen-new-codes-btn');
   if (!genBtn) return;
-  genBtn.addEventListener('click', async function() {
+  genBtn.onclick = async () => {
     const { data: { user } } = await App.supabase.auth.getUser();
     if (!user) return;
     const confirmed = await App.ui.confirmModalAsync('Сгенерировать новые резервные коды? Старые коды будут аннулированы. Сохраните новые коды в надёжном месте.');
@@ -718,7 +730,7 @@ App.ui.pages.initRecoveryCodesUI = function() {
     await App.ui.alertModal(codesText);
     const listEl = document.getElementById('recovery-codes-list');
     if (listEl) listEl.innerHTML = '<p class="hint">Новые коды сгенерированы и показаны. Сохраните их.</p>';
-  });
+  };
 };
 
 // ==================== PIN-КОД ====================
@@ -758,13 +770,15 @@ App.ui.pages.renderPinSettings = async function() {
     `;
     const resetBtn = document.getElementById('pin-reset-btn');
     if (resetBtn) {
-      resetBtn.addEventListener('click', async () => {
+      const newResetBtn = resetBtn.cloneNode(true);
+      resetBtn.parentNode.replaceChild(newResetBtn, resetBtn);
+      newResetBtn.onclick = async () => {
         if (await App.ui.confirmModalAsync('Сбросить PIN? Придётся заново вводить мастер-пароль.')) {
           await App.localAuth.resetPin();
           await App.ui.pages.renderPinSettings();
           App.toast('PIN сброшен', 'success');
         }
-      });
+      };
     }
   } else {
     container.innerHTML = `
@@ -777,7 +791,9 @@ App.ui.pages.renderPinSettings = async function() {
     `;
     const setupBtn = document.getElementById('pin-setup-btn');
     if (setupBtn) {
-      setupBtn.addEventListener('click', async () => {
+      const newSetupBtn = setupBtn.cloneNode(true);
+      setupBtn.parentNode.replaceChild(newSetupBtn, setupBtn);
+      newSetupBtn.onclick = async () => {
         const masterKey = App.db.encryption.getMasterKey();
         if (!masterKey) {
           App.toast('Мастер-пароль не активен. Выйдите и войдите снова.', 'error');
@@ -812,7 +828,7 @@ App.ui.pages.renderPinSettings = async function() {
             App.toast('PIN должен содержать минимум 6 цифр', 'error');
           }
         }
-      });
+      };
     }
   }
   App.initIcons();
