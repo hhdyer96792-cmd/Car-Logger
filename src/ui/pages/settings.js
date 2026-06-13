@@ -175,6 +175,58 @@ App.ui.pages.subscribeToPush = async function() {
   }
 };
 
+// ==================== ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ДЛЯ TELEGRAM-БЛОКА ====================
+App.ui.pages._renderTelegramBlock = async function(container) {
+  if (!container) return;
+  if (!App.store.isPremium) {
+    container.innerHTML = `
+      <div style="margin-top: 12px;">
+        <p class="hint"><i data-lucide="lock"></i> Telegram-уведомления доступны в Premium и Ultra тарифах.</p>
+        <button id="upgrade-to-premium-telegram" class="secondary-btn"><i data-lucide="crown"></i> Активировать Premium</button>
+      </div>
+    `;
+    const upgradeBtn = document.getElementById('upgrade-to-premium-telegram');
+    if (upgradeBtn) upgradeBtn.onclick = () => App.modules.showUpgradeModal();
+    App.initIcons();
+    return;
+  }
+  
+  const userId = await App.supa.getCurrentUserId();
+  if (!userId) {
+    container.innerHTML = '<p class="hint">Ошибка идентификации пользователя</p>';
+    return;
+  }
+  
+  const status = await App.supa.getTelegramStatus();
+  console.log('[Settings] Telegram status:', status);
+  const isConnected = status.is_connected;
+  const username = status.username;
+  const telegramEnabled = status.telegram_enabled;
+  
+  if (isConnected && telegramEnabled) {
+    container.innerHTML = `
+      <div style="margin-top: 12px;">
+        <p><strong><i data-lucide="send"></i> Telegram-уведомления</strong></p>
+        <p class="hint" style="color: var(--success);">Подключено: @${username || 'Telegram'}</p>
+        <button id="unbind-telegram-btn" class="secondary-btn"><i data-lucide="bell-off"></i> Отписаться</button>
+        <div id="unbind-message" class="hint" style="margin-top: 8px;"></div>
+      </div>
+    `;
+  } else {
+    const link = App.telegram?.getStartLink?.(userId) || `https://t.me/CarLoggerDnCBot?start=${userId}`;
+    container.innerHTML = `
+      <div style="margin-top: 12px;">
+        <p><strong><i data-lucide="send"></i> Telegram-уведомления</strong></p>
+        <a href="${link}" target="_blank" class="primary-btn" style="display:inline-block; margin-bottom:8px;">
+          <i data-lucide="message-circle"></i> Привязать Telegram
+        </a>
+        <p class="hint">Нажмите на кнопку, чтобы связать аккаунт с официальным ботом.</p>
+      </div>
+    `;
+  }
+  App.initIcons();
+};
+
 // ==================== ОТДЕЛЬНЫЕ БЛОКИ ====================
 App.ui.pages.renderRecoveryCodesBlock = function(container) {
   if (!container) return;
@@ -475,6 +527,7 @@ App.ui.pages.populateSettingsFields = async function() {
     App.ui.pages.renderPremiumBlock();
   }
 
+  // Рендерим основную карточку уведомлений
   notificationsContainer.innerHTML = `
     <div class="card">
       <h3><i data-lucide="bell"></i> Уведомления</h3>
@@ -546,49 +599,13 @@ App.ui.pages.populateSettingsFields = async function() {
     }
   }
 
+  // Обновляем Telegram-блок через отдельную функцию
   const telegramBindArea = document.getElementById('telegram-bind-area');
   if (telegramBindArea) {
-    if (App.store.isPremium) {
-      const userId = await App.supa.getCurrentUserId();
-      const status = await App.supa.getTelegramStatus();
-      const isConnected = status.is_connected;
-      const username = status.username;
-      const telegramEnabled = status.telegram_enabled;
-      if (isConnected && telegramEnabled) {
-        telegramBindArea.innerHTML = `
-          <div style="margin-top: 12px;">
-            <p><strong><i data-lucide="send"></i> Telegram-уведомления</strong></p>
-            <p class="hint" style="color: var(--success);">Подключено: @${username || 'Telegram'}</p>
-            <button id="unbind-telegram-btn" class="secondary-btn"><i data-lucide="bell-off"></i> Отписаться</button>
-            <div id="unbind-message" class="hint" style="margin-top: 8px;"></div>
-          </div>
-        `;
-      } else {
-        const link = App.telegram?.getStartLink?.(userId) || `https://t.me/CarLoggerDnCBot?start=${userId}`;
-        telegramBindArea.innerHTML = `
-          <div style="margin-top: 12px;">
-            <p><strong><i data-lucide="send"></i> Telegram-уведомления</strong></p>
-            <a href="${link}" target="_blank" class="primary-btn" style="display:inline-block; margin-bottom:8px;">
-              <i data-lucide="message-circle"></i> Привязать Telegram
-            </a>
-            <p class="hint">Нажмите на кнопку, чтобы связать аккаунт с официальным ботом. После привязки уведомления о ТО будут приходить в Telegram.</p>
-          </div>
-        `;
-      }
-    } else {
-      telegramBindArea.innerHTML = `
-        <div style="margin-top: 12px;">
-          <p class="hint"><i data-lucide="lock"></i> Telegram-уведомления доступны в Premium и Ultra тарифах.</p>
-          <button id="upgrade-to-premium-telegram" class="secondary-btn"><i data-lucide="crown"></i> Активировать Premium</button>
-        </div>
-      `;
-      const upgradeBtn = document.getElementById('upgrade-to-premium-telegram');
-      if (upgradeBtn) upgradeBtn.onclick = () => App.modules.showUpgradeModal();
-    }
-    App.initIcons();
+    await App.ui.pages._renderTelegramBlock(telegramBindArea);
   }
 
-  // Обработчики кнопок settings.js больше не привязываются здесь – они в events.js через делегирование
+  // Обработчики кнопок settings.js не привязываются здесь – они в events.js через делегирование
 
   if (typeof App.ui.pages.renderPinSettings === 'function') {
     await App.ui.pages.renderPinSettings();
