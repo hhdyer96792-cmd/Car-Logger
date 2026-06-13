@@ -400,24 +400,28 @@ App.ui.pages.renderCarTab = function() {
     document.getElementById('rename-car-btn').onclick = App.ui.pages.renameCar;
     document.getElementById('delete-car-btn').onclick = App.ui.pages.deleteCar;
     document.getElementById('save-car-details-btn').onclick = async function() {
-        const brand = document.getElementById('car-brand')?.value?.trim() || '';
-        const model = document.getElementById('car-model')?.value?.trim() || '';
-        const year = parseInt(document.getElementById('car-year')?.value) || null;
-        const plate = document.getElementById('car-plate')?.value?.trim() || '';
-        const vin = document.getElementById('car-vin')?.value?.trim() || '';
-        
-        App.store.settings.carBrand = brand;
-        App.store.settings.carModel = model;
-        App.store.settings.carYear = year;
-        App.store.settings.plateNumber = plate;
-        App.store.settings.vin = vin;
-        
-        await App.storage.saveVehicleStateAndSettings(
-            { carBrand: brand, carModel: model, carYear: year, plateNumber: plate, vin: vin },
-            {}
-        );
-        App.toast('Данные автомобиля сохранены', 'success');
-    };
+    const brand = document.getElementById('car-brand')?.value?.trim() || '';
+    const model = document.getElementById('car-model')?.value?.trim() || '';
+    const year = parseInt(document.getElementById('car-year')?.value) || null;
+    const plate = document.getElementById('car-plate')?.value?.trim() || '';
+    const vin = document.getElementById('car-vin')?.value?.trim() || '';
+    
+    App.store.settings.carBrand = brand;
+    App.store.settings.carModel = model;
+    App.store.settings.carYear = year;
+    App.store.settings.plateNumber = plate;
+    App.store.settings.vin = vin;
+    
+    await App.storage.saveVehicleStateAndSettings(
+        { carBrand: brand, carModel: model, carYear: year, plateNumber: plate, vin: vin },
+        {}
+    );
+    
+    // Принудительно обновляем поля на странице
+    App.ui.pages.loadCarDetails(App.store.activeCarId);
+    
+    App.toast('Данные автомобиля сохранены', 'success');
+};
 
     if (App.store.activeCarId) {
         App.ui.pages.loadCarDetailsWithRetry(App.store.activeCarId);
