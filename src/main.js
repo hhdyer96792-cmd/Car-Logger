@@ -766,4 +766,25 @@
 
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', onReady);
     else onReady();
+
+window.addEventListener('focus', () => {
+    const activeTab = document.querySelector('.tab-content.active');
+    if (activeTab && activeTab.id === 'tab-settings') {
+        if (typeof App.ui.pages.populateSettingsFields === 'function') {
+            App.ui.pages.populateSettingsFields();
+        }
+    }
+});
+
+document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) {
+        const activeTab = document.querySelector('.tab-content.active');
+        if (activeTab && activeTab.id === 'tab-settings') {
+            if (typeof App.ui.pages.populateSettingsFields === 'function') {
+                App.ui.pages.populateSettingsFields();
+            }
+        }
+    }
+});
+
 })();
