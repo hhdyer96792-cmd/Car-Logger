@@ -64,7 +64,15 @@
         App.store.mileageHistory = [];
         App.store.cars = [];
         App.store.activeCarId = null;
-        localStorage.removeItem('vesta_active_car_id');
+       App.store.settings = {
+    currentMileage: 0,
+    currentMotohours: 0,
+    avgDailyMileage: 45,
+    avgDailyMotohours: 1.8,
+    notificationMethod: 'telegram',
+    reminderDays: '7,2',
+    telegramEnabled: true
+}; localStorage.removeItem('vesta_active_car_id');
         localStorage.removeItem('vesta_username');
         if (App.db && App.db._db) {
             const stores = ['operations','fuel_log','tires','parts','service_records','mileage_log','cars','settings'];
