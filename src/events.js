@@ -78,7 +78,6 @@ App.events.setupDelegation = function() {
             return;
         }
         
-        // ========== НОВЫЕ ОБРАБОТЧИКИ ДЛЯ НАСТРОЕК ==========
         const saveSettingsBtn = e.target.closest('#save-settings-btn');
         if (saveSettingsBtn) {
             e.preventDefault();
@@ -130,7 +129,6 @@ App.events.setupDelegation = function() {
             }
             return;
         }
-        // ==================================================
         
         const target = e.target.closest('[data-action]');
         if (!target) return;
@@ -356,7 +354,7 @@ App.events.initNavigation = function() {
     });
 };
 
-App.events.switchToTab = function(tabId) {
+App.events.switchToTab = async function(tabId) {
     if (App.events.currentActiveTab === tabId) return;
 
     document.body.style.overflow = '';
