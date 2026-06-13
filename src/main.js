@@ -377,12 +377,15 @@
                             if (pin) {
                                 masterPassword = await App.localAuth.verifyPin(pin);
                                 if (masterPassword) {
-                                    const salt = App.db.encryption.getStoredSalt();
-                                    const { key } = await App.db.encryption.initMasterKey(masterPassword, salt);
-                                    App.db.encryption.setMasterKey(key, salt);
-                                    await App.store.loadFromIndexedDB();
-                                    if (typeof App.renderAll === 'function') App.renderAll();
-                                }
+    const salt = App.db.encryption.getStoredSalt();
+    const { key } = await App.db.encryption.initMasterKey(masterPassword, salt);
+    App.db.encryption.setMasterKey(key, salt);
+    await App.store.loadFromIndexedDB();
+    if (typeof App.premium?.checkStatus === 'function') {
+        await App.premium.checkStatus();
+    }
+    if (typeof App.renderAll === 'function') App.renderAll();
+}
                             }
                         } catch (pinError) {}
                     }
