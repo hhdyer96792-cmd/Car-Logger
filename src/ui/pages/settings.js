@@ -182,6 +182,14 @@ App.ui.pages.subscribeToPush = async function() {
 // ==================== TELEGRAM БЛОК ====================
 App.ui.pages._renderTelegramBlock = async function(container) {
   if (!container) return;
+  console.log('[Settings] _renderTelegramBlock начат, App.store.isPremium =', App.store.isPremium);
+  
+  // Принудительно обновляем статус Premium перед отрисовкой
+  if (typeof App.premium?.checkStatus === 'function') {
+    await App.premium.checkStatus();
+    console.log('[Settings] После checkStatus, App.store.isPremium =', App.store.isPremium);
+  }
+  
   if (!App.store.isPremium) {
     container.innerHTML = `
       <div style="margin-top: 12px;">
