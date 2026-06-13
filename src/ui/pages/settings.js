@@ -3,12 +3,10 @@ window.App = window.App || {};
 App.ui = App.ui || {};
 App.ui.pages = App.ui.pages || {};
 
-// Хранилище ссылок на обработчики для их удаления
-const _handlers = {};
+let isPopulating = false;
 
 // ==================== СОХРАНЕНИЕ НАСТРОЕК ====================
 App.ui.pages.saveSettings = async function() {
-  console.log('[Settings] saveSettings вызвана');
   const notificationMethodSelect = document.getElementById('notification-method');
   const reminderDaysInput = document.getElementById('reminder-days-input');
   let reminderDaysRaw = reminderDaysInput?.value.trim() || '7,2';
@@ -41,14 +39,14 @@ App.ui.pages.saveSettings = async function() {
     App.toast('Настройки сохранены', 'success');
   } catch (err) {
     console.error(err);
-    const resultDiv = document.getElementById('settings-result');
-    if (resultDiv) resultDiv.textContent = 'Ошибка сохранения';
     App.toast('Ошибка сохранения настроек', 'error');
   }
 };
 
 // ==================== PUSH-УВЕДОМЛЕНИЯ ====================
 App.ui.pages.checkPushSubscriptionStatus = async function() {
+  const localFlag = localStorage.getItem('push_subscribed') === 'true';
+  if (localFlag) return true;
   if (!App.supabase) return false;
   try {
     const { data: { user } } = await App.supabase.auth.getUser();
@@ -121,7 +119,6 @@ App.ui.pages.removePushSubscription = async function() {
 };
 
 App.ui.pages.subscribeToPush = async function() {
-  console.log('[Settings] subscribeToPush вызвана');
   if (!('Notification' in window)) {
     App.ui.alertModal('Push-уведомления не поддерживаются вашим браузером.');
     return;
@@ -159,7 +156,6 @@ App.ui.pages.subscribeToPush = async function() {
         console.log('[Push] FCM Token получен:', token);
         await App.ui.pages.savePushSubscription(token);
         App.toast('Push-уведомления активированы', 'success');
-        // Обновляем интерфейс
         const statusEl = document.getElementById('push-status');
         if (statusEl) statusEl.innerHTML = '<i data-lucide="check-circle" style="color: var(--success);"></i> Push-уведомления активны';
         const subscribeEl = document.getElementById('subscribe-push-btn');
@@ -179,87 +175,6 @@ App.ui.pages.subscribeToPush = async function() {
   }
 };
 
-// ==================== TELEGRAM БЛОК ====================
-App.ui.pages._renderTelegramBlock = async function(container) {
-  if (!container) return;
-  console.log('[Settings] _renderTelegramBlock начат, App.store.isPremium =', App.store.isPremium);
-  
-  // Принудительно обновляем статус Premium перед отрисовкой
-  if (typeof App.premium?.checkStatus === 'function') {
-    await App.premium.checkStatus();
-    console.log('[Settings] После checkStatus, App.store.isPremium =', App.store.isPremium);
-  }
-  
-  if (!App.store.isPremium) {
-    container.innerHTML = `
-      <div style="margin-top: 12px;">
-        <p class="hint"><i data-lucide="lock"></i> Telegram-уведомления доступны в Premium и Ultra тарифах.</p>
-        <button id="upgrade-to-premium-telegram" class="secondary-btn"><i data-lucide="crown"></i> Активировать Premium</button>
-      </div>
-    `;
-    const upgradeBtn = document.getElementById('upgrade-to-premium-telegram');
-    if (upgradeBtn) upgradeBtn.onclick = () => App.modules.showUpgradeModal();
-    App.initIcons();
-    return;
-  }
-  
-  const userId = await App.supa.getCurrentUserId();
-  if (!userId) {
-    container.innerHTML = '<p class="hint">Ошибка идентификации пользователя</p>';
-    return;
-  }
-  
-  const status = await App.supa.getTelegramStatus();
-  console.log('[Settings] Telegram status:', status);
-  const isConnected = status.is_connected;
-  const username = status.username;
-  const telegramEnabled = status.telegram_enabled;
-  
-  if (isConnected && telegramEnabled) {
-    container.innerHTML = `
-      <div style="margin-top: 12px;">
-        <p><strong><i data-lucide="send"></i> Telegram-уведомления</strong></p>
-        <p class="hint" style="color: var(--success);">Подключено: @${username || 'Telegram'}</p>
-        <button id="unbind-telegram-btn" class="secondary-btn"><i data-lucide="bell-off"></i> Отписаться</button>
-        <div id="unbind-message" class="hint" style="margin-top: 8px;"></div>
-      </div>
-    `;
-    // Привязываем обработчик отписки
-    const unbindBtn = document.getElementById('unbind-telegram-btn');
-    if (unbindBtn) {
-      if (_handlers.unbindTelegram) unbindBtn.removeEventListener('click', _handlers.unbindTelegram);
-      _handlers.unbindTelegram = async () => {
-        const confirmed = await App.ui.confirmModalAsync('Отписаться от Telegram-уведомлений? Вы перестанете получать напоминания в Telegram.');
-        if (!confirmed) return;
-        const msgDiv = document.getElementById('unbind-message');
-        if (msgDiv) msgDiv.innerHTML = '<span style="color: var(--warning);">Отправка запроса...</span>';
-        try {
-          const { error } = await App.supabase.from('telegram_users').delete().eq('user_id', userId);
-          if (error) throw error;
-          await App.supabase.from('user_settings').update({ telegram_enabled: false }).eq('user_id', userId).eq('car_id', App.store.activeCarId);
-          if (msgDiv) msgDiv.innerHTML = '<span style="color: var(--success);">Вы отписались. Чтобы снова подключиться, нажмите кнопку привязки.</span>';
-          setTimeout(() => App.ui.pages.populateSettingsFields(), 2000);
-        } catch (err) {
-          if (msgDiv) msgDiv.innerHTML = `<span style="color: var(--danger);">Ошибка: ${err.message}</span>`;
-        }
-      };
-      unbindBtn.addEventListener('click', _handlers.unbindTelegram);
-    }
-  } else {
-    const link = App.telegram?.getStartLink?.(userId) || `https://t.me/CarLoggerDnCBot?start=${userId}`;
-    container.innerHTML = `
-      <div style="margin-top: 12px;">
-        <p><strong><i data-lucide="send"></i> Telegram-уведомления</strong></p>
-        <a href="${link}" target="_blank" class="primary-btn" style="display:inline-block; margin-bottom:8px;">
-          <i data-lucide="message-circle"></i> Привязать Telegram
-        </a>
-        <p class="hint">Нажмите на кнопку, чтобы связать аккаунт с официальным ботом.</p>
-      </div>
-    `;
-  }
-  App.initIcons();
-};
-
 // ==================== ОТДЕЛЬНЫЕ БЛОКИ ====================
 App.ui.pages.renderRecoveryCodesBlock = function(container) {
   if (!container) return;
@@ -272,8 +187,25 @@ App.ui.pages.renderRecoveryCodesBlock = function(container) {
     </div>
   `;
   App.initIcons();
-  if (typeof App.ui.pages.initRecoveryCodesUI === 'function') {
-    App.ui.pages.initRecoveryCodesUI();
+  const genBtn = document.getElementById('gen-new-codes-btn');
+  if (genBtn) {
+    genBtn.onclick = async () => {
+      const { data: { user } } = await App.supabase.auth.getUser();
+      if (!user) return;
+      const confirmed = await App.ui.confirmModalAsync('Сгенерировать новые резервные коды? Старые коды будут аннулированы. Сохраните новые коды в надёжном месте.');
+      if (!confirmed) return;
+      const { data: codes, error } = await App.supabase.rpc('generate_recovery_codes', { p_user_id: user.id });
+      if (error || !codes || codes.length === 0) {
+        App.toast('Не удалось сгенерировать коды', 'error');
+        return;
+      }
+      let codesText = 'Ваши новые резервные коды (каждый можно использовать один раз):\n\n';
+      codes.forEach((code, idx) => { codesText += `${idx+1}. ${code}\n`; });
+      codesText += '\nСохраните их в надёжном месте. Эта страница больше не покажет эти коды.';
+      await App.ui.alertModal(codesText);
+      const listEl = document.getElementById('recovery-codes-list');
+      if (listEl) listEl.innerHTML = '<p class="hint">Новые коды сгенерированы и показаны. Сохраните их.</p>';
+    };
   }
 };
 
@@ -423,26 +355,24 @@ App.ui.pages.renderPremiumBlock = function() {
       </div>
     `;
     const activateBtn = document.getElementById('premium-activate-btn');
-    const keyInput = document.getElementById('premium-key-input');
-    const statusDiv = document.getElementById('premium-status-message');
     if (activateBtn) {
       activateBtn.onclick = async () => {
-        const key = keyInput.value.trim();
+        const key = document.getElementById('premium-key-input').value.trim();
         if (!key) {
-          statusDiv.innerHTML = '<span style="color: var(--danger);"><i data-lucide="alert-triangle"></i> Введите ключ</span>';
+          document.getElementById('premium-status-message').innerHTML = '<span style="color: var(--danger);"><i data-lucide="alert-triangle"></i> Введите ключ</span>';
           App.initIcons();
           return;
         }
         try {
           const result = await App.premium.activateKey(key);
           if (result.success) {
-            statusDiv.innerHTML = '<span style="color: var(--success);"><i data-lucide="check-circle"></i> Подписка активирована! Обновите страницу.</span>';
+            document.getElementById('premium-status-message').innerHTML = '<span style="color: var(--success);"><i data-lucide="check-circle"></i> Подписка активирована! Обновите страницу.</span>';
             setTimeout(() => window.location.reload(), 2000);
           } else {
-            statusDiv.innerHTML = `<span style="color: var(--danger);"><i data-lucide="x-circle"></i> ${result.error}</span>`;
+            document.getElementById('premium-status-message').innerHTML = `<span style="color: var(--danger);"><i data-lucide="x-circle"></i> ${result.error}</span>`;
           }
         } catch (err) {
-          statusDiv.innerHTML = `<span style="color: var(--danger);"><i data-lucide="x-circle"></i> Ошибка: ${err.message}</span>`;
+          document.getElementById('premium-status-message').innerHTML = `<span style="color: var(--danger);"><i data-lucide="x-circle"></i> Ошибка: ${err.message}</span>`;
         }
         App.initIcons();
       };
@@ -504,8 +434,7 @@ App.ui.pages.renderBackupBlock = function() {
   const importBtn = document.getElementById('import-backup-btn');
   const msgDiv = document.getElementById('backup-message');
   if (exportBtn) {
-    if (_handlers.exportBackup) exportBtn.removeEventListener('click', _handlers.exportBackup);
-    _handlers.exportBackup = async () => {
+    exportBtn.onclick = async () => {
       const masterPassword = await App.ui.promptModalAsync('Экспорт данных', 'Введите мастер-пароль для шифрования бэкапа', true);
       if (!masterPassword) return;
       msgDiv.innerHTML = '<span style="color: var(--warning);">Формирование архива... подождите.</span>';
@@ -527,49 +456,36 @@ App.ui.pages.renderBackupBlock = function() {
         setTimeout(() => { msgDiv.innerHTML = ''; }, 5000);
       }
     };
-    exportBtn.addEventListener('click', _handlers.exportBackup);
   }
   if (importBtn) {
-    if (_handlers.importBackup) importBtn.removeEventListener('click', _handlers.importBackup);
-    _handlers.importBackup = () => {
+    importBtn.onclick = () => {
       if (typeof App.backup?.showImportModal === 'function') {
         App.backup.showImportModal();
       } else {
         App.toast('Модуль резервного копирования не загружен', 'error');
       }
     };
-    importBtn.addEventListener('click', _handlers.importBackup);
   }
 };
 
 // ==================== ОСНОВНАЯ ФУНКЦИЯ ЗАПОЛНЕНИЯ НАСТРОЕК ====================
 App.ui.pages.populateSettingsFields = async function() {
-  console.log('[Settings] populateSettingsFields начат');
+  if (isPopulating) return;
+  isPopulating = true;
   if (document.readyState !== 'complete') {
     await new Promise(resolve => window.addEventListener('load', resolve));
   }
-
-  // Принудительно обновляем статус Premium перед отрисовкой
-  if (typeof App.premium?.checkStatus === 'function') {
-    await App.premium.checkStatus();
-  }
-
   const premiumContainer = document.getElementById('premium-settings-container');
   const notificationsContainer = document.getElementById('notifications-card-container');
   const pinContainer = document.getElementById('pin-settings-container');
   const accordionContainer = document.getElementById('settings-accordion-container');
-
   if (!premiumContainer || !notificationsContainer || !pinContainer || !accordionContainer) {
-    console.warn('[Settings] Missing containers, retrying...');
-    setTimeout(() => App.ui.pages.populateSettingsFields(), 100);
+    setTimeout(() => { isPopulating = false; App.ui.pages.populateSettingsFields(); }, 100);
     return;
   }
 
-  if (typeof App.ui.pages.renderPremiumBlock === 'function') {
-    App.ui.pages.renderPremiumBlock();
-  }
+  if (typeof App.ui.pages.renderPremiumBlock === 'function') App.ui.pages.renderPremiumBlock();
 
-  // Рендерим основную карточку уведомлений
   notificationsContainer.innerHTML = `
     <div class="card">
       <h3><i data-lucide="bell"></i> Уведомления</h3>
@@ -620,98 +536,113 @@ App.ui.pages.populateSettingsFields = async function() {
   const subscribeBtn = document.getElementById('subscribe-push-btn');
   const unsubscribeBtn = document.getElementById('unsubscribe-push-btn');
   if (pushStatus && subscribeBtn && unsubscribeBtn) {
-    const isSubscribed = localStorage.getItem('push_subscribed') === 'true';
+    const isSubscribed = await App.ui.pages.checkPushSubscriptionStatus();
     pushStatus.innerHTML = isSubscribed 
       ? '<i data-lucide="check-circle" style="color: var(--success);"></i> Push-уведомления активны' 
       : '<i data-lucide="bell-off"></i> Push-уведомления не настроены';
     subscribeBtn.style.display = isSubscribed ? 'none' : 'inline-flex';
     unsubscribeBtn.style.display = isSubscribed ? 'inline-flex' : 'none';
-    if (isSubscribed) {
-      App.initIcons();
-    } else {
-      if (!('Notification' in window)) {
-        pushStatus.innerHTML = '<i data-lucide="alert-triangle" style="color: var(--warning);"></i> Push-уведомления не поддерживаются вашим браузером.';
-        subscribeBtn.disabled = true;
-      } else if (Notification.permission === 'denied') {
-        pushStatus.innerHTML = '<i data-lucide="alert-triangle" style="color: var(--danger);"></i> Разрешение на уведомления заблокировано. Измените в настройках браузера.';
-        subscribeBtn.disabled = true;
-      } else if (Notification.permission === 'granted') {
-        pushStatus.innerHTML = '<i data-lucide="check-circle" style="color: var(--success);"></i> Разрешение есть. Нажмите "Подписаться" для активации.';
-      }
-    }
+    App.initIcons();
   }
 
-  // Привязываем обработчики кнопок (удаляем старые, добавляем новые)
-  const saveBtn = document.getElementById('save-settings-btn');
-  if (saveBtn) {
-    if (_handlers.saveSettings) saveBtn.removeEventListener('click', _handlers.saveSettings);
-    _handlers.saveSettings = () => App.ui.pages.saveSettings();
-    saveBtn.addEventListener('click', _handlers.saveSettings);
-  }
-
-  const subPushBtn = document.getElementById('subscribe-push-btn');
-  if (subPushBtn) {
-    if (_handlers.subscribePush) subPushBtn.removeEventListener('click', _handlers.subscribePush);
-    _handlers.subscribePush = () => App.ui.pages.subscribeToPush();
-    subPushBtn.addEventListener('click', _handlers.subscribePush);
-  }
-
-  const unsubPushBtn = document.getElementById('unsubscribe-push-btn');
-  if (unsubPushBtn) {
-    if (_handlers.unsubscribePush) unsubPushBtn.removeEventListener('click', _handlers.unsubscribePush);
-    _handlers.unsubscribePush = async () => {
-      await App.ui.pages.removePushSubscription();
-      App.toast('Подписка на push отключена', 'success');
-      const statusEl = document.getElementById('push-status');
-      if (statusEl) statusEl.innerHTML = '<i data-lucide="bell-off"></i> Push-уведомления не настроены';
-      const subscribeEl = document.getElementById('subscribe-push-btn');
-      const unsubscribeEl = document.getElementById('unsubscribe-push-btn');
-      if (subscribeEl) subscribeEl.style.display = 'inline-flex';
-      if (unsubscribeEl) unsubscribeEl.style.display = 'none';
-      App.initIcons();
-    };
-    unsubPushBtn.addEventListener('click', _handlers.unsubscribePush);
-  }
-
-  const infoBtn = document.getElementById('telegram-info-btn');
-  if (infoBtn) {
-    if (_handlers.telegramInfo) infoBtn.removeEventListener('click', _handlers.telegramInfo);
-    _handlers.telegramInfo = () => {
-      App.ui.alertModal('Для привязки Telegram перейдите в раздел Premium (доступно после активации подписки).');
-    };
-    infoBtn.addEventListener('click', _handlers.telegramInfo);
-  }
-
-  // Обновляем Telegram-блок через отдельную функцию
+  // Telegram блок
   const telegramBindArea = document.getElementById('telegram-bind-area');
   if (telegramBindArea) {
-    await App.ui.pages._renderTelegramBlock(telegramBindArea);
+    if (!App.store.isPremium) {
+      telegramBindArea.innerHTML = `
+        <div style="margin-top: 12px;">
+          <p class="hint"><i data-lucide="lock"></i> Telegram-уведомления доступны в Premium и Ultra тарифах.</p>
+          <button id="upgrade-to-premium-telegram" class="secondary-btn"><i data-lucide="crown"></i> Активировать Premium</button>
+        </div>
+      `;
+      const upgradeBtn = document.getElementById('upgrade-to-premium-telegram');
+      if (upgradeBtn) upgradeBtn.onclick = () => App.modules.showUpgradeModal();
+    } else {
+      const userId = await App.supa.getCurrentUserId();
+      if (userId) {
+        const status = await App.supa.getTelegramStatus();
+        if (status.is_connected && status.telegram_enabled) {
+          telegramBindArea.innerHTML = `
+            <div style="margin-top: 12px;">
+              <p><strong><i data-lucide="send"></i> Telegram-уведомления</strong></p>
+              <p class="hint" style="color: var(--success);">Подключено: @${status.username || 'Telegram'}</p>
+              <button id="unbind-telegram-btn" class="secondary-btn"><i data-lucide="bell-off"></i> Отписаться</button>
+              <div id="unbind-message" class="hint" style="margin-top: 8px;"></div>
+            </div>
+          `;
+          const unbindBtn = document.getElementById('unbind-telegram-btn');
+          if (unbindBtn) {
+            unbindBtn.onclick = async () => {
+              const confirmed = await App.ui.confirmModalAsync('Отписаться от Telegram-уведомлений?');
+              if (!confirmed) return;
+              const msgDiv = document.getElementById('unbind-message');
+              if (msgDiv) msgDiv.innerHTML = '<span style="color: var(--warning);">Отправка запроса...</span>';
+              try {
+                const { error } = await App.supabase.from('telegram_users').delete().eq('user_id', userId);
+                if (error) throw error;
+                await App.supabase.from('user_settings').update({ telegram_enabled: false }).eq('user_id', userId).eq('car_id', App.store.activeCarId);
+                if (msgDiv) msgDiv.innerHTML = '<span style="color: var(--success);">Вы отписались. Чтобы снова подключиться, нажмите кнопку привязки.</span>';
+                setTimeout(() => App.ui.pages.populateSettingsFields(), 2000);
+              } catch (err) {
+                if (msgDiv) msgDiv.innerHTML = `<span style="color: var(--danger);">Ошибка: ${err.message}</span>`;
+              }
+            };
+          }
+        } else {
+          const link = App.telegram?.getStartLink?.(userId) || `https://t.me/CarLoggerDnCBot?start=${userId}`;
+          telegramBindArea.innerHTML = `
+            <div style="margin-top: 12px;">
+              <p><strong><i data-lucide="send"></i> Telegram-уведомления</strong></p>
+              <a href="${link}" target="_blank" class="primary-btn" style="display:inline-block; margin-bottom:8px;">
+                <i data-lucide="message-circle"></i> Привязать Telegram
+              </a>
+              <p class="hint">Нажмите на кнопку, чтобы связать аккаунт с официальным ботом.</p>
+            </div>
+          `;
+        }
+      }
+    }
+    App.initIcons();
   }
 
-  if (typeof App.ui.pages.renderPinSettings === 'function') {
-    await App.ui.pages.renderPinSettings();
-  }
+  // Обработчики кнопок – используем прямую привязку, но через onclick для надёжности
+  const saveSettingsBtn = document.getElementById('save-settings-btn');
+  if (saveSettingsBtn) saveSettingsBtn.onclick = () => App.ui.pages.saveSettings();
+  const subscribePushBtn = document.getElementById('subscribe-push-btn');
+  if (subscribePushBtn) subscribePushBtn.onclick = () => App.ui.pages.subscribeToPush();
+  const unsubscribePushBtn = document.getElementById('unsubscribe-push-btn');
+  if (unsubscribePushBtn) unsubscribePushBtn.onclick = () => {
+    App.ui.pages.removePushSubscription();
+    App.toast('Подписка на push отключена', 'success');
+    const statusEl = document.getElementById('push-status');
+    if (statusEl) statusEl.innerHTML = '<i data-lucide="bell-off"></i> Push-уведомления не настроены';
+    const subEl = document.getElementById('subscribe-push-btn');
+    const unsubEl = document.getElementById('unsubscribe-push-btn');
+    if (subEl) subEl.style.display = 'inline-flex';
+    if (unsubEl) unsubEl.style.display = 'none';
+    App.initIcons();
+  };
+  const infoBtn = document.getElementById('telegram-info-btn');
+  if (infoBtn) infoBtn.onclick = () => App.ui.alertModal('Для привязки Telegram перейдите в раздел Premium (доступно после активации подписки).');
+
+  if (typeof App.ui.pages.renderPinSettings === 'function') await App.ui.pages.renderPinSettings();
 
   accordionContainer.innerHTML = `
     <div class="accordion-group settings-accordion">
       <div class="accordion-header" id="accordion-recovery-header">
-        <i data-lucide="key"></i> Резервные коды
-        <i data-lucide="chevron-down" class="accordion-arrow" style="margin-left:auto;"></i>
+        <i data-lucide="key"></i> Резервные коды <i data-lucide="chevron-down" class="accordion-arrow" style="margin-left:auto;"></i>
       </div>
       <div class="accordion-body" id="accordion-recovery-body"></div>
       <div class="accordion-header" id="accordion-encryption-header">
-        <i data-lucide="key"></i> Смена пароля шифрования
-        <i data-lucide="chevron-down" class="accordion-arrow" style="margin-left:auto;"></i>
+        <i data-lucide="key"></i> Смена пароля шифрования <i data-lucide="chevron-down" class="accordion-arrow" style="margin-left:auto;"></i>
       </div>
       <div class="accordion-body" id="accordion-encryption-body"></div>
       <div class="accordion-header" id="accordion-account-header">
-        <i data-lucide="log-in"></i> Смена пароля учётной записи
-        <i data-lucide="chevron-down" class="accordion-arrow" style="margin-left:auto;"></i>
+        <i data-lucide="log-in"></i> Смена пароля учётной записи <i data-lucide="chevron-down" class="accordion-arrow" style="margin-left:auto;"></i>
       </div>
       <div class="accordion-body" id="accordion-account-body"></div>
       <div class="accordion-header" id="accordion-delete-header">
-        <i data-lucide="alert-triangle" style="color: var(--danger);"></i> Удаление аккаунта
-        <i data-lucide="chevron-down" class="accordion-arrow" style="margin-left:auto;"></i>
+        <i data-lucide="alert-triangle" style="color: var(--danger);"></i> Удаление аккаунта <i data-lucide="chevron-down" class="accordion-arrow" style="margin-left:auto;"></i>
       </div>
       <div class="accordion-body" id="accordion-delete-body"></div>
     </div>
@@ -741,47 +672,16 @@ App.ui.pages.populateSettingsFields = async function() {
     header.addEventListener('click', handler);
   });
 
-  if (typeof App.ui.pages.renderBackupBlock === 'function') {
-    App.ui.pages.renderBackupBlock();
-  }
+  if (typeof App.ui.pages.renderBackupBlock === 'function') App.ui.pages.renderBackupBlock();
   App.initIcons();
+  isPopulating = false;
 };
 
-// ==================== РЕЗЕРВНЫЕ КОДЫ ====================
-App.ui.pages.initRecoveryCodesUI = function() {
-  let genBtn = document.getElementById('gen-new-codes-btn');
-  if (!genBtn) return;
-  if (_handlers.genRecoveryCodes) genBtn.removeEventListener('click', _handlers.genRecoveryCodes);
-  _handlers.genRecoveryCodes = async () => {
-    const { data: { user } } = await App.supabase.auth.getUser();
-    if (!user) return;
-    const confirmed = await App.ui.confirmModalAsync('Сгенерировать новые резервные коды? Старые коды будут аннулированы. Сохраните новые коды в надёжном месте.');
-    if (!confirmed) return;
-    const { data: codes, error } = await App.supabase.rpc('generate_recovery_codes', { p_user_id: user.id });
-    if (error || !codes || codes.length === 0) {
-      App.toast('Не удалось сгенерировать коды', 'error');
-      return;
-    }
-    let codesText = 'Ваши новые резервные коды (каждый можно использовать один раз):\n\n';
-    codes.forEach((code, idx) => {
-      codesText += `${idx+1}. ${code}\n`;
-    });
-    codesText += '\nСохраните их в надёжном месте. Эта страница больше не покажет эти коды.';
-    await App.ui.alertModal(codesText);
-    const listEl = document.getElementById('recovery-codes-list');
-    if (listEl) listEl.innerHTML = '<p class="hint">Новые коды сгенерированы и показаны. Сохраните их.</p>';
-  };
-  genBtn.addEventListener('click', _handlers.genRecoveryCodes);
-};
-
-// ==================== PIN-КОД ====================
+// ==================== PIN-КОД (минимальная версия) ====================
 App.ui.pages.renderPinSettings = async function() {
   const container = document.getElementById('pin-settings-container');
   if (!container) return;
-  if (!App.db || !App.db._db) {
-    setTimeout(() => App.ui.pages.renderPinSettings(), 500);
-    return;
-  }
+  if (!App.db || !App.db._db) { setTimeout(() => App.ui.pages.renderPinSettings(), 500); return; }
   const hasPin = App.localAuth && await App.localAuth.isPinSet();
   const supported = App.localAuth && App.localAuth.isPinSupported();
   if (!supported) {
@@ -789,88 +689,54 @@ App.ui.pages.renderPinSettings = async function() {
     App.initIcons();
     return;
   }
-  const attempts = localStorage.getItem('vesta_pin_attempts');
-  let blockedMessage = '';
-  if (attempts) {
-    try {
-      const data = JSON.parse(attempts);
-      if (data.blockedUntil && Date.now() < data.blockedUntil) {
-        const minutesLeft = Math.ceil((data.blockedUntil - Date.now()) / 60000);
-        blockedMessage = `<p class="hint" style="color: var(--danger);">PIN временно заблокирован (${minutesLeft} мин.). Введите мастер-пароль для разблокировки.</p>`;
-      }
-    } catch(e) {}
-  }
   if (hasPin) {
     container.innerHTML = `
       <div class="card">
         <h3><i data-lucide="lock"></i> Быстрый вход по PIN</h3>
         <p>PIN-код установлен. Вы можете сбросить его.</p>
-        ${blockedMessage}
         <button id="pin-reset-btn" class="secondary-btn">Сбросить PIN</button>
       </div>
     `;
     const resetBtn = document.getElementById('pin-reset-btn');
-    if (resetBtn) {
-      if (_handlers.pinReset) resetBtn.removeEventListener('click', _handlers.pinReset);
-      _handlers.pinReset = async () => {
-        if (await App.ui.confirmModalAsync('Сбросить PIN? Придётся заново вводить мастер-пароль.')) {
-          await App.localAuth.resetPin();
-          await App.ui.pages.renderPinSettings();
-          App.toast('PIN сброшен', 'success');
-        }
-      };
-      resetBtn.addEventListener('click', _handlers.pinReset);
-    }
+    if (resetBtn) resetBtn.onclick = async () => {
+      if (await App.ui.confirmModalAsync('Сбросить PIN? Придётся заново вводить мастер-пароль.')) {
+        await App.localAuth.resetPin();
+        await App.ui.pages.renderPinSettings();
+        App.toast('PIN сброшен', 'success');
+      }
+    };
   } else {
     container.innerHTML = `
       <div class="card">
         <h3><i data-lucide="fingerprint"></i> Быстрый вход по PIN</h3>
         <p>Установите PIN-код (6+ цифр), чтобы не вводить мастер-пароль при каждом запуске.</p>
-        ${blockedMessage}
         <button id="pin-setup-btn" class="primary-btn">Установить PIN</button>
       </div>
     `;
     const setupBtn = document.getElementById('pin-setup-btn');
-    if (setupBtn) {
-      if (_handlers.pinSetup) setupBtn.removeEventListener('click', _handlers.pinSetup);
-      _handlers.pinSetup = async () => {
-        const masterKey = App.db.encryption.getMasterKey();
-        if (!masterKey) {
-          App.toast('Мастер-пароль не активен. Выйдите и войдите снова.', 'error');
-          return;
-        }
-        const masterPassword = await App.ui.promptModalAsync('Подтвердите мастер-пароль', '');
-        if (!masterPassword) return;
-        const salt = App.db.encryption.getStoredSalt();
-        const isValid = await App.db.encryption.verifyMasterKey(masterPassword, salt);
-        if (!isValid) {
-          App.toast('Неверный мастер-пароль', 'error');
-          return;
-        }
-        let pinSet = false;
-        while (!pinSet) {
-          const pin = await App.ui.promptModalAsync('Установите PIN-код (минимум 6 цифр)', '');
-          if (pin && pin.length >= 6 && /^\d+$/.test(pin)) {
-            const confirmPin = await App.ui.promptModalAsync('Подтвердите PIN-код', '');
-            if (confirmPin === pin) {
-              try {
-                await App.localAuth.setPin(pin, masterPassword);
-                App.toast('PIN-код сохранён', 'success');
-                await App.ui.pages.renderPinSettings();
-                pinSet = true;
-              } catch (err) {
-                App.toast('Ошибка: ' + err.message, 'error');
-              }
-            } else {
-              App.toast('PIN-коды не совпадают', 'error');
-            }
-          } else {
-            App.toast('PIN должен содержать минимум 6 цифр', 'error');
-          }
-        }
-      };
-      setupBtn.addEventListener('click', _handlers.pinSetup);
-    }
+    if (setupBtn) setupBtn.onclick = async () => {
+      const masterKey = App.db.encryption.getMasterKey();
+      if (!masterKey) { App.toast('Мастер-пароль не активен. Выйдите и войдите снова.', 'error'); return; }
+      const masterPassword = await App.ui.promptModalAsync('Подтвердите мастер-пароль', '');
+      if (!masterPassword) return;
+      const salt = App.db.encryption.getStoredSalt();
+      if (!await App.db.encryption.verifyMasterKey(masterPassword, salt)) { App.toast('Неверный мастер-пароль', 'error'); return; }
+      let pinSet = false;
+      while (!pinSet) {
+        const pin = await App.ui.promptModalAsync('Установите PIN-код (минимум 6 цифр)', '');
+        if (pin && pin.length >= 6 && /^\d+$/.test(pin)) {
+          const confirmPin = await App.ui.promptModalAsync('Подтвердите PIN-код', '');
+          if (confirmPin === pin) {
+            try {
+              await App.localAuth.setPin(pin, masterPassword);
+              App.toast('PIN-код сохранён', 'success');
+              await App.ui.pages.renderPinSettings();
+              pinSet = true;
+            } catch (err) { App.toast('Ошибка: ' + err.message, 'error'); }
+          } else { App.toast('PIN-коды не совпадают', 'error'); }
+        } else { App.toast('PIN должен содержать минимум 6 цифр', 'error'); }
+      }
+    };
   }
   App.initIcons();
 };
