@@ -3,7 +3,6 @@ window.App = window.App || {};
 App.ui = App.ui || {};
 App.ui.pages = App.ui.pages || {};
 
-// Хранилище ссылок на обработчики для их удаления
 const _handlers = {};
 
 // ==================== СОХРАНЕНИЕ НАСТРОЕК ====================
@@ -159,7 +158,6 @@ App.ui.pages.subscribeToPush = async function() {
         console.log('[Push] FCM Token получен:', token);
         await App.ui.pages.savePushSubscription(token);
         App.toast('Push-уведомления активированы', 'success');
-        // Обновляем интерфейс
         const statusEl = document.getElementById('push-status');
         if (statusEl) statusEl.innerHTML = '<i data-lucide="check-circle" style="color: var(--success);"></i> Push-уведомления активны';
         const subscribeEl = document.getElementById('subscribe-push-btn');
@@ -223,7 +221,6 @@ App.ui.pages._renderTelegramBlock = async function(container) {
         <div id="unbind-message" class="hint" style="margin-top: 8px;"></div>
       </div>
     `;
-    // Обработчик отписки будет привязан в отдельной функции
   } else {
     const link = App.telegram?.getStartLink?.(userId) || `https://t.me/CarLoggerDnCBot?start=${userId}`;
     container.innerHTML = `
@@ -254,7 +251,7 @@ App.ui.pages.unbindTelegram = async function() {
     if (error) throw error;
     await App.supabase.from('user_settings').update({ telegram_enabled: false }).eq('user_id', userId).eq('car_id', App.store.activeCarId);
     if (msgDiv) msgDiv.innerHTML = '<span style="color: var(--success);">Вы отписались. Обновите страницу, чтобы снова подключиться.</span>';
-    // Принудительно обновляем статус Premium, чтобы перерисовать блок
+    // Принудительно обновляем статус Premium и перерисовываем Telegram-блок
     await App.premium.checkStatus();
     const telegramBindArea = document.getElementById('telegram-bind-area');
     if (telegramBindArea) {
@@ -266,7 +263,7 @@ App.ui.pages.unbindTelegram = async function() {
   }
 };
 
-// ==================== ОТДЕЛЬНЫЕ БЛОКИ ====================
+// ==================== ОСТАЛЬНЫЕ БЛОКИ (без изменений) ====================
 App.ui.pages.renderRecoveryCodesBlock = function(container) {
   if (!container) return;
   container.innerHTML = `
@@ -403,7 +400,6 @@ App.ui.pages.renderDeleteAccountBlock = function(container) {
   }
 };
 
-// ==================== PREMIUM БЛОК ====================
 App.ui.pages.renderPremiumBlock = function() {
   const container = document.getElementById('premium-settings-container');
   if (!container) return;
@@ -490,7 +486,6 @@ App.ui.pages.renderPremiumBlock = function() {
   App.initIcons();
 };
 
-// ==================== БЛОК РЕЗЕРВНОГО КОПИРОВАНИЯ ====================
 App.ui.pages.renderBackupBlock = function() {
   const container = document.getElementById('backup-settings-container');
   if (!container) return;
@@ -645,7 +640,6 @@ App.ui.pages.populateSettingsFields = async function() {
     }
   }
 
-  // Привязываем обработчики кнопок (удаляем старые, добавляем новые)
   const saveBtn = document.getElementById('save-settings-btn');
   if (saveBtn) {
     if (_handlers.saveSettings) saveBtn.removeEventListener('click', _handlers.saveSettings);
@@ -750,7 +744,7 @@ App.ui.pages.populateSettingsFields = async function() {
   App.initIcons();
 };
 
-// ==================== РЕЗЕРВНЫЕ КОДЫ ====================
+// ==================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ====================
 App.ui.pages.initRecoveryCodesUI = function() {
   let genBtn = document.getElementById('gen-new-codes-btn');
   if (!genBtn) return;
@@ -777,7 +771,6 @@ App.ui.pages.initRecoveryCodesUI = function() {
   genBtn.addEventListener('click', _handlers.genRecoveryCodes);
 };
 
-// ==================== PIN-КОД ====================
 App.ui.pages.renderPinSettings = async function() {
   const container = document.getElementById('pin-settings-container');
   if (!container) return;
