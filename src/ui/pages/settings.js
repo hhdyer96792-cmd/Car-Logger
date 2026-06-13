@@ -3,6 +3,9 @@ window.App = window.App || {};
 App.ui = App.ui || {};
 App.ui.pages = App.ui.pages || {};
 
+// Хранилище ссылок на обработчики для их удаления
+const _handlers = {};
+
 // ==================== СОХРАНЕНИЕ НАСТРОЕК ====================
 App.ui.pages.saveSettings = async function() {
   console.log('[Settings] saveSettings вызвана');
@@ -156,6 +159,7 @@ App.ui.pages.subscribeToPush = async function() {
         console.log('[Push] FCM Token получен:', token);
         await App.ui.pages.savePushSubscription(token);
         App.toast('Push-уведомления активированы', 'success');
+        // Обновляем интерфейс
         const statusEl = document.getElementById('push-status');
         if (statusEl) statusEl.innerHTML = '<i data-lucide="check-circle" style="color: var(--success);"></i> Push-уведомления активны';
         const subscribeEl = document.getElementById('subscribe-push-btn');
@@ -175,7 +179,7 @@ App.ui.pages.subscribeToPush = async function() {
   }
 };
 
-// ==================== ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ДЛЯ TELEGRAM-БЛОКА ====================
+// ==================== TELEGRAM БЛОК ====================
 App.ui.pages._renderTelegramBlock = async function(container) {
   if (!container) return;
   if (!App.store.isPremium) {
@@ -212,6 +216,27 @@ App.ui.pages._renderTelegramBlock = async function(container) {
         <div id="unbind-message" class="hint" style="margin-top: 8px;"></div>
       </div>
     `;
+    // Привязываем обработчик отписки
+    const unbindBtn = document.getElementById('unbind-telegram-btn');
+    if (unbindBtn) {
+      if (_handlers.unbindTelegram) unbindBtn.removeEventListener('click', _handlers.unbindTelegram);
+      _handlers.unbindTelegram = async () => {
+        const confirmed = await App.ui.confirmModalAsync('Отписаться от Telegram-уведомлений? Вы перестанете получать напоминания в Telegram.');
+        if (!confirmed) return;
+        const msgDiv = document.getElementById('unbind-message');
+        if (msgDiv) msgDiv.innerHTML = '<span style="color: var(--warning);">Отправка запроса...</span>';
+        try {
+          const { error } = await App.supabase.from('telegram_users').delete().eq('user_id', userId);
+          if (error) throw error;
+          await App.supabase.from('user_settings').update({ telegram_enabled: false }).eq('user_id', userId).eq('car_id', App.store.activeCarId);
+          if (msgDiv) msgDiv.innerHTML = '<span style="color: var(--success);">Вы отписались. Чтобы снова подключиться, нажмите кнопку привязки.</span>';
+          setTimeout(() => App.ui.pages.populateSettingsFields(), 2000);
+        } catch (err) {
+          if (msgDiv) msgDiv.innerHTML = `<span style="color: var(--danger);">Ошибка: ${err.message}</span>`;
+        }
+      };
+      unbindBtn.addEventListener('click', _handlers.unbindTelegram);
+    }
   } else {
     const link = App.telegram?.getStartLink?.(userId) || `https://t.me/CarLoggerDnCBot?start=${userId}`;
     container.innerHTML = `
@@ -471,7 +496,8 @@ App.ui.pages.renderBackupBlock = function() {
   const importBtn = document.getElementById('import-backup-btn');
   const msgDiv = document.getElementById('backup-message');
   if (exportBtn) {
-    exportBtn.onclick = async () => {
+    if (_handlers.exportBackup) exportBtn.removeEventListener('click', _handlers.exportBackup);
+    _handlers.exportBackup = async () => {
       const masterPassword = await App.ui.promptModalAsync('Экспорт данных', 'Введите мастер-пароль для шифрования бэкапа', true);
       if (!masterPassword) return;
       msgDiv.innerHTML = '<span style="color: var(--warning);">Формирование архива... подождите.</span>';
@@ -493,15 +519,18 @@ App.ui.pages.renderBackupBlock = function() {
         setTimeout(() => { msgDiv.innerHTML = ''; }, 5000);
       }
     };
+    exportBtn.addEventListener('click', _handlers.exportBackup);
   }
   if (importBtn) {
-    importBtn.onclick = () => {
+    if (_handlers.importBackup) importBtn.removeEventListener('click', _handlers.importBackup);
+    _handlers.importBackup = () => {
       if (typeof App.backup?.showImportModal === 'function') {
         App.backup.showImportModal();
       } else {
         App.toast('Модуль резервного копирования не загружен', 'error');
       }
     };
+    importBtn.addEventListener('click', _handlers.importBackup);
   }
 };
 
@@ -510,6 +539,11 @@ App.ui.pages.populateSettingsFields = async function() {
   console.log('[Settings] populateSettingsFields начат');
   if (document.readyState !== 'complete') {
     await new Promise(resolve => window.addEventListener('load', resolve));
+  }
+
+  // Принудительно обновляем статус Premium перед отрисовкой
+  if (typeof App.premium?.checkStatus === 'function') {
+    await App.premium.checkStatus();
   }
 
   const premiumContainer = document.getElementById('premium-settings-container');
@@ -599,13 +633,52 @@ App.ui.pages.populateSettingsFields = async function() {
     }
   }
 
+  // Привязываем обработчики кнопок (удаляем старые, добавляем новые)
+  const saveBtn = document.getElementById('save-settings-btn');
+  if (saveBtn) {
+    if (_handlers.saveSettings) saveBtn.removeEventListener('click', _handlers.saveSettings);
+    _handlers.saveSettings = () => App.ui.pages.saveSettings();
+    saveBtn.addEventListener('click', _handlers.saveSettings);
+  }
+
+  const subPushBtn = document.getElementById('subscribe-push-btn');
+  if (subPushBtn) {
+    if (_handlers.subscribePush) subPushBtn.removeEventListener('click', _handlers.subscribePush);
+    _handlers.subscribePush = () => App.ui.pages.subscribeToPush();
+    subPushBtn.addEventListener('click', _handlers.subscribePush);
+  }
+
+  const unsubPushBtn = document.getElementById('unsubscribe-push-btn');
+  if (unsubPushBtn) {
+    if (_handlers.unsubscribePush) unsubPushBtn.removeEventListener('click', _handlers.unsubscribePush);
+    _handlers.unsubscribePush = async () => {
+      await App.ui.pages.removePushSubscription();
+      App.toast('Подписка на push отключена', 'success');
+      const statusEl = document.getElementById('push-status');
+      if (statusEl) statusEl.innerHTML = '<i data-lucide="bell-off"></i> Push-уведомления не настроены';
+      const subscribeEl = document.getElementById('subscribe-push-btn');
+      const unsubscribeEl = document.getElementById('unsubscribe-push-btn');
+      if (subscribeEl) subscribeEl.style.display = 'inline-flex';
+      if (unsubscribeEl) unsubscribeEl.style.display = 'none';
+      App.initIcons();
+    };
+    unsubPushBtn.addEventListener('click', _handlers.unsubscribePush);
+  }
+
+  const infoBtn = document.getElementById('telegram-info-btn');
+  if (infoBtn) {
+    if (_handlers.telegramInfo) infoBtn.removeEventListener('click', _handlers.telegramInfo);
+    _handlers.telegramInfo = () => {
+      App.ui.alertModal('Для привязки Telegram перейдите в раздел Premium (доступно после активации подписки).');
+    };
+    infoBtn.addEventListener('click', _handlers.telegramInfo);
+  }
+
   // Обновляем Telegram-блок через отдельную функцию
   const telegramBindArea = document.getElementById('telegram-bind-area');
   if (telegramBindArea) {
     await App.ui.pages._renderTelegramBlock(telegramBindArea);
   }
-
-  // Обработчики кнопок settings.js не привязываются здесь – они в events.js через делегирование
 
   if (typeof App.ui.pages.renderPinSettings === 'function') {
     await App.ui.pages.renderPinSettings();
@@ -670,7 +743,8 @@ App.ui.pages.populateSettingsFields = async function() {
 App.ui.pages.initRecoveryCodesUI = function() {
   let genBtn = document.getElementById('gen-new-codes-btn');
   if (!genBtn) return;
-  genBtn.onclick = async () => {
+  if (_handlers.genRecoveryCodes) genBtn.removeEventListener('click', _handlers.genRecoveryCodes);
+  _handlers.genRecoveryCodes = async () => {
     const { data: { user } } = await App.supabase.auth.getUser();
     if (!user) return;
     const confirmed = await App.ui.confirmModalAsync('Сгенерировать новые резервные коды? Старые коды будут аннулированы. Сохраните новые коды в надёжном месте.');
@@ -689,6 +763,7 @@ App.ui.pages.initRecoveryCodesUI = function() {
     const listEl = document.getElementById('recovery-codes-list');
     if (listEl) listEl.innerHTML = '<p class="hint">Новые коды сгенерированы и показаны. Сохраните их.</p>';
   };
+  genBtn.addEventListener('click', _handlers.genRecoveryCodes);
 };
 
 // ==================== PIN-КОД ====================
@@ -728,13 +803,15 @@ App.ui.pages.renderPinSettings = async function() {
     `;
     const resetBtn = document.getElementById('pin-reset-btn');
     if (resetBtn) {
-      resetBtn.addEventListener('click', async () => {
+      if (_handlers.pinReset) resetBtn.removeEventListener('click', _handlers.pinReset);
+      _handlers.pinReset = async () => {
         if (await App.ui.confirmModalAsync('Сбросить PIN? Придётся заново вводить мастер-пароль.')) {
           await App.localAuth.resetPin();
           await App.ui.pages.renderPinSettings();
           App.toast('PIN сброшен', 'success');
         }
-      });
+      };
+      resetBtn.addEventListener('click', _handlers.pinReset);
     }
   } else {
     container.innerHTML = `
@@ -747,7 +824,8 @@ App.ui.pages.renderPinSettings = async function() {
     `;
     const setupBtn = document.getElementById('pin-setup-btn');
     if (setupBtn) {
-      setupBtn.addEventListener('click', async () => {
+      if (_handlers.pinSetup) setupBtn.removeEventListener('click', _handlers.pinSetup);
+      _handlers.pinSetup = async () => {
         const masterKey = App.db.encryption.getMasterKey();
         if (!masterKey) {
           App.toast('Мастер-пароль не активен. Выйдите и войдите снова.', 'error');
@@ -782,7 +860,8 @@ App.ui.pages.renderPinSettings = async function() {
             App.toast('PIN должен содержать минимум 6 цифр', 'error');
           }
         }
-      });
+      };
+      setupBtn.addEventListener('click', _handlers.pinSetup);
     }
   }
   App.initIcons();
