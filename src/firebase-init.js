@@ -1,11 +1,9 @@
 // src/firebase-init.js
 console.log('[Firebase] Инициализация...');
 
-// Проверяем, что Firebase уже загружен
 if (typeof firebase === 'undefined') {
     console.error('[Firebase] Firebase не загружен');
 } else {
-    // Инициализация с вашими ключами
     const firebaseConfig = {
         apiKey: "AIzaSyCKz1GKDdqxtK6NyLQAZ84QqUUCaqTQDWQ",
         authDomain: "car-k3eper.firebaseapp.com",
@@ -22,7 +20,6 @@ if (typeof firebase === 'undefined') {
         console.log('[Firebase] Уже инициализирован');
     }
     
-    // Регистрация Service Worker для Firebase
     if ('serviceWorker' in navigator) {
         const swPath = window.location.pathname.includes('/Car-Logger/') 
             ? '/Car-Logger/firebase-messaging-sw.js' 
@@ -30,7 +27,6 @@ if (typeof firebase === 'undefined') {
         navigator.serviceWorker.register(swPath)
             .then(registration => {
                 console.log('[Firebase] SW зарегистрирован:', swPath);
-                // Сохраняем регистрацию глобально для использования в subscribeToPush
                 window.firebaseSwRegistration = registration;
             })
             .catch(err => console.error('[Firebase] Ошибка регистрации SW:', err));
