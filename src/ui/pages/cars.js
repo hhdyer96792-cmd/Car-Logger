@@ -406,19 +406,31 @@ App.ui.pages.renderCarTab = function() {
     const plate = document.getElementById('car-plate')?.value?.trim() || '';
     const vin = document.getElementById('car-vin')?.value?.trim() || '';
     
+    // Обновляем хранилище
     App.store.settings.carBrand = brand;
     App.store.settings.carModel = model;
     App.store.settings.carYear = year;
     App.store.settings.plateNumber = plate;
     App.store.settings.vin = vin;
     
+    // Сохраняем в БД
     await App.storage.saveVehicleStateAndSettings(
         { carBrand: brand, carModel: model, carYear: year, plateNumber: plate, vin: vin },
         {}
     );
     
-    // Принудительно обновляем поля на странице
-    App.ui.pages.loadCarDetails(App.store.activeCarId);
+    // Принудительно обновляем поля на странице (не полагаясь на loadCarDetails)
+    // Это гарантирует, что госномер и VIN отобразятся сразу
+    const brandField = document.getElementById('car-brand');
+    const modelField = document.getElementById('car-model');
+    const yearField = document.getElementById('car-year');
+    const plateField = document.getElementById('car-plate');
+    const vinField = document.getElementById('car-vin');
+    if (brandField) brandField.value = brand;
+    if (modelField) modelField.value = model;
+    if (yearField) yearField.value = year;
+    if (plateField) plateField.value = plate;
+    if (vinField) vinField.value = vin;
     
     App.toast('Данные автомобиля сохранены', 'success');
 };
