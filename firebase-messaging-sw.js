@@ -15,7 +15,6 @@ const messaging = firebase.messaging();
 
 messaging.onBackgroundMessage(function(payload) {
     console.log('[Firebase SW] Получено фоновое сообщение:', payload);
-    
     const notificationTitle = payload.notification?.title || 'Напоминание о ТО';
     const notificationOptions = {
         body: payload.notification?.body || 'Проверьте план технического обслуживания',
@@ -28,28 +27,22 @@ messaging.onBackgroundMessage(function(payload) {
             { action: 'dismiss', title: 'Позже' }
         ]
     };
-    
     self.registration.showNotification(notificationTitle, notificationOptions);
 });
 
 self.addEventListener('notificationclick', function(event) {
     event.notification.close();
-    
-    if (event.action === 'dismiss') {
-        return;
-    }
-    
+    if (event.action === 'dismiss') return;
     event.waitUntil(
-        clients.matchAll({ type: 'window', includeUncontrolled: true })
-            .then(windowClients => {
-                for (let client of windowClients) {
-                    if (client.url.includes('/index.html') && 'focus' in client) {
-                        return client.focus();
-                    }
+        clients.matchAll({ type: 'window', includeUncontrolled: true }).then(windowClients => {
+            for (let client of windowClients) {
+                if (client.url.includes('/index.html') && 'focus' in client) {
+                    return client.focus();
                 }
-                if (clients.openWindow) {
-                    return clients.openWindow('/index.html');
-                }
-            })
+            }
+            if (clients.openWindow) {
+                return clients.openWindow('/index.html');
+            }
+        })
     );
 });
