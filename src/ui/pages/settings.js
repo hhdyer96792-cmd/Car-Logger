@@ -129,7 +129,7 @@ App.ui.pages.removePushSubscription = async function() {
 };
 
 App.ui.pages.subscribeToPush = async function() {
-  console.log('[Settings] subscribeToPush вызвана');
+  console.log('[Push] subscribeToPush вызвана');
   if (!('Notification' in window)) {
     App.ui.alertModal('Push-уведомления не поддерживаются вашим браузером.');
     return;
@@ -147,38 +147,40 @@ App.ui.pages.subscribeToPush = async function() {
         return;
       }
     }
-    if ('serviceWorker' in navigator) {
-      let swPath = '/firebase-messaging-sw.js';
-      if (window.location.pathname.includes('/Car-Logger/')) {
-        swPath = '/Car-Logger/firebase-messaging-sw.js';
-      }
-      let registration = await navigator.serviceWorker.getRegistration(swPath);
-      if (!registration) {
-        registration = await navigator.serviceWorker.register(swPath);
-        console.log('[Push] Firebase SW registered at', swPath);
-      }
-      if (typeof firebase === 'undefined' || !firebase.messaging) {
-        throw new Error('Firebase не загружен');
-      }
-      const messaging = firebase.messaging();
-      const vapidKey = 'BEUVrsWau5E4NvAwwAKmkjfK8yoDVntppWmZ2IdqseLVxuNNy47bV7eOLVYDmZ1b2P3F27eRqJLoAjW58Fh0tyY';
-      const token = await messaging.getToken({ vapidKey, serviceWorkerRegistration: registration });
-      if (token) {
-        console.log('[Push] FCM Token получен:', token);
-        await App.ui.pages.savePushSubscription(token);
-        App.toast('Push-уведомления активированы', 'success');
-        const statusEl = document.getElementById('push-status');
-        if (statusEl) statusEl.innerHTML = '<i data-lucide="check-circle" style="color: var(--success);"></i> Push-уведомления активны';
-        const subscribeEl = document.getElementById('subscribe-push-btn');
-        const unsubscribeEl = document.getElementById('unsubscribe-push-btn');
-        if (subscribeEl) subscribeEl.style.display = 'none';
-        if (unsubscribeEl) unsubscribeEl.style.display = 'inline-flex';
-        App.initIcons();
-      } else {
-        throw new Error('Не удалось получить токен FCM');
-      }
-    } else {
+    if (!('serviceWorker' in navigator)) {
       throw new Error('Service Worker не поддерживается');
+    }
+    // Определяем путь к firebase-messaging-sw.js
+    let swPath = '/firebase-messaging-sw.js';
+    if (window.location.pathname.includes('/Car-Logger/')) {
+      swPath = '/Car-Logger/firebase-messaging-sw.js';
+    }
+    let registration = await navigator.serviceWorker.getRegistration(swPath);
+    if (!registration) {
+      console.log('[Push] Регистрация Firebase SW по пути', swPath);
+      registration = await navigator.serviceWorker.register(swPath);
+      await navigator.serviceWorker.ready;
+    }
+    if (typeof firebase === 'undefined' || !firebase.messaging) {
+      throw new Error('Firebase не загружен. Проверьте подключение firebase-app-compat.js и firebase-messaging-compat.js');
+    }
+    const messaging = firebase.messaging();
+    // VAPID ключ (должен совпадать с ключом в проекте Firebase)
+    const vapidKey = 'BEUVrsWau5E4NvAwwAKmkjfK8yoDVntppWmZ2IdqseLVxuNNy47bV7eOLVYDmZ1b2P3F27eRqJLoAjW58Fh0tyY';
+    const token = await messaging.getToken({ vapidKey, serviceWorkerRegistration: registration });
+    if (token) {
+      console.log('[Push] FCM Token получен:', token);
+      await App.ui.pages.savePushSubscription(token);
+      App.toast('Push-уведомления активированы', 'success');
+      const statusEl = document.getElementById('push-status');
+      if (statusEl) statusEl.innerHTML = '<i data-lucide="check-circle" style="color: var(--success);"></i> Push-уведомления активны';
+      const subscribeEl = document.getElementById('subscribe-push-btn');
+      const unsubscribeEl = document.getElementById('unsubscribe-push-btn');
+      if (subscribeEl) subscribeEl.style.display = 'none';
+      if (unsubscribeEl) unsubscribeEl.style.display = 'inline-flex';
+      App.initIcons();
+    } else {
+      throw new Error('Не удалось получить токен FCM');
     }
   } catch (err) {
     console.error('[Push] Ошибка подписки:', err);
@@ -681,6 +683,7 @@ App.ui.pages.populateSettingsFields = async function() {
 
   const telegramBindArea = document.getElementById('telegram-bind-area');
   if (telegramBindArea) {
+  	await App.premium.checkStatus();
     await App.ui.pages._renderTelegramBlock(telegramBindArea);
   }
 
