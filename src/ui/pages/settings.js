@@ -5,7 +5,6 @@ App.ui.pages = App.ui.pages || {};
 
 const _handlers = {};
 
-// ==================== СОХРАНЕНИЕ НАСТРОЕК ====================
 App.ui.pages.saveSettings = async function() {
   console.log('[Settings] saveSettings вызвана');
   const notificationMethodSelect = document.getElementById('notification-method');
@@ -46,7 +45,6 @@ App.ui.pages.saveSettings = async function() {
   }
 };
 
-// ==================== PUSH-УВЕДОМЛЕНИЯ ====================
 App.ui.pages.checkPushSubscriptionStatus = async function() {
   if (!App.supabase) return false;
   try {
@@ -177,7 +175,6 @@ App.ui.pages.subscribeToPush = async function() {
   }
 };
 
-// ==================== TELEGRAM БЛОК ====================
 App.ui.pages._renderTelegramBlock = async function(container) {
   if (!container) return;
   console.log('[Settings] _renderTelegramBlock начат, App.store.isPremium =', App.store.isPremium);
@@ -236,7 +233,6 @@ App.ui.pages._renderTelegramBlock = async function(container) {
   App.initIcons();
 };
 
-// Отдельная функция для отписки от Telegram (вызывается из events.js)
 App.ui.pages.unbindTelegram = async function() {
   console.log('[Settings] unbindTelegram вызвана');
   const userId = await App.supa.getCurrentUserId();
@@ -251,7 +247,6 @@ App.ui.pages.unbindTelegram = async function() {
     if (error) throw error;
     await App.supabase.from('user_settings').update({ telegram_enabled: false }).eq('user_id', userId).eq('car_id', App.store.activeCarId);
     if (msgDiv) msgDiv.innerHTML = '<span style="color: var(--success);">Вы отписались. Обновите страницу, чтобы снова подключиться.</span>';
-    // Принудительно обновляем статус Premium и перерисовываем Telegram-блок
     await App.premium.checkStatus();
     const telegramBindArea = document.getElementById('telegram-bind-area');
     if (telegramBindArea) {
@@ -263,7 +258,6 @@ App.ui.pages.unbindTelegram = async function() {
   }
 };
 
-// ==================== ОСТАЛЬНЫЕ БЛОКИ (без изменений) ====================
 App.ui.pages.renderRecoveryCodesBlock = function(container) {
   if (!container) return;
   container.innerHTML = `
@@ -543,7 +537,6 @@ App.ui.pages.renderBackupBlock = function() {
   }
 };
 
-// ==================== ОСНОВНАЯ ФУНКЦИЯ ЗАПОЛНЕНИЯ НАСТРОЕК ====================
 App.ui.pages.populateSettingsFields = async function() {
   console.log('[Settings] populateSettingsFields начат');
   if (document.readyState !== 'complete') {
@@ -744,7 +737,6 @@ App.ui.pages.populateSettingsFields = async function() {
   App.initIcons();
 };
 
-// ==================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ====================
 App.ui.pages.initRecoveryCodesUI = function() {
   let genBtn = document.getElementById('gen-new-codes-btn');
   if (!genBtn) return;
