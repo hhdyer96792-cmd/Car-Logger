@@ -792,4 +792,50 @@ window.addEventListener('firebase-sw-ready', () => {
     console.log('[Main] Firebase SW готов');
 });
 
+    // Принудительно устанавливаем правильную функцию подписки (защита от переопределения)
+if (typeof window.App !== 'undefined' && window.App.ui && window.App.ui.pages) {
+    window.App.ui.pages.subscribeToPush = async function() {
+        console.log('[Push] Правильная функция подписки (установлена из main)');
+        if (!('Notification' in window)) { alert('Push не поддерживается'); return; }
+        if (Notification.permission === 'denied') { alert('Разрешение заблокировано'); return; }
+        if (Notification.permission !== 'granted') {
+            const permission = await Notification.requestPermission();
+            if (permission !== 'granted') { alert('Разрешение не получено'); return; }
+        }
+        if (!window.firebaseSwRegistration) {
+            console.log('[Push] Ожидаем регистрации SW...');
+            let attempts = 0;
+            while (!window.firebaseSwRegistration && attempts < 20) {
+                await new Promise(r => setTimeout(r, 500));
+                attempts++;
+            }
+            if (!window.firebaseSwRegistration) { alert('SW не зарегистрирован'); return; }
+        }
+        try {
+            const messaging = firebase.messaging();
+            const vapidKey = 'BEUVrsWau5E4NvAwwAKmkjfK8yoDVntppWmZ2IdqseLVxuNNy47bV7eOLVYDmZ1b2P3F27eRqJLoAjW58Fh0tyY';
+            const token = await messaging.getToken({ vapidKey, serviceWorkerRegistration: window.firebaseSwRegistration });
+            if (token) {
+                const saved = await window.App.ui.pages.savePushSubscription(token);
+                if (saved) {
+                    alert('Push-уведомления активированы');
+                    const statusEl = document.getElementById('push-status');
+                    if (statusEl) statusEl.innerHTML = '<i data-lucide="check-circle" style="color: var(--success);"></i> Push-уведомления активны';
+                    const subscribeBtn = document.getElementById('subscribe-push-btn');
+                    const unsubscribeBtn = document.getElementById('unsubscribe-push-btn');
+                    if (subscribeBtn) subscribeBtn.style.display = 'none';
+                    if (unsubscribeBtn) unsubscribeBtn.style.display = 'inline-flex';
+                } else {
+                    throw new Error('Ошибка сохранения токена');
+                }
+            } else {
+                alert('Токен не получен');
+            }
+        } catch (err) {
+            alert('Ошибка: ' + err.message);
+        }
+    };
+    console.log('[Main] Функция subscribeToPush принудительно установлена');
+}
+    
 })();
