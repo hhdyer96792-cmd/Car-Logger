@@ -93,29 +93,20 @@ App.events.setupDelegation = function() {
         }
 
         const subscribePushBtn = e.target.closest('#subscribe-push-btn');
-        if (subscribePushBtn) {
-            e.preventDefault();
-            console.log('[Events] Подписка на push');
-            // Пытаемся вызвать функцию, если она есть
-            if (typeof App.ui.pages.subscribeToPush === 'function') {
-                await App.ui.pages.subscribeToPush();
-            } else {
-                // Если функции нет, пробуем загрузить модуль settings заново и повторить
-                console.warn('[Events] subscribeToPush не определена, пробуем перезагрузить');
-                try {
-                    await import('./ui/pages/settings.js');
-                    if (typeof App.ui.pages.subscribeToPush === 'function') {
-                        await App.ui.pages.subscribeToPush();
-                    } else {
-                        throw new Error('Функция всё ещё не определена');
-                    }
-                } catch (err) {
-                    console.error('[Events] Не удалось загрузить subscribeToPush:', err);
-                    App.toast('Ошибка: функция подписки недоступна. Перезагрузите страницу.', 'error');
-                }
-            }
-            return;
-        }
+if (subscribePushBtn) {
+    e.preventDefault();
+    e.stopPropagation();
+    console.log('[Events] Нажата кнопка подписки push');
+    if (typeof App.ui.pages.subscribeToPush === 'function') {
+        console.log('[Events] Вызываем subscribeToPush');
+        await App.ui.pages.subscribeToPush();
+        console.log('[Events] subscribeToPush завершена');
+    } else {
+        console.error('[Events] subscribeToPush не определена');
+        App.toast('Ошибка: функция подписки недоступна', 'error');
+    }
+    return;
+}
 
         const unsubscribePushBtn = e.target.closest('#unsubscribe-push-btn');
         if (unsubscribePushBtn) {
