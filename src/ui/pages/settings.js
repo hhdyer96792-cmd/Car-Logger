@@ -131,52 +131,76 @@ App.ui.pages.removePushSubscription = async function() {
  }
 };
 
+// ==================== PUSH-УВЕДОМЛЕНИЯ (полностью переписано) ====================
 App.ui.pages.subscribeToPush = async function() {
-    console.log('[Settings] subscribeToPush вызвана');
+    console.log('[Push] Функция subscribeToPush вызвана');
+
+    // 1. Проверка браузера
     if (!('Notification' in window)) {
+        console.error('[Push] Notification не поддерживается');
         App.ui.alertModal('Push-уведомления не поддерживаются вашим браузером.');
         return;
     }
+
+    // 2. Проверка разрешения
     if (Notification.permission === 'denied') {
+        console.error('[Push] Разрешение заблокировано');
         App.ui.alertModal('Разрешение на уведомления заблокировано. Измените настройки браузера.');
         return;
     }
-    try {
-        let permission = Notification.permission;
+
+    // 3. Запрашиваем разрешение, если ещё не дано
+    if (Notification.permission !== 'granted') {
+        console.log('[Push] Запрашиваем разрешение...');
+        const permission = await Notification.requestPermission();
         if (permission !== 'granted') {
-            permission = await Notification.requestPermission();
-            if (permission !== 'granted') {
-                App.toast('Необходимо разрешить уведомления', 'warning');
-                return;
-            }
+            console.warn('[Push] Разрешение не получено');
+            App.toast('Необходимо разрешить уведомления', 'warning');
+            return;
         }
-        
-        let registration = window.firebaseSwRegistration;
-        if (!registration) {
-            console.log('[Push] Регистрируем SW...');
-            const swPath = window.location.pathname.includes('/Car-Logger/') 
-                ? '/Car-Logger/firebase-messaging-sw.js' 
-                : '/firebase-messaging-sw.js';
-            registration = await navigator.serviceWorker.register(swPath);
-            window.firebaseSwRegistration = registration;
-            console.log('[Push] SW зарегистрирован');
+        console.log('[Push] Разрешение получено');
+    }
+
+    // 4. Ждём регистрации Service Worker (максимум 10 секунд)
+    if (!window.firebaseSwRegistration) {
+        console.log('[Push] Ожидаем регистрации SW...');
+        let attempts = 0;
+        while (!window.firebaseSwRegistration && attempts < 20) {
+            await new Promise(r => setTimeout(r, 500));
+            attempts++;
         }
-        
-        if (typeof firebase === 'undefined' || !firebase.messaging) {
-            throw new Error('Firebase не загружен');
+        if (!window.firebaseSwRegistration) {
+            console.error('[Push] SW не зарегистрирован');
+            App.toast('Ошибка: Service Worker не зарегистрирован', 'error');
+            return;
         }
+        console.log('[Push] SW зарегистрирован');
+    }
+
+    // 5. Проверка Firebase
+    if (typeof firebase === 'undefined' || !firebase.messaging) {
+        console.error('[Push] Firebase не загружен');
+        App.toast('Ошибка: Firebase не инициализирован', 'error');
+        return;
+    }
+
+    try {
         const messaging = firebase.messaging();
         const vapidKey = 'BEUVrsWau5E4NvAwwAKmkjfK8yoDVntppWmZ2IdqseLVxuNNy47bV7eOLVYDmZ1b2P3F27eRqJLoAjW58Fh0tyY';
+        
         console.log('[Push] Запрашиваем токен...');
         const token = await messaging.getToken({ 
             vapidKey: vapidKey,
-            serviceWorkerRegistration: registration
+            serviceWorkerRegistration: window.firebaseSwRegistration
         });
+        
         if (token) {
-            console.log('[Push] FCM Token получен:', token);
+            console.log('[Push] Токен получен:', token);
             const saved = await App.ui.pages.savePushSubscription(token);
             if (saved) {
+                console.log('[Push] Токен сохранён');
                 App.toast('Push-уведомления активированы', 'success');
+                // Обновляем UI
                 const statusEl = document.getElementById('push-status');
                 if (statusEl) statusEl.innerHTML = '<i data-lucide="check-circle" style="color: var(--success);"></i> Push-уведомления активны';
                 const subscribeEl = document.getElementById('subscribe-push-btn');
@@ -191,8 +215,8 @@ App.ui.pages.subscribeToPush = async function() {
             throw new Error('Токен не получен');
         }
     } catch (err) {
-        console.error('[Push] Ошибка подписки:', err);
-        App.toast('Ошибка активации push-уведомлений: ' + err.message, 'error');
+        console.error('[Push] Ошибка:', err);
+        App.toast('Ошибка активации: ' + err.message, 'error');
     }
 };
 
