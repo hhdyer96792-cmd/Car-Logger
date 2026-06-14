@@ -787,4 +787,9 @@ document.addEventListener('visibilitychange', () => {
     }
 });
 
+// Если пользователь захочет подписаться до того, как SW зарегистрируется – он подождёт
+window.addEventListener('firebase-sw-ready', () => {
+    console.log('[Main] Firebase SW готов');
+});
+
 })();
