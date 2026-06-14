@@ -71,14 +71,13 @@ App.ui.pages.savePushSubscription = async function(playerId) {
   try {
     const { data: { user } } = await App.supabase.auth.getUser();
     if (!user) throw new Error('User not authenticated');
-    if (App.supa.savePushToken) {
-      await App.supa.savePushToken(playerId);
-    } else {
-      const { error } = await App.supabase
-        .from('push_subscriptions')
-        .upsert({ user_id: user.id, player_id: playerId, updated_at: new Date().toISOString() }, { onConflict: 'user_id' });
-      if (error) throw error;
-    }
+    
+    // Прямой upsert без лишних полей
+    const { error } = await App.supabase
+      .from('push_subscriptions')
+      .upsert({ user_id: user.id, player_id: playerId, updated_at: new Date().toISOString() }, { onConflict: 'user_id' });
+    if (error) throw error;
+    
     localStorage.setItem('push_subscribed', 'true');
     return true;
   } catch (err) {
