@@ -24,11 +24,16 @@ if (typeof firebase === 'undefined') {
         const swPath = window.location.pathname.includes('/Car-Logger/') 
             ? '/Car-Logger/firebase-messaging-sw.js' 
             : '/firebase-messaging-sw.js';
+        console.log('[Firebase] Регистрация SW:', swPath);
         navigator.serviceWorker.register(swPath)
             .then(registration => {
-                console.log('[Firebase] SW зарегистрирован:', swPath);
+                console.log('[Firebase] SW зарегистрирован успешно');
                 window.firebaseSwRegistration = registration;
+                // Оповещаем, что SW готов (можно вызвать событие)
+                window.dispatchEvent(new CustomEvent('firebase-sw-ready'));
             })
             .catch(err => console.error('[Firebase] Ошибка регистрации SW:', err));
+    } else {
+        console.warn('[Firebase] Service Worker не поддерживается');
     }
 }
